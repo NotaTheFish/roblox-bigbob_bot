@@ -6,14 +6,16 @@ from aiogram.types import ParseMode
 from aiogram.utils.executor import start_webhook
 from bot.config import TOKEN, WEBHOOK_URL
 from bot.db import SessionLocal, User
+from bot.web_server import app  # используем Flask сервер
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# Хранение временных состояний пользователя
+# Хранение временных состояний пользователя (например, ожидаем ник)
 user_states = {}
 
-WEBHOOK_PATH = "/" + TOKEN.split(":")[0]
+# Относительный путь вебхука для start_webhook
+WEBHOOK_PATH = "/webhook/" + TOKEN.split(":")[0]
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = 8080
 
@@ -66,7 +68,7 @@ async def process_confirm(callback_query: types.CallbackQuery):
         code = str(random.randint(10000, 99999))
         user.roblox_user = nick
         user.code = code
-        user.verified = False
+        user.verified = False  # пока не проверено
         session.commit()
 
         await bot.send_message(
@@ -92,7 +94,7 @@ async def check_cmd(message: types.Message):
         session.close()
         return
 
-    # Автоматическая верификация
+    # Автоматическая верификация для примера
     user.verified = True
     session.commit()
 
@@ -109,7 +111,7 @@ async def server_choice(message: types.Message):
 # --- Webhook setup ---
 
 async def on_startup(dp):
-    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+    await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(dp):
     await bot.delete_webhook()
