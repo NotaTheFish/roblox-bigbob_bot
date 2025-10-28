@@ -1,9 +1,15 @@
-from fastapi import FastAPI
+from flask import Flask
+from threading import Thread
 
-app = FastAPI()
+app = Flask(__name__)
 
-@app.get("/")
-async def root():
-    return {"status": "ok"}
+@app.route('/')
+def index():
+    return "✅ Бот работает!"
 
-# Здесь позже можно добавить API для Roblox или телеграм-команды
+def run():
+    app.run(host="0.0.0.0", port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
