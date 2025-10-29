@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.executor import start_webhook
 from bot.config import TOKEN, WEBHOOK_URL
-from bot.db import SessionLocal, User, Server
+from bot.db import SessionLocal, User, Server, PromoCode, Item
 
 # --- Flask сервер ---
 app = Flask(__name__)
@@ -24,6 +24,9 @@ dp = Dispatcher(bot)
 
 # --- Хранение временных состояний ---
 user_states = {}
+
+# --- Список админов ---
+ADMIN_IDS = [5813380332, 1748138420]
 
 # --- Обработчики команд ---
 @dp.message_handler(commands=['start'])
@@ -99,14 +102,13 @@ async def check_cmd(message: types.Message):
     user.verified = True
     session.commit()
 
-    # --- Главное меню после верификации ---
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("Мой аккаунт", "Топ игроков")
     markup.add("Присоединиться к игре", "Войти в режим Админа")
     await message.answer("✅ Аккаунт подтверждён!\nВыбери действие:", reply_markup=markup)
     session.close()
 
-# --- Главное меню кнопки ---
+# --- Главное меню ---
 @dp.message_handler(lambda msg: msg.text == "Мой аккаунт")
 async def my_account(message: types.Message):
     session = SessionLocal()
@@ -158,17 +160,59 @@ async def server_closed(callback_query: types.CallbackQuery):
     number = callback_query.data.split("_")[-1]
     await callback_query.answer(f"Сервер {number} закрыт")
 
+# --- Админский режим ---
 @dp.message_handler(lambda msg: msg.text == "Войти в режим Админа")
 async def enter_admin_mode(message: types.Message):
-    session = SessionLocal()
-    user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
-    admin_ids = [5813380332, 1748138420]  # список админов
-    if not user or user.telegram_id not in admin_ids:
+    if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Ты не Админ")
-        session.close()
         return
-    await message.answer("✅ Вход в режим Админа успешно!")
+    user_states[message.from_user.id] = {"step": "admin_main"}
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("Пользователи", callback_data="admin_users"),
+        InlineKeyboardButton("Сервера", callback_data="admin_servers")
+    )
+    keyboard.add(
+        InlineKeyboardButton("Промокоды", callback_data="admin_promos"),
+        InlineKeyboardButton("Магазин", callback_data="admin_shop")
+    )
+    await message.answer("✅ Режим Админа активирован:", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data.startswith("admin_"))
+async def admin_menu(callback_query: types.CallbackQuery):
+    session = SessionLocal()
+    user_id = callback_query.from_user.id
+
+    if callback_query.data == "admin_users":
+        users = session.query(User).order_by(User.level.desc()).limit(20).all()
+        text = "👥 Пользователи:\n"
+        for u in users:
+            text += f"{u.roblox_user} (Telegram: {u.telegram_id})\n"
+        await callback_query.message.answer(text)
+    
+    elif callback_query.data == "admin_servers":
+        servers = session.query(Server).order_by(Server.number.asc()).all()
+        text = "🎮 Сервера:\n"
+        for s in servers:
+            text += f"Сервер {s.number} — {s.link if s.link else 'закрыт'}\n"
+        await callback_query.message.answer(text)
+    
+    elif callback_query.data == "admin_promos":
+        promos = session.query(PromoCode).all()
+        text = "💎 Промокоды:\n"
+        for p in promos:
+            text += f"{p.code} — {p.type} {p.value}\n"
+        await callback_query.message.answer(text)
+    
+    elif callback_query.data == "admin_shop":
+        items = session.query(Item).all()
+        text = "🛒 Магазин:\n"
+        for i in items:
+            text += f"{i.name} — {i.price} орешков\n"
+        await callback_query.message.answer(text)
+    
     session.close()
+    await callback_query.answer()
 
 # --- Flask endpoint для сервера Roblox ---
 @app.route('/update_player', methods=["POST"])
@@ -178,14 +222,28 @@ def update_player():
         session = SessionLocal()
         user = session.query(User).filter_by(roblox_user=data["username"]).first()
         if user is None:
-            session.close()
-            return {"status": "user_not_found"}, 200
-
-        user.level = data.get("level", user.level)
-        user.cash = data.get("cash", user.cash)
-        user.items = data.get("items", user.items)
-        user.play_time = data.get("play_time", user.play_time)
-        session.commit()
+            # Автоматическое создание нового пользователя
+            user = User(
+                telegram_id=None,
+                roblox_user=data["username"],
+                verified=False,
+                level=data.get("level", 0),
+                cash=data.get("cash", 0),
+                items=data.get("items", ""),
+                play_time=data.get("play_time", 0),
+                balance=0,
+                referrals=0
+            )
+            session.add(user)
+            session.commit()
+        
+        else:
+            user.level = data.get("level", user.level)
+            user.cash = data.get("cash", user.cash)
+            user.items = data.get("items", user.items)
+            user.play_time = data.get("play_time", user.play_time)
+            session.commit()
+        
         session.close()
         return {"status": "ok"}, 200
     except Exception as e:
