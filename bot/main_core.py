@@ -35,6 +35,48 @@ ADMIN_IDS = [5813380332, 1748138420]
 #   user_states[user_id] = {"screen": "admin_servers"} ...
 user_states: Dict[int, Dict[str, Any]] = {}
 
+# ---------- Roblox verification helpers ----------
+import json, requests, concurrent.futures
+
+HTTP_TIMEOUT = 8  # секунд
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+def _blocking_fetch_user_id(username: str) -> Optional[int]:
+    """
+    Запрашивает users.roblox.com/v1/usernames/users (POST) -> userId по нику.
+    """
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = {"usernames": [username], "excludeBannedUsers": True}
+    r = requests.post(url, json=payload, timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    if not data.get("data"):
+        return None
+    entry = data["data"][0]
+    return entry.get("id")
+
+def _blocking_fetch_description(user_id: int) -> Optional[str]:
+    """
+    Запрашивает users.roblox.com/v1/users/{userId} -> description.
+    """
+    url = f"https://users.roblox.com/v1/users/{user_id}"
+    r = requests.get(url, timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    return data.get("description")
+
+async def fetch_roblox_description(username: str) -> Optional[str]:
+    """
+    Асинхронная оболочка над блокирующими requests.
+    """
+    loop = asyncio.get_event_loop()
+    user_id = await loop.run_in_executor(_executor, _blocking_fetch_user_id, username)
+    if not user_id:
+        return None
+    desc = await loop.run_in_executor(_executor, _blocking_fetch_description, user_id)
+    return desc
+
+
 # -----------------------
 #   Вспомогательные клавиатуры (Reply)
 # -----------------------
@@ -170,19 +212,82 @@ async def cb_confirm_nick(call: CallbackQuery):
 
 @dp.message_handler(commands=['check'])
 async def cmd_check(message: types.Message):
-    # Пока «мягкая» авто-верификация (реальную проверку профиля Roblox добавим следующим этапом)
+    """
+    Реальная верификация:
+    1) Берём из БД ник и код
+    2) Показываем "Проверяю…"
+    3) Через Roblox API получаем описание профиля
+    4) Ищем код в описании (без учёта регистра/пробелов)
+    """
     session = SessionLocal()
     user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
     if not user or not user.roblox_user:
         session.close()
         return await message.answer("❌ Сначала сделай /verify и укажи ник.")
 
-    user.verified = True
-    session.commit()
-    session.close()
+    # достанем код; если поля code нет — попытаемся вытащить из items как fallback
+    user_code = getattr(user, "code", None)
+    if not user_code or not str(user_code).strip():
+        # если совсем нет — предложим перепройти verify
+        session.close()
+        return await message.answer("❌ Код подтверждения не найден. Сначала сделай /verify.")
 
-    await message.answer("✅ Аккаунт подтверждён! Доступ открыт.", reply_markup=kb_main())
-    user_states[message.from_user.id] = {"screen": "main"}
+    # индикатор
+    status_msg = await message.answer("🔍 Проверяю Roblox профиль...")
+
+    try:
+        description = await fetch_roblox_description(user.roblox_user.strip())
+    except requests.HTTPError as e:
+        await status_msg.edit_text(
+            "⚠️ Roblox API ответил ошибкой. Попробуй позже."
+        )
+        session.close()
+        return
+    except requests.RequestException:
+        await status_msg.edit_text(
+            "⚠️ Нет связи с Roblox API. Попробуй ещё раз чуть позже."
+        )
+        session.close()
+        return
+
+    if description is None:
+        # ник не найден или профиль недоступен
+        await status_msg.edit_text(
+            "❌ Профиль не найден или временно недоступен.\n"
+            "Проверь правильность ника и попробуй ещё раз."
+        )
+        session.close()
+        return
+
+    # дружелюбное предупреждение на закрытый/пустой профиль
+    if not description.strip():
+        await status_msg.edit_text(
+            "⚠️ Твой Roblox профиль закрыт или в нём пустое описание.\n"
+            "Пожалуйста, временно открой профиль и добавь код в «О нас», затем сделай /check снова."
+        )
+        session.close()
+        return
+
+    # Поиск кода (без регистра и с очисткой пробелов)
+    haystack = description.replace(" ", "").lower()
+    needle = str(user_code).replace(" ", "").lower()
+
+    if needle and needle in haystack:
+        user.verified = True
+        # по желанию можно обнулить код, чтобы один раз использовать
+        # user.code = None
+        session.commit()
+        session.close()
+
+        await status_msg.edit_text("✅ Аккаунт подтверждён! Доступ открыт.")
+        await message.answer("🏠 Главное меню", reply_markup=kb_main())
+        user_states[message.from_user.id] = {"screen": "main"}
+    else:
+        session.close()
+        await status_msg.edit_text(
+            "❌ Код не найден в описании твоего профиля.\n"
+            "Убедись, что вставил правильный код в «О нас» и профиль открыт, затем сделай /check ещё раз."
+        )
 
 # -----------------------
 #   Главное меню (Reply)
