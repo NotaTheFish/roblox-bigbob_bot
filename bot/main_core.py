@@ -1,14 +1,13 @@
 # bot/main_core.py
 
 import random
+import asyncio
+from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.executor import start_webhook
-from bot.config import TOKEN, WEBHOOK_URL, DATABASE_URL
+from bot.config import TOKEN, WEBHOOK_URL
 from bot.db import SessionLocal, User, Server
-from flask import Flask, request
-from aiogram import types
-from aiogram.utils.exceptions import BotBlocked
 
 # --- Flask сервер ---
 app = Flask(__name__)
@@ -27,7 +26,6 @@ dp = Dispatcher(bot)
 user_states = {}
 
 # --- Обработчики команд ---
-
 @dp.message_handler(commands=['start'])
 async def start_cmd(message: types.Message):
     session = SessionLocal()
@@ -149,15 +147,25 @@ async def join_game(message: types.Message):
 
     keyboard = InlineKeyboardMarkup()
     for s in servers:
-        keyboard.add(InlineKeyboardButton(f"Сервер {s.number}", url=s.link if s.link else None))
+        if s.link:
+            keyboard.add(InlineKeyboardButton(f"Сервер {s.number}", url=s.link))
+        else:
+            keyboard.add(InlineKeyboardButton(f"Сервер {s.number} ❌", callback_data=f"server_closed_{s.number}"))
     await message.answer("Выбери сервер:", reply_markup=keyboard)
     session.close()
+
+@dp.callback_query_handler(lambda c: c.data.startswith("server_closed_"))
+async def server_closed(callback_query: types.CallbackQuery):
+    number = callback_query.data.split("_")[-1]
+    await callback_query.answer(f"Сервер {number} закрыт")
 
 @dp.message_handler(lambda msg: msg.text == "Войти в режим Админа")
 async def enter_admin_mode(message: types.Message):
     session = SessionLocal()
     user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
-    if not user or user.telegram_id not in [5813380332, 1748138420]:
+    # Список админов можно вынести в config.py
+    admin_ids = [5813380332, 1748138420]
+    if not user or user.telegram_id not in admin_ids:
         await message.answer("❌ Ты не Админ")
         session.close()
         return
@@ -168,7 +176,6 @@ async def enter_admin_mode(message: types.Message):
 @app.route('/update_player', methods=["POST"])
 def update_player():
     data = request.json
-    # здесь сервер Roblox может присылать JSON с данными игрока
     try:
         session = SessionLocal()
         user = session.query(User).filter_by(roblox_user=data["username"]).first()
@@ -187,12 +194,11 @@ def update_player():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook_handler():
     from aiogram import types
-    import asyncio
     update = types.Update.to_object(request.get_json(force=True))
     asyncio.create_task(dp.process_update(update))
     return "OK", 200
 
-# --- Вебхук и запуск ---
+# --- Webhook запуск ---
 async def on_startup(dp):
     await bot.set_webhook(WEBHOOK_URL_FULL)
 
