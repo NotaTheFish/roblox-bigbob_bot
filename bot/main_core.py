@@ -25,7 +25,7 @@ dp = Dispatcher(bot)
 # --- Хранение временных состояний ---
 user_states = {}
 
-# --- Обработчики команд ---
+# --- Команды ---
 @dp.message_handler(commands=['start'])
 async def start_cmd(message: types.Message):
     session = SessionLocal()
@@ -96,18 +96,16 @@ async def check_cmd(message: types.Message):
         session.close()
         return
 
-    # --- Автоматическая верификация ---
     user.verified = True
     session.commit()
 
-    # --- Главное меню после верификации ---
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("Мой аккаунт", "Топ игроков")
     markup.add("Присоединиться к игре", "Войти в режим Админа")
     await message.answer("✅ Аккаунт подтверждён!\nВыбери действие:", reply_markup=markup)
     session.close()
 
-# --- Главное меню кнопки ---
+# --- Главное меню ---
 @dp.message_handler(lambda msg: msg.text == "Мой аккаунт")
 async def my_account(message: types.Message):
     session = SessionLocal()
@@ -116,13 +114,13 @@ async def my_account(message: types.Message):
         await message.answer("❌ Аккаунт не подтверждён")
         session.close()
         return
-    info = (f"👤 Ник: {user.roblox_user}\n"
-            f"💰 Баланс: {user.balance} орешков\n"
-            f"💎 Кеш: {user.cash}\n"
-            f"📦 Предметы: {user.items}\n"
-            f"🎮 Уровень: {user.level}\n"
-            f"⏱ Время в игре: {user.play_time}\n"
-            f"👥 Приглашённые: {user.referrals}")
+    info = (f"👤 Ник: {user.roblox_user or '-'}\n"
+            f"💰 Баланс: {user.balance or 0} орешков\n"
+            f"💎 Кеш: {user.cash or 0}\n"
+            f"📦 Предметы: {user.items or '-'}\n"
+            f"🎮 Уровень: {user.level or 0}\n"
+            f"⏱ Время в игре: {user.play_time or 0}\n"
+            f"👥 Приглашённые: {user.referrals or 0}")
     await message.answer(info)
     session.close()
 
@@ -130,9 +128,13 @@ async def my_account(message: types.Message):
 async def top_players(message: types.Message):
     session = SessionLocal()
     top = session.query(User).order_by(User.level.desc()).limit(15).all()
+    if not top:
+        await message.answer("Нет игроков для отображения.")
+        session.close()
+        return
     text = "🏆 Топ 15 игроков:\n"
     for u in top:
-        text += f"{u.roblox_user} — уровень {u.level}\n"
+        text += f"{u.roblox_user or '–'} — уровень {u.level or 0}\n"
     await message.answer(text)
     session.close()
 
@@ -163,7 +165,6 @@ async def server_closed(callback_query: types.CallbackQuery):
 async def enter_admin_mode(message: types.Message):
     session = SessionLocal()
     user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
-    # Список админов можно вынести в config.py
     admin_ids = [5813380332, 1748138420]
     if not user or user.telegram_id not in admin_ids:
         await message.answer("❌ Ты не Админ")
@@ -190,7 +191,7 @@ def update_player():
     except Exception as e:
         return {"error": str(e)}, 500
 
-# --- Webhook обработчик ---
+# --- Webhook ---
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook_handler():
     from aiogram import types
