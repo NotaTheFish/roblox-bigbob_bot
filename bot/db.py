@@ -11,12 +11,13 @@ session = SessionLocal()
 
 class User(Base):
     __tablename__ = "users"
+
     id = Column(Integer, primary_key=True, index=True)
     telegram_id = Column(Integer, unique=True, index=True)
     roblox_user = Column(String, nullable=True)
+    code = Column(String, nullable=True)  # ✅ Код для верификации Roblox
     verified = Column(Boolean, default=False)
 
-    # --- поля для вашего функционала ---
     balance = Column(Integer, default=0)
     cash = Column(Integer, default=0)
     items = Column(String, default="")
