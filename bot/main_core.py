@@ -86,10 +86,13 @@ async def check_cmd(message: types.Message):
         session.close()
         return
 
+    # Автоматическая верификация
     user.verified = True
     session.commit()
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(1️⃣ Сервер 1", "2️⃣ Сервер 2", "3️⃣ Сервер 3")
+    markup.add("1️⃣ Сервер 1", "2️⃣ Сервер 2", "3️⃣ Сервер 3")
+
     await message.answer("✅ Аккаунт подтверждён!\n🎮 Выбери сервер для входа:", reply_markup=markup)
     session.close()
+
