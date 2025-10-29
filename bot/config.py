@@ -7,3 +7,5 @@ SECRET_KEY = "BIG2025BOB"  # секретный ключ (может испол�
 DOMAIN = "https://roblox-bigbob-bot.onrender.com"  # адрес твоего веб-сервера
 WEBHOOK_URL = f"{DOMAIN}/webhook/{TOKEN.split(':')[0]}"
   # полный URL для вебхука
+ADMIN_ROOT_IDS = [5813380332]  # кто подтверждает вход в админку
+ADMIN_LOGIN_PASSWORD = "BigBob-Admin-2025"  # сменить на свой
