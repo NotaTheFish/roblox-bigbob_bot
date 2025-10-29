@@ -5,4 +5,5 @@ ADMINS = [5813380332, 1748138420]  # Telegram ID админов
 DATABASE_URL = "sqlite:///data/db.sqlite3"  # путь к базе данных
 SECRET_KEY = "BIG2025BOB"  # секретный ключ (может использоваться для сессий)
 DOMAIN = "https://roblox-bigbob-bot.onrender.com"  # адрес твоего веб-сервера
-WEBHOOK_URL = "https://roblox-bigbob-bot.onrender.com/webhook/8460465818"  # полный URL для вебхука
+WEBHOOK_URL = f"{DOMAIN}/webhook/{TOKEN.split(':')[0]}"
+  # полный URL для вебхука

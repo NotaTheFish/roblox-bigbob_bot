@@ -111,7 +111,7 @@ async def server_choice(message: types.Message):
 # --- Webhook setup ---
 
 async def on_startup(dp):
-    await bot.set_webhook(WEBHOOK_URL)
+    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
 
 async def on_shutdown(dp):
     await bot.delete_webhook()
