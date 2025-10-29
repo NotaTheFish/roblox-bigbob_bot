@@ -1,6 +1,7 @@
 # bot/main_core.py
 # aiogram v2.25.1
 
+import asyncio
 import random
 from typing import Dict, Any, Optional
 
@@ -24,27 +25,14 @@ dp = Dispatcher(bot)
 #   Константы и состояния
 # -----------------------
 ADMIN_IDS = [5813380332, 1748138420]
-
-# user_states: хранит “экран” и временные данные.
-# Примеры:
-#   user_states[user_id] = {"screen": "main"}
-#   user_states[user_id] = {"screen": "account"}
-#   user_states[user_id] = {"screen": "shop"}
-#   user_states[user_id] = {"screen": "admin"}
-#   user_states[user_id] = {"screen": "await_nick"}
-#   user_states[user_id] = {"screen": "admin_servers"} ...
 user_states: Dict[int, Dict[str, Any]] = {}
 
 # ---------- Roblox verification helpers ----------
-import json, requests, concurrent.futures
-
-HTTP_TIMEOUT = 8  # секунд
+import requests, concurrent.futures
+HTTP_TIMEOUT = 8
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 def _blocking_fetch_user_id(username: str) -> Optional[int]:
-    """
-    Запрашивает users.roblox.com/v1/usernames/users (POST) -> userId по нику.
-    """
     url = "https://users.roblox.com/v1/usernames/users"
     payload = {"usernames": [username], "excludeBannedUsers": True}
     r = requests.post(url, json=payload, timeout=HTTP_TIMEOUT)
@@ -52,33 +40,23 @@ def _blocking_fetch_user_id(username: str) -> Optional[int]:
     data = r.json()
     if not data.get("data"):
         return None
-    entry = data["data"][0]
-    return entry.get("id")
+    return data["data"][0].get("id")
 
 def _blocking_fetch_description(user_id: int) -> Optional[str]:
-    """
-    Запрашивает users.roblox.com/v1/users/{userId} -> description.
-    """
     url = f"https://users.roblox.com/v1/users/{user_id}"
     r = requests.get(url, timeout=HTTP_TIMEOUT)
     r.raise_for_status()
-    data = r.json()
-    return data.get("description")
+    return r.json().get("description")
 
 async def fetch_roblox_description(username: str) -> Optional[str]:
-    """
-    Асинхронная оболочка над блокирующими requests.
-    """
     loop = asyncio.get_event_loop()
     user_id = await loop.run_in_executor(_executor, _blocking_fetch_user_id, username)
     if not user_id:
         return None
-    desc = await loop.run_in_executor(_executor, _blocking_fetch_description, user_id)
-    return desc
-
+    return await loop.run_in_executor(_executor, _blocking_fetch_description, user_id)
 
 # -----------------------
-#   Вспомогательные клавиатуры (Reply)
+#   Клавиатуры
 # -----------------------
 def kb_main() -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -141,16 +119,26 @@ async def show_main_menu(chat_id: int):
     user_states[chat_id] = {"screen": "main"}
     await bot.send_message(chat_id, "🏠 Главное меню", reply_markup=kb_main())
 
+def _must_be_verified(user: User) -> bool:
+    """True -> НЕ верифицирован (нужно остановить доступ)."""
+    return not user or not user.verified
+
 # -----------------------
-#   Команды: старт / verify / check
+#   /start /verify /check
 # -----------------------
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
     user = ensure_user_in_db(message.from_user.id)
     user_states[message.from_user.id] = {"screen": "main"}
+
+    if not user.verified:
+        return await message.answer(
+            "👋 Привет! Чтобы получить доступ — пройди верификацию.\n"
+            "Нажми /verify и следуй инструкции."
+        )
+
     await message.answer(
-        "👋 Привет! Я помогу тебе войти на приватные сервера Roblox.\n"
-        "Нажми «⚡ Играть», либо зайди в «💼 Аккаунт».",
+        "Добро пожаловать! Выбирай действие:",
         reply_markup=kb_main()
     )
 
@@ -171,12 +159,16 @@ async def handle_nick(message: types.Message):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("Да ✅", callback_data="nick_yes"))
     kb.add(InlineKeyboardButton("Нет ❌", callback_data="nick_no"))
-    await message.answer(f"Проверим: это твой ник в Roblox?\n\n<b>{nick}</b>", reply_markup=kb, parse_mode=ParseMode.HTML)
+    await message.answer(
+        f"Проверим: это твой ник в Roblox?\n\n<b>{nick}</b>",
+        reply_markup=kb, parse_mode=ParseMode.HTML
+    )
 
 @dp.callback_query_handler(lambda c: c.data in ("nick_yes", "nick_no"))
 async def cb_confirm_nick(call: CallbackQuery):
     uid = call.from_user.id
     state = user_states.get(uid, {})
+
     if call.data == "nick_no":
         user_states[uid] = {"screen": "await_nick"}
         await call.message.edit_text("Окей, введи ник ещё раз ✍️")
@@ -186,17 +178,11 @@ async def cb_confirm_nick(call: CallbackQuery):
     nick = state.get("nick")
     code = str(random.randint(10000, 99999))
 
-    # Сохраняем в БД
     session = SessionLocal()
     user = session.query(User).filter_by(telegram_id=uid).first()
     if user:
         user.roblox_user = nick
-        # сохраним код в поле items как временное место (или добавь поле code в БД)
-        # лучше: добавь в модель User поле code = Column(String, nullable=True)
-        try:
-            setattr(user, "code", code)  # на случай если поле уже добавлено
-        except Exception:
-            pass
+        user.code = code          # <— теперь поле существует
         user.verified = False
         session.commit()
     session.close()
@@ -212,69 +198,46 @@ async def cb_confirm_nick(call: CallbackQuery):
 
 @dp.message_handler(commands=['check'])
 async def cmd_check(message: types.Message):
-    """
-    Реальная верификация:
-    1) Берём из БД ник и код
-    2) Показываем "Проверяю…"
-    3) Через Roblox API получаем описание профиля
-    4) Ищем код в описании (без учёта регистра/пробелов)
-    """
     session = SessionLocal()
     user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
     if not user or not user.roblox_user:
         session.close()
         return await message.answer("❌ Сначала сделай /verify и укажи ник.")
 
-    # достанем код; если поля code нет — попытаемся вытащить из items как fallback
-    user_code = getattr(user, "code", None)
-    if not user_code or not str(user_code).strip():
-        # если совсем нет — предложим перепройти verify
+    if not user.code:
         session.close()
         return await message.answer("❌ Код подтверждения не найден. Сначала сделай /verify.")
 
-    # индикатор
     status_msg = await message.answer("🔍 Проверяю Roblox профиль...")
 
     try:
         description = await fetch_roblox_description(user.roblox_user.strip())
-    except requests.HTTPError as e:
-        await status_msg.edit_text(
-            "⚠️ Roblox API ответил ошибкой. Попробуй позже."
-        )
+    except requests.HTTPError:
         session.close()
-        return
+        return await status_msg.edit_text("⚠️ Roblox API ответил ошибкой. Попробуй позже.")
     except requests.RequestException:
-        await status_msg.edit_text(
-            "⚠️ Нет связи с Roblox API. Попробуй ещё раз чуть позже."
-        )
         session.close()
-        return
+        return await status_msg.edit_text("⚠️ Нет связи с Roblox API. Попробуй ещё раз чуть позже.")
 
     if description is None:
-        # ник не найден или профиль недоступен
-        await status_msg.edit_text(
+        session.close()
+        return await status_msg.edit_text(
             "❌ Профиль не найден или временно недоступен.\n"
             "Проверь правильность ника и попробуй ещё раз."
         )
-        session.close()
-        return
 
-    # дружелюбное предупреждение на закрытый/пустой профиль
     if not description.strip():
-        await status_msg.edit_text(
-            "⚠️ Твой Roblox профиль закрыт или в нём пустое описание.\n"
-            "Пожалуйста, временно открой профиль и добавь код в «О нас», затем сделай /check снова."
-        )
         session.close()
-        return
+        return await status_msg.edit_text(
+            "⚠️ Профиль закрыт или пустое описание. Открой профиль и добавь код, затем /check ещё раз."
+        )
 
-    # Поиск кода (без регистра и с очисткой пробелов)
     haystack = description.replace(" ", "").lower()
-    needle = str(user_code).replace(" ", "").lower()
+    needle = str(user.code).replace(" ", "").lower()
 
     if needle and needle in haystack:
         user.verified = True
-        # по желанию можно обнулить код, чтобы один раз использовать
+        # можно обнулить код, чтобы не переиспользовали:
         # user.code = None
         session.commit()
         session.close()
@@ -285,16 +248,25 @@ async def cmd_check(message: types.Message):
     else:
         session.close()
         await status_msg.edit_text(
-            "❌ Код не найден в описании твоего профиля.\n"
-            "Убедись, что вставил правильный код в «О нас» и профиль открыт, затем сделай /check ещё раз."
+            "❌ Код не найден в описании. Проверь, что он добавлен в «О нас», затем /check."
         )
 
 # -----------------------
-#   Главное меню (Reply)
+#   Главное меню (с проверкой верификации)
 # -----------------------
+def _require_verified(func):
+    async def wrapper(message: types.Message, *a, **kw):
+        session = SessionLocal()
+        u = session.query(User).filter_by(telegram_id=message.from_user.id).first()
+        session.close()
+        if _must_be_verified(u):
+            return await message.answer("🔒 Сначала пройди верификацию: /verify")
+        return await func(message, *a, **kw)
+    return wrapper
+
 @dp.message_handler(lambda m: m.text == "⚡ Играть")
+@_require_verified
 async def menu_play(message: types.Message):
-    # Покажем доступные сервера (Inline, с линками)
     session = SessionLocal()
     servers = session.query(Server).order_by(Server.number.asc()).all()
     session.close()
@@ -316,15 +288,12 @@ async def cb_server_closed(call: CallbackQuery):
     await call.answer(f"Сервер {number} закрыт", show_alert=True)
 
 @dp.message_handler(lambda m: m.text == "💼 Аккаунт")
+@_require_verified
 async def menu_account(message: types.Message):
     user_states[message.from_user.id] = {"screen": "account"}
-    # Выведем краткую инфу
     session = SessionLocal()
     u = session.query(User).filter_by(telegram_id=message.from_user.id).first()
     session.close()
-    if not u:
-        ensure_user_in_db(message.from_user.id)
-        return await message.answer("Профиль создан. Нажми ещё раз «💼 Аккаунт».", reply_markup=kb_account())
 
     info = (
         f"👤 Ник: {u.roblox_user or '—'}\n"
@@ -338,6 +307,7 @@ async def menu_account(message: types.Message):
     await message.answer(info, reply_markup=kb_account())
 
 @dp.message_handler(lambda m: m.text == "💰 Баланс")
+@_require_verified
 async def account_balance(message: types.Message):
     session = SessionLocal()
     u = session.query(User).filter_by(telegram_id=message.from_user.id).first()
@@ -346,14 +316,12 @@ async def account_balance(message: types.Message):
     await message.answer(f"💰 Твой баланс: <b>{bal}</b> орешков.", parse_mode=ParseMode.HTML, reply_markup=kb_account())
 
 @dp.message_handler(lambda m: m.text == "💸 Пополнить баланс")
+@_require_verified
 async def account_topup(message: types.Message):
-    await message.answer(
-        "💳 Пополнение в разработке.\n"
-        "Скоро добавим EUR/UAH/RUB/crypto и автозачёт.",
-        reply_markup=kb_account()
-    )
+    await message.answer("💳 Пополнение в разработке.", reply_markup=kb_account())
 
 @dp.message_handler(lambda m: m.text == "🎁 Активировать промокод")
+@_require_verified
 async def account_promocode(message: types.Message):
     user_states[message.from_user.id] = {"screen": "await_promocode"}
     await message.answer("Введи промокод:", reply_markup=kb_back())
@@ -365,20 +333,17 @@ async def handle_promocode(message: types.Message):
         return await message.answer("Меню аккаунта:", reply_markup=kb_account())
 
     code = message.text.strip()
-    # Простая заглушка применения
     session = SessionLocal()
-    promo = session.query(PromoCode).filter_by(code=code).first()
+    promo = session.query(PromoCode).filter_by(code=code, active=True).first()
     u = session.query(User).filter_by(telegram_id=message.from_user.id).first()
     if not promo:
         session.close()
         return await message.answer("❌ Промокод не найден.", reply_markup=kb_account())
 
-    # Примитив: 1 активация списком
     if promo.max_uses is not None and promo.uses >= promo.max_uses:
         session.close()
         return await message.answer("⌛ Промокод исчерпан.", reply_markup=kb_account())
 
-    # Начислим орешки, если тип discount/value — для примера
     if promo.promo_type in ("discount", "value"):
         u.balance += promo.value or 0
 
@@ -390,6 +355,7 @@ async def handle_promocode(message: types.Message):
     await message.answer("✅ Промокод применён!", reply_markup=kb_account())
 
 @dp.message_handler(lambda m: m.text == "👥 Реферальная программа")
+@_require_verified
 async def account_ref(message: types.Message):
     uid = message.from_user.id
     ref_link = f"https://t.me/{(await bot.get_me()).username}?start={uid}"
@@ -400,6 +366,7 @@ async def account_ref(message: types.Message):
     )
 
 @dp.message_handler(lambda m: m.text == "🏆 Топ игроков")
+@_require_verified
 async def account_top(message: types.Message):
     session = SessionLocal()
     top = session.query(User).order_by(User.level.desc()).limit(15).all()
@@ -410,29 +377,29 @@ async def account_top(message: types.Message):
     await message.answer(text, reply_markup=kb_account())
 
 @dp.message_handler(lambda m: m.text == "💰 Донат-меню")
+@_require_verified
 async def menu_shop(message: types.Message):
     user_states[message.from_user.id] = {"screen": "shop"}
     await message.answer("🛒 Магазин:", reply_markup=kb_shop())
 
 @dp.message_handler(lambda m: m.text in ("💸 Купить кеш", "🛡 Купить привилегию", "🎒 Купить предмет"))
+@_require_verified
 async def shop_items(message: types.Message):
-    await message.answer("🧱 Раздел в разработке. Здесь появятся товары с гибкой настройкой.", reply_markup=kb_shop())
+    await message.answer("🧱 Раздел в разработке.", reply_markup=kb_shop())
 
 @dp.message_handler(lambda m: m.text == "🔙 Назад")
 async def go_back(message: types.Message):
-    # Возврат на уровень выше по текущему экрану
     screen = user_states.get(message.from_user.id, {}).get("screen", "main")
     if screen in ("account", "shop"):
         await show_main_menu(message.chat.id)
     elif screen in ("admin", "admin_users", "admin_servers", "admin_promos", "admin_store"):
-        # назад из админских экранов → админ-меню
         user_states[message.from_user.id] = {"screen": "admin"}
         await message.answer("👑 Админ-панель", reply_markup=kb_admin_main())
     else:
         await show_main_menu(message.chat.id)
 
 # -----------------------
-#   Админка
+#   Админка (фрагмент)
 # -----------------------
 @dp.message_handler(lambda m: m.text == "👑 Админ-панель")
 async def enter_admin(message: types.Message):
@@ -483,7 +450,6 @@ async def admin_del_last_server(message: types.Message):
 async def admin_server_links(message: types.Message):
     if not is_admin(message.from_user.id):
         return
-    # Выбор сервера (inline)
     session = SessionLocal()
     servers = session.query(Server).order_by(Server.number.asc()).all()
     session.close()
@@ -497,7 +463,6 @@ async def admin_server_links(message: types.Message):
 @dp.callback_query_handler(lambda c: c.data.startswith("pick_srv:"))
 async def cb_pick_server(call: CallbackQuery):
     srv_id = int(call.data.split(":")[1])
-    # Сохраним выбранный сервер в state
     user_states[call.from_user.id] = {"screen": "admin_srv_edit", "srv_id": srv_id}
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("📎 Добавить ссылку"), KeyboardButton("❌ Удалить ссылку"))
@@ -513,9 +478,8 @@ async def admin_srv_link_action(message: types.Message):
         return
     if message.text == "📎 Добавить ссылку":
         user_states[message.from_user.id]["screen"] = "admin_srv_add_link"
-        await message.answer("Вставь ссылку Roblox (формат из твоего примера):", reply_markup=kb_back())
+        await message.answer("Вставь ссылку Roblox:", reply_markup=kb_back())
     else:
-        # Удалить
         session = SessionLocal()
         srv = session.query(Server).filter_by(id=state["srv_id"]).first()
         if not srv:
@@ -524,7 +488,6 @@ async def admin_srv_link_action(message: types.Message):
         srv.link = None
         session.commit()
         session.close()
-        # Вернёмся в выбор действия
         user_states[message.from_user.id] = {"screen": "admin"}
         await message.answer("🗑 Ссылка удалена.", reply_markup=kb_admin_main())
 
@@ -535,7 +498,6 @@ async def admin_srv_add_link(message: types.Message):
         return await message.answer("👑 Админ-панель", reply_markup=kb_admin_main())
 
     link = message.text.strip()
-    # Сохраняем
     state = user_states.get(message.from_user.id, {})
     srv_id = state.get("srv_id")
     if not srv_id:
@@ -557,7 +519,7 @@ async def admin_srv_add_link(message: types.Message):
     await message.answer("✅ Ссылка добавлена!", reply_markup=kb_admin_main())
 
 # -----------------------
-#   Общий “catch-back”
+#   Фолбэк
 # -----------------------
 @dp.message_handler()
 async def fallback(message: types.Message):
@@ -565,5 +527,4 @@ async def fallback(message: types.Message):
     if text == "🔙 Назад (в админ-меню)":
         user_states[message.from_user.id] = {"screen": "admin"}
         return await message.answer("👑 Админ-панель", reply_markup=kb_admin_main())
-    # По умолчанию — главное меню
     await show_main_menu(message.chat.id)
