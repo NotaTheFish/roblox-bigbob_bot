@@ -3,8 +3,9 @@
 from flask import Flask, request
 from threading import Thread
 from bot.config import TOKEN
-from aiogram import Bot, Dispatcher, types
+from aiogram import types
 from bot.main_core import bot, dp
+import asyncio
 
 WEBHOOK_PATH = f"/webhook/{TOKEN.split(':')[0]}"
 WEBAPP_HOST = "0.0.0.0"
@@ -17,11 +18,11 @@ def index():
     return "✅ Бот работает!"
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
-async def webhook_handler():
+def webhook_handler():
     try:
         data = request.get_json(force=True)
         update = types.Update(**data)
-        await dp.feed_update(bot, update)
+        asyncio.run(dp.feed_update(bot, update))
         return "OK", 200
     except Exception as e:
         print(f"❌ Ошибка при обработке webhook: {e}")
