@@ -2,21 +2,23 @@ import asyncio
 from aiogram import Bot
 from bot.config import TOKEN, DOMAIN
 
-WEBHOOK_URL = f"{DOMAIN}/webhook/{TOKEN.split(':')[0]}"
+WEBHOOK_PATH = f"/webhook/{TOKEN.split(':')[0]}"
+WEBHOOK_URL = f"{DOMAIN}{WEBHOOK_PATH}"
 
+bot = Bot(token=TOKEN)
 
 async def check_webhook():
-    bot = Bot(token=TOKEN)
-    info = await bot.get_webhook_info()
-    print("📡 Текущий вебхук:", info.url or "❌ Не установлен")
+    current_webhook = await bot.get_webhook_info()
+    print(f"📡 Текущий вебхук: {current_webhook.url or '❌ Не установлен'}")
 
-    if info.url != WEBHOOK_URL:
+    if current_webhook.url != WEBHOOK_URL:
         print("🔄 Устанавливаю новый вебхук...")
         await bot.set_webhook(WEBHOOK_URL)
-        print("✅ Вебхук установлен:", WEBHOOK_URL)
+        print(f"✅ Вебхук установлен: {WEBHOOK_URL}")
     else:
-        print("✅ Вебхук уже установлен корректно")
+        print("✅ Вебхук уже корректный.")
 
     await bot.session.close()
 
-asyncio.run(check_webhook())
+if __name__ == "__main__":
+    asyncio.run(check_webhook())
