@@ -21,7 +21,12 @@ def index():
 def webhook_handler():
     try:
         data = request.get_json(force=True)
-        update = types.Update.to_object(data) if hasattr(types.Update, "to_object") else types.Update(**data)
+
+        # Устанавливаем текущие экземпляры бота и диспетчера
+        bot.set_current(bot)
+        dp.set_current(dp)
+
+        update = types.Update(**data)
         asyncio.run(dp.process_update(update))
         return "OK", 200
     except Exception as e:
