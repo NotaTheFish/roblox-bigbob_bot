@@ -89,4 +89,9 @@ def main():
     with SessionLocal() as s:
         admin = s.query(Admin).first()
         if not admin:
-            print("⚠️ Вни
+            print("⚠️ Внимание: нет главного админа в базе данных!")
+
+    web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
+
+if __name__ == "__main__":
+    main()
