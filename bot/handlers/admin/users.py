@@ -16,7 +16,6 @@ def user_card_kb(user_id, is_blocked):
 
     kb.add(InlineKeyboardButton("➕ Выдать валюту", callback_data=f"give_money:{user_id}"))
 
-    # показать нужную кнопку
     if is_blocked:
         kb.add(InlineKeyboardButton("✅ Разблокировать", callback_data=f"unblock_user:{user_id}"))
     else:
@@ -26,7 +25,7 @@ def user_card_kb(user_id, is_blocked):
     return kb
 
 
-# --- /admin_users or button "Пользователи" ---
+# --- /admin_users ---
 
 async def admin_users_list(call: types.CallbackQuery):
     if not is_admin(call.from_user.id):
@@ -48,7 +47,7 @@ async def admin_users_list(call: types.CallbackQuery):
     await call.message.edit_text(text)
 
 
-# --- обработка текста поиска ---
+# --- поиск пользователя ---
 
 async def admin_search_user(message: types.Message):
     if not is_admin(message.from_user.id):
@@ -83,8 +82,7 @@ async def admin_search_user(message: types.Message):
     await message.reply(text, reply_markup=user_card_kb(user.tg_id, user.is_blocked))
 
 
-
-# --- callback заглушки для будущих функций ---
+# --- обработка действий admin/user management ---
 
 from bot.states.admin_states import GiveMoneyState
 
@@ -96,40 +94,42 @@ async def user_management_actions(call: types.CallbackQuery):
     user_id = int(user_id)
 
     if action == "give_money":
-        # сохраняем ID кому выдаём
         await call.message.answer(
-            f"Введите сумму, которую хотите выдать пользователю <code>{user_id}</code>:",
+            f"Введите сумму для пользователя <code>{user_id}</code>:",
             parse_mode="HTML"
         )
         call.bot.data["give_money_target"] = user_id
         return await GiveMoneyState.waiting_for_amount.set()
 
     elif action == "block_user":
-    with SessionLocal() as s:
-        user = s.query(User).filter_by(tg_id=user_id).first()
-        if not user:
-            return await call.answer("Пользователь не найден", show_alert=True)
-        user.is_blocked = True
-        s.commit()
+        with SessionLocal() as s:
+            user = s.query(User).filter_by(tg_id=user_id).first()
+            if not user:
+                return await call.answer("Пользователь не найден", show_alert=True)
+            user.is_blocked = True
+            s.commit()
 
-    await call.answer("🚫 Пользователь заблокирован", show_alert=True)
-    await bot.send_message(user_id, "⛔ Твой доступ к боту заблокирован администратором.")
-    await call.message.edit_text("✅ Пользователь заблокирован")
+        await call.answer("🚫 Пользователь заблокирован", show_alert=True)
+        await bot.send_message(user_id, "⛔ Ваш доступ к боту заблокирован администратором.")
+        return await call.message.edit_text("✅ Пользователь заблокирован")
 
-elif action == "unblock_user":
-    with SessionLocal() as s:
-        user = s.query(User).filter_by(tg_id=user_id).first()
-        if not user:
-            return await call.answer("Пользователь не найден", show_alert=True)
-        user.is_blocked = False
-        s.commit()
+    elif action == "unblock_user":
+        with SessionLocal() as s:
+            user = s.query(User).filter_by(tg_id=user_id).first()
+            if not user:
+                return await call.answer("Пользователь не найден", show_alert=True)
+            user.is_blocked = False
+            s.commit()
 
-    await call.answer("✅ Пользователь разблокирован", show_alert=True)
-    await bot.send_message(user_id, "✅ Твой доступ восстановлен.")
-    await call.message.edit_text("✅ Пользователь разблокирован")
+        await call.answer("✅ Пользователь разблокирован", show_alert=True)
+        await bot.send_message(user_id, "✅ Ваш доступ к боту восстановлен.")
+        return await call.message.edit_text("✅ Пользователь разблокирован")
 
+
+# --- Выдача валюты ---
 
 from aiogram.dispatcher import FSMContext
+from bot.utils.achievement_checker import check_achievements
 
 async def process_money_amount(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
@@ -156,10 +156,7 @@ async def process_money_amount(message: types.Message, state: FSMContext):
 
         user.balance += amount
         s.commit()
-
-from bot.utils.achievement_checker import check_achievements
-check_achievements(user)
-
+        check_achievements(user)
 
     await message.reply(
         f"✅ Выдали <b>{amount}</b> монет пользователю <code>{user_id}</code>",
@@ -183,7 +180,5 @@ def register_admin_users(dp: Dispatcher):
         user_management_actions,
         lambda c: c.data.startswith("give_money") or c.data.startswith("block_user") or c.data.startswith("unblock_user")
     )
-    dp.register_message_handler(
-        process_money_amount,
-        state=GiveMoneyState.waiting_for_amount
-    )
+    dp.register_message_handler(process_money_amount, state=GiveMoneyState.waiting_for_amount)
+
