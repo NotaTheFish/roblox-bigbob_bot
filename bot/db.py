@@ -23,6 +23,9 @@ class User(Base):
     verified = Column(Boolean, default=False)
     code = Column(String, nullable=True)
 
+    is_blocked = Column(Boolean, default=False)
+
+
     # Game stats
     balance = Column(Integer, default=0)
     cash = Column(Integer, default=0)
@@ -68,6 +71,23 @@ class Item(Base):
 
     # Категория товара (если нужно)
     category = Column(String, nullable=True)
+
+# --- Admin system models ---
+
+class Admin(Base):
+    __tablename__ = "admins"
+    
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(Integer, unique=True, index=True)
+    is_root = Column(Boolean, default=False)  # Главный админ
+
+class AdminRequest(Base):
+    __tablename__ = "admin_requests"
+
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(Integer, index=True)
+    username = Column(String)
+    status = Column(String, default="pending")  # pending / approved / denied
 
 
 # ---------------------
