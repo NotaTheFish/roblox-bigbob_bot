@@ -1,6 +1,7 @@
 from aiogram import types, Dispatcher
 from bot.db import SessionLocal, TopUpRequest, User
 from bot.main_core import bot
+from bot.utils.achievement_checker import check_achievements
 
 
 async def approve_topup(call: types.CallbackQuery):
@@ -17,15 +18,15 @@ async def approve_topup(call: types.CallbackQuery):
             s.commit()
             return await call.answer("Пользователь не найден", show_alert=True)
 
-        # начисляем монеты (1:1 конвертация для пока)
+        # ✅ начисляем монеты
         user.balance += req.amount
         req.status = "approved"
         s.commit()
 
-from bot.utils.achievement_checker import check_achievements
-check_achievements(user)
+        # ✅ проверяем достижения здесь
+        check_achievements(user)
 
-
+    # ✅ после выхода из with — отправляем сообщения
     await bot.send_message(req.user_id, f"✅ Ваш баланс пополнен на {req.amount} монет!")
     await call.message.edit_text(f"✅ Заявка #{req_id} выполнена")
     await call.answer()
@@ -41,10 +42,15 @@ async def deny_topup(call: types.CallbackQuery):
             s.commit()
 
     await call.message.edit_text(f"❌ Заявка #{req_id} отклонена")
-    await bot.send_message(req.user_id, f"❌ Ваша заявка #{req_id} отклонена")
+
+    try:
+        await bot.send_message(req.user_id, f"❌ Ваша заявка #{req_id} отклонена")
+    except:
+        pass
+
     await call.answer()
 
 
 def register_admin_payments(dp: Dispatcher):
     dp.register_callback_query_handler(approve_topup, lambda c: c.data.startswith("topup_ok"))
-    dp.register_callback_query_handler(deny_topup, lambda c: c.data.startswith("topup_no"))
+    dp.register_callback_query_handler(deny_topup, lambda c: c.data.starts
