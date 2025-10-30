@@ -157,6 +157,10 @@ async def process_money_amount(message: types.Message, state: FSMContext):
         user.balance += amount
         s.commit()
 
+from bot.utils.achievement_checker import check_achievements
+check_achievements(user)
+
+
     await message.reply(
         f"✅ Выдали <b>{amount}</b> монет пользователю <code>{user_id}</code>",
         parse_mode="HTML"

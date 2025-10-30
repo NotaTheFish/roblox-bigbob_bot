@@ -89,6 +89,38 @@ class AdminRequest(Base):
     username = Column(String)
     status = Column(String, default="pending")  # pending / approved / denied
 
+class ShopItem(Base):
+    __tablename__ = "shop_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String)
+    item_type = Column(String)  # money | privilege | item
+    value = Column(String)  # amount of money OR item id OR privilege name
+    price = Column(Integer)  # game coins
+
+class TopUpRequest(Base):
+    __tablename__ = "topup_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer)
+    amount = Column(Integer)
+    currency = Column(String)  # rub / uah / usd / crypto etc.
+    status = Column(String, default="pending")  # pending / approved / denied
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String)
+    description = Column(String)
+    reward = Column(Integer)  # reward in coins
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tg_id = Column(Integer)
+    achievement_id = Column(Integer)
 
 # ---------------------
 # CREATE TABLES
