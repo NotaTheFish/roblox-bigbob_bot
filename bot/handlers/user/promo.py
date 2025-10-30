@@ -3,6 +3,7 @@ from aiogram.dispatcher.filters import Command
 from bot.db import SessionLocal, PromoCode, User
 from bot.main_core import bot
 from bot.config import ROOT_ADMIN_ID
+from bot.utils.achievement_checker import check_achievements
 
 
 async def activate_promo(message: types.Message):
@@ -19,11 +20,11 @@ async def activate_promo(message: types.Message):
         if not promo:
             return await message.reply("❌ Такой промокод не существует")
 
-        # check limit
+        # Лимит использования
         if promo.used_count >= promo.usage_limit:
             return await message.reply("⚠️ Этот промокод больше недоступен")
 
-        # check expire
+        # Проверка срока действия
         if promo.expire_days is not None:
             from datetime import datetime, timedelta
             created = promo.created_at or datetime.now()
@@ -31,30 +32,30 @@ async def activate_promo(message: types.Message):
             if datetime.now() > expires:
                 return await message.reply("⛔ Срок действия промокода истёк")
 
+        # Получаем юзера
         user = s.query(User).filter_by(tg_id=uid).first()
         if not user:
             return await message.reply("❗ Ошибка: вы не зарегистрированы")
 
-        # reward
+        # ✅ Награда
         if promo.reward_type == "money":
             user.balance += int(promo.reward_value)
             reward_text = f"💰 +{promo.reward_value}"
-        else:  # roblox item
-
-from bot.utils.achievement_checker import check_achievements
-check_achievements(user)
-
+        else:
+            # Roblox item (пока только уведомление)
             reward_text = f"🎁 Roblox item ID {promo.reward_value}"
-            # todo: later — real delivery via Roblox API
+            # TODO: Roblox delivery later
 
+        # Обновляем счётчик
         promo.used_count += 1
         s.commit()
 
-    await message.reply(
-        f"✅ Промокод активирован!\nВы получили: {reward_text}"
-    )
+        # ✅ Проверяем достижения
+        check_achievements(user)
 
-    # notify admin
+    await message.reply(f"✅ Промокод активирован!\nВы получили: {reward_text}")
+
+    # ✅ Уведомляем главного админа
     try:
         await bot.send_message(
             ROOT_ADMIN_ID,
@@ -64,3 +65,7 @@ check_achievements(user)
         )
     except:
         pass
+
+
+def register_promo(dp: Dispatcher):
+    dp.register_message_handler(activate_promo, Command("promo"))
