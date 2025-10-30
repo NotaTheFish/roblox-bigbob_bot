@@ -18,7 +18,7 @@ def _parse_int_list(value: str | None) -> List[int]:
         except ValueError:
             raise ValueError(
                 f"Cannot parse integer value from ADMINS/ADMIN_ROOT_IDS entry: {item!r}"
-            ) from None
+            )
     return result
 
 
@@ -29,19 +29,34 @@ def get_env(name: str, default: str | None = None, *, required: bool = False) ->
     return value or ""
 
 
+# ✅ Основной токен Telegram бота
 TOKEN = get_env("TELEGRAM_TOKEN", required=True)
-ADMINS = _parse_int_list(os.getenv("ADMINS"))
+
+# ✅ Главный админ
+ROOT_ADMIN_ID = int(get_env("ROOT_ADMIN_ID", "0"))
+
+# ✅ База данных
 DATABASE_URL = get_env("DATABASE_URL", "sqlite:///data/db.sqlite3")
-SECRET_KEY = get_env("SECRET_KEY", required=True)
-DOMAIN = get_env("DOMAIN", required=True)
+
+# ✅ Webhook настройки — безопасные
+DOMAIN = get_env("DOMAIN", "")  # пример: https://mybot.onrender.com
 WEBHOOK_PATH = get_env("WEBHOOK_PATH", "/webhook")
 if not WEBHOOK_PATH.startswith("/"):
     WEBHOOK_PATH = f"/{WEBHOOK_PATH}"
 
-webhook_token_suffix = TOKEN.split(":")[0] if TOKEN else ""
+webhook_token_suffix = TOKEN.split(":")[0]
 WEBHOOK_URL = get_env(
     "WEBHOOK_URL",
     f"{DOMAIN}{WEBHOOK_PATH}/{webhook_token_suffix}" if DOMAIN else "",
 )
+
+# ✅ Порты для Render / Docker
+WEBAPP_HOST = "0.0.0.0"
+WEBAPP_PORT = int(os.getenv("PORT", "10000"))
+
+# ✅ Секрет для админ-логина
+ADMIN_LOGIN_PASSWORD = get_env("ADMIN_LOGIN_PASSWORD", required=True)
+
+# ✅ Младшие админы (список)
+ADMINS = _parse_int_list(os.getenv("ADMINS"))
 ADMIN_ROOT_IDS = _parse_int_list(os.getenv("ADMIN_ROOT_IDS"))
-ADMIN_LOGIN_PASSWORD = get_env("ADMIN_LOGIN_PASSWORD")
