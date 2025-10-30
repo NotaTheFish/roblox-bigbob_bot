@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: roblox-bot
+    runtime: docker
+    plan: free
+    autoDeploy: true
+
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: DOMAIN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMINS
+        sync: false
+      - key: ADMIN_ROOT_IDS
+        sync: false
+      - key: ADMIN_LOGIN_PASSWORD
+        sync: false
+      - key: WEBHOOK_PATH
+        value: /webhook
+
+    postDeployCommand: "python3 auto_set_webhook.py"
