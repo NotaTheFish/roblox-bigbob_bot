@@ -1,4 +1,4 @@
-from bot.db import SessionLocal, UserAchievement, Achievement
+from bot.db import SessionLocal, User, UserAchievement, Achievement
 
 def check_achievements(user):
     with SessionLocal() as s:
@@ -21,5 +21,7 @@ def check_achievements(user):
 
 def give(s, user, ach):
     s.add(UserAchievement(tg_id=user.tg_id, achievement_id=ach.id))
-    user.balance += ach.reward
+    db_user = s.query(User).filter_by(tg_id=user.tg_id).first()
+    if db_user:
+        db_user.balance += ach.reward
     s.commit()

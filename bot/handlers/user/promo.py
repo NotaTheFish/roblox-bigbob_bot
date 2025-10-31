@@ -31,7 +31,7 @@ async def activate_promo(message: types.Message):
             return await message.reply("⛔ Срок действия промокода истёк")
 
         # Получаем юзера
-        user = s.query(User).filter_by(telegram_id=uid).first()
+        user = s.query(User).filter_by(tg_id=uid).first()
         if not user:
             return await message.reply("❗ Ошибка: вы не зарегистрированы")
 

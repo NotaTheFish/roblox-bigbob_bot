@@ -1,5 +1,7 @@
 from aiogram import types, Dispatcher
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from sqlalchemy import or_
+
 from bot.db import SessionLocal, User, Admin
 from bot.bot_instance import bot
 
@@ -39,7 +41,7 @@ async def admin_users_list(call: types.CallbackQuery):
 
     text = "👥 <b>ТОП 50 пользователей</b> по балансу:\n\n"
     for u in users:
-        name = u.tg_username or u.username or f"ID {u.tg_id}"
+        name = f"@{u.tg_username}" if u.tg_username else (u.username or f"ID {u.tg_id}")
         text += f"• <code>{name}</code> — 💰 {u.balance}\n"
 
     text += "\n🔎 Отправьте Telegram ID, @username или Roblox ник для поиска"
@@ -55,28 +57,36 @@ async def admin_search_user(message: types.Message):
 
     query = message.text.strip().lstrip("@")
 
+    if not query:
+        return await message.reply("Введите запрос для поиска")
+
+    filters = []
+    if query.isdigit():
+        filters.append(User.tg_id == int(query))
+
+    like_pattern = f"%{query}%"
+    filters.append(User.tg_username.ilike(like_pattern))
+    filters.append(User.username.ilike(like_pattern))
+
     with SessionLocal() as s:
-        user = (
-            s.query(User)
-            .filter(
-                (User.tg_id == query) |
-                (User.tg_username == query) |
-                (User.username == query)
-            )
-            .first()
-        )
+        user = s.query(User).filter(or_(*filters)).first()
 
     if not user:
         return await message.reply("❌ Пользователь не найден")
 
+    tg_username = f"@{user.tg_username}" if user.tg_username else "—"
+    roblox_username = user.username or "—"
+    roblox_id = user.roblox_id or "—"
+    created_at = user.created_at.strftime("%d.%m.%Y %H:%M") if user.created_at else "—"
+
     text = (
         f"<b>👤 Пользователь найден</b>\n"
-        f"TG: @{user.tg_username}\n"
+        f"TG: {tg_username}\n"
         f"TG ID: <code>{user.tg_id}</code>\n"
-        f"Roblox: <code>{user.username}</code>\n"
-        f"Roblox ID: <code>{user.roblox_id}</code>\n"
+        f"Roblox: <code>{roblox_username}</code>\n"
+        f"Roblox ID: <code>{roblox_id}</code>\n"
         f"Баланс: 💰 {user.balance}\n"
-        f"Дата регистрации: {user.created_at}\n"
+        f"Дата регистрации: {created_at}\n"
     )
 
     await message.reply(text, reply_markup=user_card_kb(user.tg_id, user.is_blocked))

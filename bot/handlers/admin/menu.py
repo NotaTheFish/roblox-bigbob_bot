@@ -1,5 +1,5 @@
 from aiogram import types, Dispatcher
-from bot.bot_instance import bot
+
 from bot.db import SessionLocal, Admin
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 
@@ -23,23 +23,23 @@ async def admin_menu_callbacks(call: types.CallbackQuery):
     if not is_admin(call.from_user.id):
         return await call.answer("⛔ Нет доступа", show_alert=True)
 
-    mapping = {
-        "admin_users": "📍 Раздел: Пользователи",
-        "admin_promos": "📍 Раздел: Промокоды",
-        "admin_shop": "📍 Раздел: Магазин",
-        "admin_payments": "📍 Раздел: Пополнение",
-        "admin_logs": "📍 Раздел: Логи",
-        "back_to_menu": "↩ Главное меню",
-    }
+    if call.data == "back_to_menu":
+        await call.message.edit_text(
+            "👑 <b>Админ-панель</b>\nВыберите раздел:",
+            reply_markup=admin_main_menu_kb(),
+        )
+    elif call.data == "admin_logs":
+        await call.message.edit_text(
+            "📜 Раздел логов появится позже.",
+            reply_markup=admin_main_menu_kb(),
+        )
 
-    label = mapping.get(call.data, "Раздел недоступен")
-
-    await call.message.edit_text(label, reply_markup=admin_main_menu_kb())
     await call.answer()
 
 # Регистрация
 def register_admin_menu(dp: Dispatcher):
     dp.register_message_handler(admin_panel, commands=["admin"])
-    dp.register_callback_query_handler(admin_menu_callbacks,
-        lambda c: c.data.startswith("admin_") or c.data == "back_to_menu"
+    dp.register_callback_query_handler(
+        admin_menu_callbacks,
+        lambda c: c.data in {"admin_logs", "back_to_menu"},
     )

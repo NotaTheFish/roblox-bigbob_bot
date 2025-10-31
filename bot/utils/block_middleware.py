@@ -1,5 +1,7 @@
+from aiogram.dispatcher.handler import CancelHandler
 from aiogram.dispatcher.middlewares import BaseMiddleware
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message
+
 from bot.db import SessionLocal, User
 
 
@@ -12,7 +14,7 @@ class BlockMiddleware(BaseMiddleware):
                     await message.answer("⛔ Вы заблокированы и не можете пользоваться ботом.")
                 except:
                     pass
-                raise StopIteration  # отмена обработки
+                raise CancelHandler()
 
     async def on_pre_process_callback_query(self, call: CallbackQuery, data: dict):
         with SessionLocal() as s:
@@ -22,4 +24,4 @@ class BlockMiddleware(BaseMiddleware):
                     await call.answer("⛔ Вы заблокированы", show_alert=True)
                 except:
                     pass
-                raise StopIteration  # отмена обработки
+                raise CancelHandler()

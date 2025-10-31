@@ -2,9 +2,9 @@ from aiogram import types, Dispatcher
 from aiogram.dispatcher.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from bot.db import SessionLocal, Admin, AdminRequest
+from bot.bot_instance import bot
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
-from bot.main_core import bot
+from bot.db import SessionLocal, Admin, AdminRequest
 
 # ---------------- BAL: проверка админа ----------------
 def is_admin(uid: int) -> bool:
@@ -27,6 +27,10 @@ async def admin_login(message: types.Message):
         return await message.reply("✅ Вы уже админ")
 
     with SessionLocal() as s:
+        pending = s.query(AdminRequest).filter_by(telegram_id=uid, status="pending").first()
+        if pending:
+            return await message.reply("⌛ Ваша заявка уже ожидает рассмотрения")
+
         s.add(AdminRequest(
             telegram_id=uid,
             username=message.from_user.username or "unknown"

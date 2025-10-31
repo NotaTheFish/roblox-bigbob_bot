@@ -19,7 +19,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-        tg_id = Column("telegram_id", Integer, unique=True, index=True)
+    tg_id = Column("telegram_id", Integer, unique=True, index=True)
     tg_username = Column(String, nullable=True)
     username = Column(String, nullable=True)
     roblox_id = Column(String, nullable=True)

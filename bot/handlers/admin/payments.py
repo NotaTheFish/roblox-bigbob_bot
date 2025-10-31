@@ -1,10 +1,19 @@
 from aiogram import types, Dispatcher
-from bot.db import SessionLocal, TopUpRequest, User
+
 from bot.bot_instance import bot
+from bot.db import SessionLocal, TopUpRequest, User, Admin
 from bot.utils.achievement_checker import check_achievements
 
 
+def is_admin(uid: int) -> bool:
+    with SessionLocal() as s:
+        return bool(s.query(Admin).filter_by(telegram_id=uid).first())
+
+
 async def approve_topup(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
     req_id = int(call.data.split(":")[1])
 
     with SessionLocal() as s:
@@ -37,6 +46,9 @@ async def approve_topup(call: types.CallbackQuery):
 
 
 async def deny_topup(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
     req_id = int(call.data.split(":")[1])
 
     with SessionLocal() as s:

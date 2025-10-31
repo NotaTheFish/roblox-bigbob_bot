@@ -5,6 +5,7 @@ from threading import Thread
 from bot.config import TOKEN
 from aiogram import types
 from bot.bot_instance import bot, dp
+from bot.main_core import setup_handlers
 import asyncio
 
 WEBHOOK_PATH = f"/webhook/{TOKEN.split(':')[0]}"
@@ -12,6 +13,8 @@ WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = 8080
 
 app = Flask(__name__)
+
+setup_handlers()
 
 @app.route('/')
 def index():
