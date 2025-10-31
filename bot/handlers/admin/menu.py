@@ -1,7 +1,7 @@
 from aiogram import types, Dispatcher
-from bot.keyboards.admin_keyboards import admin_main_menu_kb
+from bot.bot_instance import bot
 from bot.db import SessionLocal, Admin
-from bot.main_core import bot
+from bot.keyboards.admin_keyboards import admin_main_menu_kb
 
 # Проверка администратора
 def is_admin(uid: int) -> bool:

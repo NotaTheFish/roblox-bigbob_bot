@@ -1,8 +1,10 @@
 from aiogram import types, Dispatcher
 from aiogram.dispatcher.filters import Command
-from bot.db import SessionLocal, PromoCode, User
-from bot.main_core import bot
+from datetime import datetime
+
+from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
+from bot.db import SessionLocal, PromoCode, User
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -17,37 +19,33 @@ async def activate_promo(message: types.Message):
     with SessionLocal() as s:
         promo = s.query(PromoCode).filter_by(code=code).first()
 
-        if not promo:
+        if not promo or not promo.active:
             return await message.reply("❌ Такой промокод не существует")
 
         # Лимит использования
-        if promo.used_count >= promo.usage_limit:
+        if promo.max_uses is not None and promo.uses >= promo.max_uses:
             return await message.reply("⚠️ Этот промокод больше недоступен")
 
         # Проверка срока действия
-        if promo.expire_days is not None:
-            from datetime import datetime, timedelta
-            created = promo.created_at or datetime.now()
-            expires = created + timedelta(days=promo.expire_days)
-            if datetime.now() > expires:
-                return await message.reply("⛔ Срок действия промокода истёк")
+        if promo.expires_at and datetime.utcnow() > promo.expires_at:
+            return await message.reply("⛔ Срок действия промокода истёк")
 
         # Получаем юзера
-        user = s.query(User).filter_by(tg_id=uid).first()
+        user = s.query(User).filter_by(telegram_id=uid).first()
         if not user:
             return await message.reply("❗ Ошибка: вы не зарегистрированы")
 
         # ✅ Награда
-        if promo.reward_type == "money":
-            user.balance += int(promo.reward_value)
-            reward_text = f"💰 +{promo.reward_value}"
+        if promo.promo_type == "money":
+            user.balance += int(promo.value)
+            reward_text = f"💰 +{promo.value}"
         else:
             # Roblox item (пока только уведомление)
-            reward_text = f"🎁 Roblox item ID {promo.reward_value}"
+            reward_text = f"🎁 Roblox item ID {promo.value}"
             # TODO: Roblox delivery later
 
         # Обновляем счётчик
-        promo.used_count += 1
+        promo.uses += 1
         s.commit()
 
         # ✅ Проверяем достижения

@@ -21,7 +21,7 @@ async def set_username(message: types.Message, state: FSMContext):
     
     with SessionLocal() as s:
         user = s.query(User).filter_by(tg_id=message.from_user.id).first()
-        user.roblox_user = username
+        user.username = username
         user.code = str(code)
         s.commit()
 
@@ -42,7 +42,7 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
 
     with SessionLocal() as s:
         user = s.query(User).filter_by(tg_id=call.from_user.id).first()
-        username = user.roblox_user
+        username = user.username
         code = user.code
 
     sleep(2)  # имитация загрузки

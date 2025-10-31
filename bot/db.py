@@ -1,5 +1,6 @@
 # bot/db.py
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
+from datetime import datetime
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from bot.config import DATABASE_URL
@@ -18,8 +19,11 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    telegram_id = Column(Integer, unique=True, index=True)
-    roblox_user = Column(String, nullable=True)
+        tg_id = Column("telegram_id", Integer, unique=True, index=True)
+    tg_username = Column(String, nullable=True)
+    username = Column(String, nullable=True)
+    roblox_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     verified = Column(Boolean, default=False)
     code = Column(String, nullable=True)
 
@@ -33,6 +37,14 @@ class User(Base):
     level = Column(Integer, default=1)
     play_time = Column(Integer, default=0)
     referrals = Column(Integer, default=0)
+
+    @property
+    def roblox_user(self):
+        return self.username
+
+    @roblox_user.setter
+    def roblox_user(self, value):
+        self.username = value
 
 
 class Server(Base):
@@ -127,3 +139,26 @@ class UserAchievement(Base):
 # ---------------------
 
 Base.metadata.create_all(engine)
+
+
+def run_schema_migrations():
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+
+        if "tg_username" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN tg_username TEXT"))
+
+        if "username" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN username TEXT"))
+            if "roblox_user" in columns:
+                conn.execute(text("UPDATE users SET username = roblox_user WHERE username IS NULL"))
+
+        if "roblox_id" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN roblox_id TEXT"))
+
+        if "created_at" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+            conn.execute(text("UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+
+run_schema_migrations()

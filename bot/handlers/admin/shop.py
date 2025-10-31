@@ -2,10 +2,10 @@ from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from bot.states.shop_states import ShopCreateState
+from bot.bot_instance import bot
 from bot.db import SessionLocal, ShopItem, Admin
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
-from bot.main_core import bot
+from bot.states.shop_states import ShopCreateState
 
 
 def is_admin(uid):

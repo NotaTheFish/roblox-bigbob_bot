@@ -1,7 +1,7 @@
 from aiogram import types, Dispatcher
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.db import SessionLocal, User, Admin
-from bot.main_core import bot
+from bot.bot_instance import bot
 
 # Проверка админа
 def is_admin(uid: int) -> bool:

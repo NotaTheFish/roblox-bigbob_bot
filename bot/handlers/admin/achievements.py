@@ -3,8 +3,7 @@ from aiogram.dispatcher import FSMContext
 from bot.states.admin_states import AchievementsState
 from bot.db import SessionLocal, Achievement, UserAchievement, Admin
 from bot.keyboards.admin_keyboards import admin_achievements_kb
-from bot.main_core import bot
-
+from bot.bot_instance import bot
 
 def is_admin(uid):
     with SessionLocal() as s:

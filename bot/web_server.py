@@ -4,7 +4,7 @@ from flask import Flask, request
 from threading import Thread
 from bot.config import TOKEN
 from aiogram import types
-from bot.main_core import bot, dp
+from bot.bot_instance import bot, dp
 import asyncio
 
 WEBHOOK_PATH = f"/webhook/{TOKEN.split(':')[0]}"

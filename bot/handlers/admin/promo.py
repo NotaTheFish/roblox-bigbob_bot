@@ -1,11 +1,13 @@
+from datetime import datetime, timedelta
+
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from bot.states.promo_states import PromoCreateState
-from bot.keyboards.admin_keyboards import admin_main_menu_kb, promo_reward_type_kb
+from bot.bot_instance import bot
 from bot.db import SessionLocal, PromoCode, Admin
-from bot.main_core import bot
+from bot.keyboards.admin_keyboards import admin_main_menu_kb, promo_reward_type_kb
+from bot.states.promo_states import PromoCreateState
 
 
 def is_admin(uid: int) -> bool:
@@ -43,10 +45,10 @@ async def promo_set_code(message: types.Message, state: FSMContext):
 
 
 async def promo_set_reward_type(call: types.CallbackQuery, state: FSMContext):
-    reward_type = "money" if "money" in call.data else "item"
-    await state.update_data(reward_type=reward_type)
+    promo_type = "money" if "money" in call.data else "item"
+    await state.update_data(promo_type=promo_type)
 
-    if reward_type == "money":
+    if promo_type == "money":
         await call.message.answer("💰 Введите сумму валюты для награды:")
     else:
         await call.message.answer("🎁 Введите ID Roblox-предмета:")
@@ -55,7 +57,12 @@ async def promo_set_reward_type(call: types.CallbackQuery, state: FSMContext):
 
 
 async def promo_set_reward_value(message: types.Message, state: FSMContext):
-    await state.update_data(reward_value=message.text)
+    try:
+        value = int(message.text)
+    except ValueError:
+        return await message.answer("Введите числовое значение")
+
+    await state.update_data(value=value)
     await message.answer("📊 Введите лимит использований (число):")
     await PromoCreateState.waiting_for_usage_limit.set()
 
@@ -66,7 +73,7 @@ async def promo_set_limit(message: types.Message, state: FSMContext):
     except:
         return await message.answer("Введите ЧИСЛО")
 
-    await state.update_data(limit=limit)
+    await state.update_data(max_uses=None if limit <= 0 else limit)
     await message.answer("⏳ На сколько дней действует промокод?")
     await PromoCreateState.waiting_for_expire_days.set()
 
@@ -79,14 +86,16 @@ async def promo_finish(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
 
+    expires_at = datetime.utcnow() + timedelta(days=days) if days > 0 else None
+
     with SessionLocal() as s:
         promo = PromoCode(
             code=data["code"],
-            reward_type=data["reward_type"],
-            reward_value=data["reward_value"],
-            usage_limit=data["limit"],
-            used_count=0,
-            expire_days=days
+            promo_type=data["promo_type"],
+            value=data["value"],
+            max_uses=data["max_uses"],
+            uses=0,
+            expires_at=expires_at
         )
         s.add(promo)
         s.commit()
@@ -108,7 +117,8 @@ async def promo_list(call: types.CallbackQuery):
     kb = InlineKeyboardMarkup()
 
     for p in promos:
-        text += f"• <code>{p.code}</code> — {p.reward_type} ({p.used_count}/{p.usage_limit})\n"
+         usage_info = f"{p.uses}/{p.max_uses}" if p.max_uses is not None else f"{p.uses}/∞"
+        text += f"• <code>{p.code}</code> — {p.promo_type} ({usage_info})\n"
         kb.add(InlineKeyboardButton(f"❌ {p.code}", callback_data=f"promo_del:{p.id}"))
 
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_promos"))
@@ -130,7 +140,7 @@ async def promo_delete(call: types.CallbackQuery):
     await promo_list(call)
 
 
-def register_admin_promos(dp: Dispatcher):
+def register_admin_promo(dp: Dispatcher):
     dp.register_callback_query_handler(admin_promos_menu, lambda c: c.data == "admin_promos")
     dp.register_callback_query_handler(promo_create_start, lambda c: c.data == "promo_create")
     dp.register_message_handler(promo_set_code, state=PromoCreateState.waiting_for_code)

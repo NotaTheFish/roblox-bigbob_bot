@@ -1,18 +1,12 @@
 import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.types import ParseMode
+from aiogram import types
 from aiohttp import web
 
-from bot.config import TOKEN, WEBHOOK_URL, WEBHOOK_PATH, WEBAPP_HOST, WEBAPP_PORT, ROOT_ADMIN_ID
-from bot.db import SessionLocal, Admin
+from bot.bot_instance import bot, dp
+from bot.config import WEBHOOK_URL, WEBHOOK_PATH, WEBAPP_HOST, WEBAPP_PORT, ROOT_ADMIN_IDfrom bot.db import SessionLocal, Admin
 
 # --- Логирование ---
 logging.basicConfig(level=logging.INFO)
-
-# --- Бот и диспетчер ---
-bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher(bot, storage=MemoryStorage())
 
 # ==========================================================
 #  ✅ Подключаем handlers
@@ -38,13 +32,13 @@ from bot.handlers.admin.users import register_admin_users
 from bot.handlers.admin.promo import register_admin_promo
 from bot.handlers.admin.shop import register_admin_shop
 from bot.handlers.admin.payments import register_admin_payments
-from bot.handlers.admin.main_admin import register_admin_panel
+from bot.handlers.admin.menu import register_admin_menu
 
 register_admin_users(dp)
 register_admin_promo(dp)
 register_admin_shop(dp)
 register_admin_payments(dp)
-register_admin_panel(dp)
+register_admin_menu(dp)
 
 # ==========================================================
 #  ✅ Webhook system
@@ -66,7 +60,7 @@ async def on_startup(app):
     with SessionLocal() as s:
         root = s.query(Admin).filter_by(telegram_id=ROOT_ADMIN_ID).first()
         if not root:
-            s.add(Admin(telegram_id=ROOT_ADMIN_ID, role="root"))
+            s.add(Admin(telegram_id=ROOT_ADMIN_ID, is_root=True))
             s.commit()
             logging.info("✅ Root admin создан в базе")
 

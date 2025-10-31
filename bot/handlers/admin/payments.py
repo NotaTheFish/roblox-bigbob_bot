@@ -1,6 +1,6 @@
 from aiogram import types, Dispatcher
 from bot.db import SessionLocal, TopUpRequest, User
-from bot.main_core import bot
+from bot.bot_instance import bot
 from bot.utils.achievement_checker import check_achievements
 
 

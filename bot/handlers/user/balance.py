@@ -1,10 +1,10 @@
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
-from bot.states.user_states import TopUpState
-from bot.keyboards.user_keyboards import payment_methods_kb
-from bot.db import SessionLocal, TopUpRequest, User
+from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
-from bot.main_core import bot
+from bot.db import SessionLocal, TopUpRequest, User
+from bot.keyboards.user_keyboards import payment_methods_kb
+from bot.states.user_states import TopUpState
 
 
 async def topup_start(message: types.Message):
@@ -58,3 +58,16 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
     )
 
     await state.finish()
+
+
+def register_user_balance(dp: Dispatcher):
+    dp.register_message_handler(topup_start, commands=["topup", "balance"])
+    dp.register_callback_query_handler(
+        topup_pick_method,
+        lambda c: c.data.startswith("pay_"),
+        state=TopUpState.waiting_for_method,
+    )
+    dp.register_message_handler(
+        topup_enter_amount,
+        state=TopUpState.waiting_for_amount,
+    )

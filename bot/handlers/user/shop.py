@@ -1,7 +1,7 @@
 from aiogram import types, Dispatcher
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from bot.bot_instance import bot
 from bot.db import SessionLocal, User, ShopItem
-from bot.main_core import bot
 from bot.config import ROOT_ADMIN_ID
 from bot.utils.achievement_checker import check_achievements
 
@@ -106,8 +106,7 @@ async def user_buy_finish(call: types.CallbackQuery):
     await call.answer()
 
 
-def register_admin_shop(dp: Dispatcher):
-    dp.register_message_handler(user_shop, commands=["shop"])
+def register_user_shop(dp: Dispatcher):    dp.register_message_handler(user_shop, commands=["shop"])
     dp.register_callback_query_handler(user_buy_confirm, lambda c: c.data.startswith("user_buy:"))
     dp.register_callback_query_handler(user_buy_finish, lambda c: c.data.startswith("user_buy_ok:"))
     dp.register_callback_query_handler(cancel_buy, lambda c: c.data == "cancel_buy")
