@@ -1,3 +1,14 @@
+import os
+from typing import List
+
+
+def _parse_int_list(value: str | None) -> List[int]:
+    if not value:
+        return []
+
+    result = []
+    for item in value.split(","):
+        item = item.strip()
         if not item:
             continue
         try:
@@ -28,8 +39,8 @@ DATABASE_URL = get_env(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
 )
 
-# ✅ Webhook настройки — безопасные
-DOMAIN = get_env("DOMAIN", "")  # пример: https://mybot.onrender.com
+# ✅ Webhook настройки
+DOMAIN = get_env("DOMAIN", "")
 WEBHOOK_PATH = get_env("WEBHOOK_PATH", "/webhook")
 if not WEBHOOK_PATH.startswith("/"):
     WEBHOOK_PATH = f"/{WEBHOOK_PATH}"
@@ -40,13 +51,13 @@ WEBHOOK_URL = get_env(
     f"{DOMAIN}{WEBHOOK_PATH}/{webhook_token_suffix}" if DOMAIN else "",
 )
 
-# ✅ Порты для Render / Docker
+# ✅ Хост/порт (Render)
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.getenv("PORT", "10000"))
 
-# ✅ Секрет для админ-логина
+# ✅ Секрет для админ-панели
 ADMIN_LOGIN_PASSWORD = get_env("ADMIN_LOGIN_PASSWORD", required=True)
 
-# ✅ Младшие админы (список)
+# ✅ Админы
 ADMINS = _parse_int_list(os.getenv("ADMINS"))
 ADMIN_ROOT_IDS = _parse_int_list(os.getenv("ADMIN_ROOT_IDS"))
