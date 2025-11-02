@@ -9,11 +9,11 @@ ENV PYTHONUNBUFFERED=1 \
 # ---- Working Directory ----
 WORKDIR /app
 
-# ---- System deps (SQLite + build tools) ----
+# ---- System deps (PostgreSQL client + build tools) ----
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
-        libsqlite3-dev \
+        libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Install Python dependencies ----
@@ -22,9 +22,6 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # ---- Copy project ----
 COPY . .
-
-# ---- Create writable dir for SQLite ----
-RUN mkdir -p /tmp && chmod -R 777 /tmp
 
 # ---- Expose port for Render ----
 EXPOSE 10000
