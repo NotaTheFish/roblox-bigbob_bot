@@ -1,0 +1,139 @@
+diff --git a/bot/handlers/admin/achievements.py b/bot/handlers/admin/achievements.py
+index f01ef32206b9d256f210ecb1d40a78431f4c6ba0..20bf46ee5958f4dc4d109a6b33daf022c137add9 100644
+--- a/bot/handlers/admin/achievements.py
++++ b/bot/handlers/admin/achievements.py
+@@ -1,111 +1,119 @@
++from __future__ import annotations
++
+ from aiogram import types, Dispatcher
+ from aiogram.dispatcher import FSMContext
++from sqlalchemy import select
+ 
+-from bot.db import SessionLocal, Admin, Achievement
++from bot.db import Achievement, Admin, async_session
+ from bot.keyboards.admin_keyboards import admin_achievements_kb
+ from bot.states.admin_states import AchievementsState
+ 
+ 
+-def is_admin(uid: int) -> bool:
+-    with SessionLocal() as s:
+-        return bool(s.query(Admin).filter_by(telegram_id=uid).first())
++async def is_admin(uid: int) -> bool:
++    async with async_session() as session:
++        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
+ 
+ 
+ async def admin_achievements_menu(call: types.CallbackQuery):
+-    if not is_admin(call.from_user.id):
++    if not call.from_user:
++        return await call.answer("Нет доступа", show_alert=True)
++
++    if not await is_admin(call.from_user.id):
+         return await call.answer("Нет доступа", show_alert=True)
+ 
+     await call.message.edit_text(
+         "🏆 Достижения",
+         reply_markup=admin_achievements_kb(),
+     )
+ 
+ 
+ async def ach_add(call: types.CallbackQuery):
+     await call.message.answer("Введите название достижения:")
+     await AchievementsState.waiting_for_name.set()
+ 
+ 
+ async def ach_set_name(message: types.Message, state: FSMContext):
+     await state.update_data(name=message.text)
+     await message.answer("Введите описание:")
+     await AchievementsState.waiting_for_description.set()
+ 
+ 
+ async def ach_set_description(message: types.Message, state: FSMContext):
+     await state.update_data(description=message.text)
+     await message.answer("Введите награду (монеты):")
+     await AchievementsState.waiting_for_reward.set()
+ 
+ 
+ async def ach_finish(message: types.Message, state: FSMContext):
+     try:
+         reward = int(message.text)
+     except ValueError:
+         return await message.answer("Введите число")
+ 
+     data = await state.get_data()
+ 
+-    with SessionLocal() as s:
+-        ach = Achievement(
++    async with async_session() as session:
++        achievement = Achievement(
+             name=data["name"],
+             description=data["description"],
+             reward=reward,
+         )
+-        s.add(ach)
+-        s.commit()
++        session.add(achievement)
++        await session.commit()
+ 
+     await message.answer("✅ Достижение создано!")
+     await state.finish()
+ 
+ 
+ async def ach_list(call: types.CallbackQuery):
+-    if not is_admin(call.from_user.id):
++    if not call.from_user:
++        return await call.answer("Нет доступа", show_alert=True)
++
++    if not await is_admin(call.from_user.id):
+         return await call.answer("Нет доступа", show_alert=True)
+ 
+-    with SessionLocal() as s:
+-        items = s.query(Achievement).all()
++    async with async_session() as session:
++        items = (await session.scalars(select(Achievement))).all()
+ 
+     if not items:
+         return await call.message.edit_text(
+             "Нет достижений",
+             reply_markup=admin_achievements_kb(),
+         )
+ 
+     text = "🏆 <b>Список достижений:</b>\n\n"
+-    for a in items:
+-        text += f"• {a.name} — {a.reward}💰\n"
++    for achievement in items:
++        text += f"• {achievement.name} — {achievement.reward}💰\n"
+ 
+     await call.message.edit_text(
+         text,
+         reply_markup=admin_achievements_kb(),
+         parse_mode="HTML",
+     )
+ 
+ 
+ def register_admin_achievements(dp: Dispatcher):
+     dp.register_callback_query_handler(
+         admin_achievements_menu,
+         lambda c: c.data == "admin_achievements",
+     )
+     dp.register_callback_query_handler(
+         ach_add,
+         lambda c: c.data == "ach_add",
+     )
+     dp.register_message_handler(
+         ach_set_name,
+         state=AchievementsState.waiting_for_name,
+     )
+     dp.register_message_handler(
+         ach_set_description,
+         state=AchievementsState.waiting_for_description,
+     )
+     dp.register_message_handler(
+         ach_finish,
+         state=AchievementsState.waiting_for_reward,
+     )
+     dp.register_callback_query_handler(
+         ach_list,
+         lambda c: c.data == "ach_list",
+     )
+- 

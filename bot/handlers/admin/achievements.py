@@ -1,18 +1,24 @@
+from __future__ import annotations
+
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
+from sqlalchemy import select
 
-from bot.db import SessionLocal, Admin, Achievement
+from bot.db import async_session, Admin, Achievement
 from bot.keyboards.admin_keyboards import admin_achievements_kb
 from bot.states.admin_states import AchievementsState
 
 
-def is_admin(uid: int) -> bool:
-    with SessionLocal() as s:
-        return bool(s.query(Admin).filter_by(telegram_id=uid).first())
+async def is_admin(uid: int) -> bool:
+    async with async_session() as session:
+        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 async def admin_achievements_menu(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
     await call.message.edit_text(
@@ -46,25 +52,28 @@ async def ach_finish(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
 
-    with SessionLocal() as s:
-        ach = Achievement(
+    async with async_session() as session:
+        achievement = Achievement(
             name=data["name"],
             description=data["description"],
             reward=reward,
         )
-        s.add(ach)
-        s.commit()
+        session.add(achievement)
+        await session.commit()
 
     await message.answer("✅ Достижение создано!")
     await state.finish()
 
 
 async def ach_list(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
 
-    with SessionLocal() as s:
-        items = s.query(Achievement).all()
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    async with async_session() as session:
+        items = (await session.scalars(select(Achievement))).all()
 
     if not items:
         return await call.message.edit_text(
@@ -73,8 +82,8 @@ async def ach_list(call: types.CallbackQuery):
         )
 
     text = "🏆 <b>Список достижений:</b>\n\n"
-    for a in items:
-        text += f"• {a.name} — {a.reward}💰\n"
+    for achievement in items:
+        text += f"• {achievement.name} — {achievement.reward}💰\n"
 
     await call.message.edit_text(
         text,
@@ -108,4 +117,3 @@ def register_admin_achievements(dp: Dispatcher):
         ach_list,
         lambda c: c.data == "ach_list",
     )
- 

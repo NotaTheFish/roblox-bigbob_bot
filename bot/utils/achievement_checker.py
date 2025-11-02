@@ -1,27 +1,53 @@
-from bot.db import SessionLocal, User, UserAchievement, Achievement
+from __future__ import annotations
 
-def check_achievements(user):
-    with SessionLocal() as s:
-        owned = {a.achievement_id for a in s.query(UserAchievement).filter_by(tg_id=user.tg_id).all()}
-        all_ach = s.query(Achievement).all()
+from sqlalchemy import select
 
-        for ach in all_ach:
-            if ach.id in owned:
+from bot.db import Achievement, User, UserAchievement, async_session
+
+
+async def check_achievements(user: User) -> None:
+    async with async_session() as session:
+        db_user = await session.scalar(select(User).where(User.tg_id == user.tg_id))
+        if not db_user:
+            return
+
+        owned = set(
+            await session.scalars(
+                select(UserAchievement.achievement_id).where(
+                    UserAchievement.tg_id == db_user.tg_id
+                )
+            ).all()
+        )
+        all_achievements = await session.scalars(select(Achievement)).all()
+
+        granted = False
+        for achievement in all_achievements:
+            if achievement.id in owned:
                 continue
 
-            if ach.name == "Начало игры":
-                give(s, user, ach)
+            # Начало игры
+            if achievement.name == "Начало игры":
+                session.add(
+                    UserAchievement(tg_id=db_user.tg_id, achievement_id=achievement.id)
+                )
+                db_user.balance += achievement.reward
+                granted = True
 
-            if ach.name == "Первый донат" and user.balance >= 100:
-                give(s, user, ach)
+            # Первый донат
+            elif achievement.name == "Первый донат" and db_user.balance >= 100:
+                session.add(
+                    UserAchievement(tg_id=db_user.tg_id, achievement_id=achievement.id)
+                )
+                db_user.balance += achievement.reward
+                granted = True
 
-            if ach.name == "Магнат" and user.balance >= 10000:
-                give(s, user, ach)
+            # Магнат
+            elif achievement.name == "Магнат" and db_user.balance >= 10000:
+                session.add(
+                    UserAchievement(tg_id=db_user.tg_id, achievement_id=achievement.id)
+                )
+                db_user.balance += achievement.reward
+                granted = True
 
-
-def give(s, user, ach):
-    s.add(UserAchievement(tg_id=user.tg_id, achievement_id=ach.id))
-    db_user = s.query(User).filter_by(tg_id=user.tg_id).first()
-    if db_user:
-        db_user.balance += ach.reward
-    s.commit()
+        if granted:
+            await session.commit()

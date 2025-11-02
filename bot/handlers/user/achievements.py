@@ -1,19 +1,36 @@
+from __future__ import annotations
+
 from aiogram import types, Dispatcher
-from bot.db import SessionLocal, Achievement, UserAchievement
+from sqlalchemy import select
+
+from bot.db import Achievement, UserAchievement, async_session
+
 
 async def my_achievements(message: types.Message):
+    if not message.from_user:
+        return
+
     uid = message.from_user.id
 
-    with SessionLocal() as s:
-        owned = {a.achievement_id for a in s.query(UserAchievement).filter_by(tg_id=uid).all()}
-        achs = s.query(Achievement).all()
+    async with async_session() as session:
+        owned = set(
+            await session.scalars(
+                select(UserAchievement.achievement_id).where(UserAchievement.tg_id == uid)
+            )
+        )
+
+        achievements = await session.scalars(select(Achievement))
 
     text = "🏆 <b>Ваши достижения:</b>\n\n"
 
-    for a in achs:
+    for a in achievements:
         if a.id in owned:
             text += f"✅ {a.name} — получено\n"
         else:
             text += f"❌ {a.name} — не получено\n"
 
     await message.answer(text, parse_mode="HTML")
+
+
+def register_user_achievements(dp: Dispatcher):
+    dp.register_message_handler(my_achievements, commands=["achievements"])

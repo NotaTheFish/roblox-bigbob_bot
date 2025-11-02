@@ -1,10 +1,11 @@
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy import select
 
 from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
-from bot.db import SessionLocal, TopUpRequest, User
+from bot.db import TopUpRequest, User, async_session
 from bot.keyboards.user_keyboards import payment_methods_kb
 from bot.states.user_states import TopUpState
 
@@ -38,17 +39,22 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     currency = data.get("currency", "rub")
+
+    if not message.from_user:
+        await state.finish()
+        return await message.answer("Ошибка — нажмите /start")
+
     user_id = message.from_user.id
 
-    with SessionLocal() as s:
-        user = s.query(User).filter_by(tg_id=user_id).first()
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == user_id))
         if not user:
             await state.finish()
             return await message.answer("Сначала нажмите /start, чтобы зарегистрироваться")
 
         req = TopUpRequest(user_id=user_id, amount=amount, currency=currency)
-        s.add(req)
-        s.commit()
+        session.add(req)
+        await session.commit()
         request_id = req.id
 
     await message.answer(

@@ -2,10 +2,11 @@ from typing import Optional
 
 from aiogram import types, Dispatcher
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy import select
 
 from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
-from bot.db import SessionLocal, User, ShopItem
+from bot.db import ShopItem, User, async_session
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -22,11 +23,11 @@ def user_shop_kb(items: list[ShopItem]) -> InlineKeyboardMarkup:
 
 
 async def user_shop(message: types.Message, item_type: Optional[str] = None):
-    with SessionLocal() as s:
-        query = s.query(ShopItem)
+    async with async_session() as session:
+        stmt = select(ShopItem)
         if item_type:
-            query = query.filter_by(item_type=item_type)
-        items = query.all()
+            stmt = stmt.where(ShopItem.item_type == item_type)
+        items = (await session.scalars(stmt)).all()
 
     if not items:
         if item_type:
@@ -49,11 +50,14 @@ async def user_shop(message: types.Message, item_type: Optional[str] = None):
 
 
 async def user_buy_confirm(call: types.CallbackQuery):
+    if not call.from_user:
+        return await call.answer("❌ Пользователь не найден", show_alert=True)
+
     item_id = int(call.data.split(":")[1])
 
-    with SessionLocal() as s:
-        item = s.query(ShopItem).filter_by(id=item_id).first()
-        user = s.query(User).filter_by(tg_id=call.from_user.id).first()
+    async with async_session() as session:
+        item = await session.get(ShopItem, item_id)
+        user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
 
     if not item:
         return await call.answer("❌ Товар не найден", show_alert=True)
@@ -85,12 +89,15 @@ async def cancel_buy(call: types.CallbackQuery):
 
 
 async def user_buy_finish(call: types.CallbackQuery):
+    if not call.from_user:
+        return await call.answer("❌ Пользователь не найден", show_alert=True)
+
     item_id = int(call.data.split(":")[1])
     uid = call.from_user.id
 
-    with SessionLocal() as s:
-        item = s.query(ShopItem).filter_by(id=item_id).first()
-        user = s.query(User).filter_by(tg_id=uid).first()
+    async with async_session() as session:
+        item = await session.get(ShopItem, item_id)
+        user = await session.scalar(select(User).where(User.tg_id == uid))
 
         if not item or not user:
             return await call.answer("❌ Ошибка. Попробуйте снова.", show_alert=True)
@@ -99,7 +106,7 @@ async def user_buy_finish(call: types.CallbackQuery):
             return await call.answer("❌ Не хватает валюты!", show_alert=True)
 
         user.balance -= item.price
-        
+
         if item.item_type == "money":
             try:
                 reward_amount = int(item.value)
@@ -114,9 +121,9 @@ async def user_buy_finish(call: types.CallbackQuery):
         else:
             reward_text = f"🎁 Roblox Item ID {item.value}\n⏳ Ожидайте выдачи!"
 
-        s.commit()
+        await session.commit()
 
-    check_achievements(user)
+    await check_achievements(user)
 
     if item.item_type in {"privilege", "item"}:
         notify_text = (
@@ -142,8 +149,4 @@ def register_user_shop(dp: Dispatcher):
     dp.register_callback_query_handler(
         user_buy_finish,
         lambda c: c.data.startswith("user_buy_ok:"),
-    )
-    dp.register_callback_query_handler(
-        cancel_buy,
-        lambda c: c.data == "cancel_buy",
     )

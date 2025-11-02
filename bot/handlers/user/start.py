@@ -1,5 +1,7 @@
 from aiogram import types, Dispatcher
-from bot.db import SessionLocal, User, Admin
+from sqlalchemy import select
+
+from bot.db import Admin, User, async_session
 from bot.keyboards.verify_kb import verify_button
 from bot.keyboards.main_menu import main_menu
 
@@ -11,8 +13,8 @@ async def start_cmd(message: types.Message):
     tg_id = message.from_user.id
     tg_username = message.from_user.username or "Unknown"
 
-    with SessionLocal() as s:
-        user = s.query(User).filter_by(tg_id=tg_id).first()
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
 
         # Первый вход — создаём юзера
         if not user:
@@ -24,21 +26,21 @@ async def start_cmd(message: types.Message):
                 balance=0,
                 verified=False,
                 code=None,
-                is_blocked=False
+                is_blocked=False,
             )
-            s.add(user)
-            s.commit()
+            session.add(user)
+            await session.commit()
 
             return await message.answer(
                 "👋 Добро пожаловать!\n"
                 "Перед началом нужно подтвердить Roblox-аккаунт.",
-                reply_markup=verify_button()
+                reply_markup=verify_button(),
             )
 
         # Обновляем username если человек сменил ник в Telegram
         if user.tg_username != tg_username:
             user.tg_username = tg_username
-            s.commit()
+            await session.commit()
 
         # Проверка блокировки
         if user.is_blocked:
@@ -48,16 +50,18 @@ async def start_cmd(message: types.Message):
         if not user.verified:
             return await message.answer(
                 "🔐 Для продолжения нужно подтвердить Roblox-аккаунт.",
-                reply_markup=verify_button()
+                reply_markup=verify_button(),
             )
 
         # Проверка — админ или нет
-        is_admin = bool(s.query(Admin).filter_by(telegram_id=tg_id).first())
+        is_admin = bool(
+            await session.scalar(select(Admin).where(Admin.telegram_id == tg_id))
+        )
 
     # Если уже зарегистрирован и верифицирован — даём меню
     await message.answer(
         f"✅ Добро пожаловать, <b>{tg_username}</b>!",
-        reply_markup=main_menu(is_admin=is_admin)
+        reply_markup=main_menu(is_admin=is_admin),
     )
 
 

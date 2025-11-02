@@ -1,23 +1,30 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from sqlalchemy import select
 
-from bot.db import SessionLocal, PromoCode, Admin
-from bot.keyboards.admin_keyboards import admin_main_menu_kb, promo_reward_type_kb
+from bot.db import Admin, PromoCode, async_session
+from bot.keyboards.admin_keyboards import admin_main_menu_kb
+from bot.keyboards.promo_keyboards import promo_reward_type_kb
 from bot.states.promo_states import PromoCreateState
 
 
-def is_admin(uid: int) -> bool:
-    with SessionLocal() as s:
-        return bool(s.query(Admin).filter_by(telegram_id=uid).first())
+# ✅ Проверка администратора
+async def is_admin(uid: int) -> bool:
+    async with async_session() as session:
+        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
-# ------------ Админ: меню промокодов ------------
-
+# ✅ Меню промокодов для админа
 async def admin_promos_menu(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
     kb = InlineKeyboardMarkup()
@@ -30,8 +37,7 @@ async def admin_promos_menu(call: types.CallbackQuery):
     await call.message.edit_text("🎁 <b>Промокоды</b>\nВыберите действие:", reply_markup=kb)
 
 
-# ------------ Создание промокода ------------
-
+# ✅ Старт создания промокода
 async def promo_create_start(call: types.CallbackQuery):
     await call.message.answer("📝 Введите название промокода:")
     await PromoCreateState.waiting_for_code.set()
@@ -63,14 +69,14 @@ async def promo_set_reward_value(message: types.Message, state: FSMContext):
         try:
             value = int(message.text)
         except ValueError:
-            return await message.answer("Введите числовое значение")
+            return await message.answer("Введите ЧИСЛО")
     else:
         value = message.text.strip()
         if not value:
             return await message.answer("Введите значение награды")
 
     await state.update_data(value=value)
-    await message.answer("📊 Введите лимит использований (число, 0 — без лимита):")
+    await message.answer("📊 Введите лимит использований (число, 0 — без ограничения):")
     await PromoCreateState.waiting_for_usage_limit.set()
 
 
@@ -85,6 +91,7 @@ async def promo_set_limit(message: types.Message, state: FSMContext):
     await PromoCreateState.waiting_for_expire_days.set()
 
 
+# ✅ Завершение создания
 async def promo_finish(message: types.Message, state: FSMContext):
     try:
         days = int(message.text)
@@ -95,7 +102,7 @@ async def promo_finish(message: types.Message, state: FSMContext):
 
     expires_at = datetime.utcnow() + timedelta(days=days) if days > 0 else None
 
-    with SessionLocal() as s:
+    async with async_session() as session:
         promo = PromoCode(
             code=data["code"],
             promo_type=data["promo_type"],
@@ -104,21 +111,17 @@ async def promo_finish(message: types.Message, state: FSMContext):
             uses=0,
             expires_at=expires_at,
         )
-        s.add(promo)
-        s.commit()
+        session.add(promo)
+        await session.commit()
 
-    await message.answer(
-        f"✅ Промокод <code>{data['code']}</code> создан!",
-        parse_mode="HTML",
-    )
+    await message.answer(f"✅ Промокод <code>{data['code']}</code> создан!", parse_mode="HTML")
     await state.finish()
 
 
-# ------------ Список промокодов ------------
-
+# ✅ Список промокодов
 async def promo_list(call: types.CallbackQuery):
-    with SessionLocal() as s:
-        promos = s.query(PromoCode).all()
+    async with async_session() as session:
+        promos = (await session.scalars(select(PromoCode))).all()
 
     if not promos:
         return await call.message.edit_text(
@@ -129,65 +132,43 @@ async def promo_list(call: types.CallbackQuery):
     text = "🎫 <b>Активные промокоды:</b>\n\n"
     kb = InlineKeyboardMarkup()
 
-    for p in promos:
-        usage_info = f"{p.uses}/{p.max_uses}" if p.max_uses is not None else f"{p.uses}/∞"
-        text += f"• <code>{p.code}</code> — {p.promo_type} ({usage_info})\n"
-        kb.add(InlineKeyboardButton(f"❌ {p.code}", callback_data=f"promo_del:{p.id}"))
+    for promo in promos:
+        usage_info = (
+            f"{promo.uses}/{promo.max_uses}"
+            if promo.max_uses is not None else f"{promo.uses}/∞"
+        )
+        text += f"• <code>{promo.code}</code> — {promo.promo_type} ({usage_info})\n"
+        kb.add(InlineKeyboardButton(f"❌ {promo.code}", callback_data=f"promo_del:{promo.id}"))
 
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_promos"))
     await call.message.edit_text(text, reply_markup=kb)
 
 
-# ------------ Удаление ------------
-
+# ✅ Удаление промокода
 async def promo_delete(call: types.CallbackQuery):
     promo_id = int(call.data.split(":")[1])
 
-    with SessionLocal() as s:
-        promo = s.query(PromoCode).filter_by(id=promo_id).first()
+    async with async_session() as session:
+        promo = await session.get(PromoCode, promo_id)
         if promo:
-            s.delete(promo)
-            s.commit()
+            await session.delete(promo)
+            await session.commit()
 
-    await call.answer("Удалено ✅")
+    await call.answer("✅ Удалено")
     await promo_list(call)
 
 
+# ✅ Регистрация хэндлеров
 def register_admin_promo(dp: Dispatcher):
+    dp.register_callback_query_handler(admin_promos_menu, lambda c: c.data == "admin_promos")
+    dp.register_callback_query_handler(promo_create_start, lambda c: c.data == "promo_create")
+    dp.register_message_handler(promo_set_code, state=PromoCreateState.waiting_for_code)
     dp.register_callback_query_handler(
-        admin_promos_menu,
-        lambda c: c.data == "admin_promos",
+        promo_set_reward_type, lambda c: c.data.startswith("promo_reward"),
+        state=PromoCreateState.waiting_for_reward_type
     )
-    dp.register_callback_query_handler(
-        promo_create_start,
-        lambda c: c.data == "promo_create",
-    )
-    dp.register_message_handler(
-        promo_set_code,
-        state=PromoCreateState.waiting_for_code,
-    )
-    dp.register_callback_query_handler(
-        promo_set_reward_type,
-        lambda c: c.data.startswith("promo_reward"),
-        state=PromoCreateState.waiting_for_reward_type,
-    )
-    dp.register_message_handler(
-        promo_set_reward_value,
-        state=PromoCreateState.waiting_for_reward_value,
-    )
-    dp.register_message_handler(
-        promo_set_limit,
-        state=PromoCreateState.waiting_for_usage_limit,
-    )
-    dp.register_message_handler(
-        promo_finish,
-        state=PromoCreateState.waiting_for_expire_days,
-    )
-    dp.register_callback_query_handler(
-        promo_list,
-        lambda c: c.data == "promo_list",
-    )
-    dp.register_callback_query_handler(
-        promo_delete,
-        lambda c: c.data.startswith("promo_del"),
-    )
+    dp.register_message_handler(promo_set_reward_value, state=PromoCreateState.waiting_for_reward_value)
+    dp.register_message_handler(promo_set_limit, state=PromoCreateState.waiting_for_usage_limit)
+    dp.register_message_handler(promo_finish, state=PromoCreateState.waiting_for_expire_days)
+    dp.register_callback_query_handler(promo_list, lambda c: c.data == "promo_list")
+    dp.register_callback_query_handler(promo_delete, lambda c: c.data.startswith("promo_del"))

@@ -1,16 +1,3 @@
-"""Application configuration loaded from environment variables."""
-from __future__ import annotations
-
-import os
-from typing import List
-
-
-def _parse_int_list(value: str | None) -> List[int]:
-    if not value:
-        return []
-    result: List[int] = []
-    for item in value.split(","):
-        item = item.strip()
         if not item:
             continue
         try:
@@ -36,7 +23,10 @@ TOKEN = get_env("TELEGRAM_TOKEN", required=True)
 ROOT_ADMIN_ID = int(get_env("ROOT_ADMIN_ID", "0"))
 
 # ✅ База данных
-DATABASE_URL = get_env("DATABASE_URL", "sqlite:///data/db.sqlite3")
+DATABASE_URL = get_env(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
+)
 
 # ✅ Webhook настройки — безопасные
 DOMAIN = get_env("DOMAIN", "")  # пример: https://mybot.onrender.com

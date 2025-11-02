@@ -1,16 +1,24 @@
-from aiogram import types, Dispatcher
+from __future__ import annotations
 
-from bot.db import SessionLocal, Admin
+from aiogram import types, Dispatcher
+from sqlalchemy import select
+
+from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 
+
 # Проверка администратора
-def is_admin(uid: int) -> bool:
-    with SessionLocal() as s:
-        return bool(s.query(Admin).filter_by(telegram_id=uid).first())
+async def is_admin(uid: int) -> bool:
+    async with async_session() as session:
+        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
+
 
 # Команда для входа в админ панель
 async def admin_panel(message: types.Message):
-    if not is_admin(message.from_user.id):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
         return await message.answer("⛔ У вас нет доступа")
 
     await message.answer(
@@ -18,9 +26,13 @@ async def admin_panel(message: types.Message):
         reply_markup=admin_main_menu_kb()
     )
 
-# Обработка кнопок панели (пока заглушки)
+
+# Обработка кнопок админ-панели
 async def admin_menu_callbacks(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
+        return await call.answer("⛔ Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
         return await call.answer("⛔ Нет доступа", show_alert=True)
 
     if call.data == "back_to_menu":
@@ -35,6 +47,7 @@ async def admin_menu_callbacks(call: types.CallbackQuery):
         )
 
     await call.answer()
+
 
 # Регистрация
 def register_admin_menu(dp: Dispatcher):

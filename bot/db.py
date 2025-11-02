@@ -1,164 +1,139 @@
 # bot/db.py
+from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from typing import Optional
+
+from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy.engine.url import make_url
+from sqlalchemy.ext.asyncio import AsyncAttrs, AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 from bot.config import DATABASE_URL
 
-Base = declarative_base()
-engine = create_engine(DATABASE_URL, echo=False)
 
-# ⚠️ ВАЖНО: expire_on_commit=False — чтобы можно было читать объект после commit
-SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+# ----------------------------
+# ASYNC DATABASE INITIALIZER
+# ----------------------------
 
-# ---------------------
-#   MODELS
-# ---------------------
+def _make_async_database_url(url: str) -> str:
+    sa_url = make_url(url)
+    driver = sa_url.drivername
+
+    if "+" in driver:
+        return url  # already async
+
+    if driver == "sqlite":
+        sa_url = sa_url.set(drivername="sqlite+aiosqlite")
+    elif driver == "postgresql":
+        sa_url = sa_url.set(drivername="postgresql+asyncpg")
+    elif driver == "mysql":
+        sa_url = sa_url.set(drivername="mysql+aiomysql")
+    else:
+        raise RuntimeError(
+            "Unsupported DB driver. Use async driver or supported sync (sqlite/postgres/mysql)."
+        )
+
+    return str(sa_url)
+
+
+class Base(AsyncAttrs, DeclarativeBase):
+    pass
+
+
+async_engine: AsyncEngine = create_async_engine(
+    _make_async_database_url(DATABASE_URL),
+    echo=False
+)
+async_session = async_sessionmaker(async_engine, expire_on_commit=False)
+
+
+# ----------------------------
+# MODELS
+# ----------------------------
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    tg_id = Column("telegram_id", Integer, unique=True, index=True)
-    tg_username = Column(String, nullable=True)
-    username = Column(String, nullable=True)
-    roblox_id = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    verified = Column(Boolean, default=False)
-    code = Column(String, nullable=True)
-
-    is_blocked = Column(Boolean, default=False)
-
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tg_id: Mapped[int] = mapped_column("telegram_id", unique=True, index=True)
+    tg_username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    roblox_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Game stats
-    balance = Column(Integer, default=0)
-    cash = Column(Integer, default=0)
-    items = Column(String, default="")
-    level = Column(Integer, default=1)
-    play_time = Column(Integer, default=0)
-    referrals = Column(Integer, default=0)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+    cash: Mapped[int] = mapped_column(Integer, default=0)
+    items: Mapped[str] = mapped_column(String, default="")
+    level: Mapped[int] = mapped_column(Integer, default=1)
 
-    @property
-    def roblox_user(self):
-        return self.username
-
-    @roblox_user.setter
-    def roblox_user(self, value):
-        self.username = value
-
-
-class Server(Base):
-    __tablename__ = "servers"
-
-    id = Column(Integer, primary_key=True, index=True)
-    number = Column(Integer, unique=True)
-    link = Column(String, nullable=True)
-    closed_message = Column(String, default="Сервер закрыт")
-
-
-class PromoCode(Base):
-    __tablename__ = "promocodes"
-
-    id = Column(Integer, primary_key=True)
-    code = Column(String, unique=True, index=True)
-    promo_type = Column(String)           # 'value' / 'discount'
-    value = Column(Integer, nullable=True)
-    max_uses = Column(Integer, nullable=True)
-    uses = Column(Integer, default=0)
-    active = Column(Boolean, default=True)
-
-    # ✅ ДОБАВЛЕНО ДЛЯ /expires_at/
-    expires_at = Column(DateTime, nullable=True)
-
-
-class Item(Base):
-    __tablename__ = "items"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True)
-    price = Column(Integer, default=0)
-
-    # ✅ Исправлено: заменяем available → is_active
-    is_active = Column(Boolean, default=True)
-
-    # Категория товара (если нужно)
-    category = Column(String, nullable=True)
-
-# --- Admin system models ---
 
 class Admin(Base):
     __tablename__ = "admins"
-    
-    id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True, index=True)
-    is_root = Column(Boolean, default=False)  # Главный админ
 
-class AdminRequest(Base):
-    __tablename__ = "admin_requests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    is_root: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, index=True)
-    username = Column(String)
-    status = Column(String, default="pending")  # pending / approved / denied
 
 class ShopItem(Base):
     __tablename__ = "shop_items"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String)
-    item_type = Column(String)  # money | privilege | item
-    value = Column(String)  # amount of money OR item id OR privilege name
-    price = Column(Integer)  # game coins
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String)
+    item_type: Mapped[str] = mapped_column(String)
+    value: Mapped[str] = mapped_column(String)
+    price: Mapped[int] = mapped_column(Integer)
+
 
 class TopUpRequest(Base):
     __tablename__ = "topup_requests"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer)
-    amount = Column(Integer)
-    currency = Column(String)  # rub / uah / usd / crypto etc.
-    status = Column(String, default="pending")  # pending / approved / denied
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer)
+    amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="pending")
+
 
 class Achievement(Base):
     __tablename__ = "achievements"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String)
-    description = Column(String)
-    reward = Column(Integer)  # reward in coins
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String)
+    reward: Mapped[int] = mapped_column(Integer)
+
 
 class UserAchievement(Base):
     __tablename__ = "user_achievements"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tg_id = Column(Integer)
-    achievement_id = Column(Integer)
-
-# ---------------------
-# CREATE TABLES
-# ---------------------
-
-Base.metadata.create_all(engine)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tg_id: Mapped[int] = mapped_column(Integer)
+    achievement_id: Mapped[int] = mapped_column(Integer)
 
 
-def run_schema_migrations():
-    with engine.begin() as conn:
-        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+# ----------------------------
+# INIT FUNCTION
+# ----------------------------
 
-        if "tg_username" not in columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN tg_username TEXT"))
-
-        if "username" not in columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN username TEXT"))
-            if "roblox_user" in columns:
-                conn.execute(text("UPDATE users SET username = roblox_user WHERE username IS NULL"))
-
-        if "roblox_id" not in columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN roblox_id TEXT"))
-
-        if "created_at" not in columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
-            conn.execute(text("UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+async def init_db() -> None:
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
-run_schema_migrations()
+__all__ = [
+    "async_engine",
+    "async_session",
+    "init_db",
+    "User",
+    "Admin",
+    "ShopItem",
+    "TopUpRequest",
+    "Achievement",
+    "UserAchievement",
+]

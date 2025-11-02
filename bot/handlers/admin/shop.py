@@ -1,20 +1,24 @@
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from sqlalchemy import select
 
-from bot.db import SessionLocal, Admin, ShopItem
+from bot.db import Admin, ShopItem, async_session
 from bot.states.shop_states import ShopCreateState
 
 
-def is_admin(uid: int) -> bool:
-    with SessionLocal() as s:
-        return bool(s.query(Admin).filter_by(telegram_id=uid).first())
+async def is_admin(uid: int) -> bool:
+    async with async_session() as session:
+        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 # === ADMIN MENU ===
 
 async def admin_shop_menu(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
     kb = InlineKeyboardMarkup()
@@ -33,7 +37,10 @@ async def admin_shop_menu(call: types.CallbackQuery):
 # === CREATE ITEM ===
 
 async def shop_add(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
     await call.message.answer("Введите название товара:")
@@ -57,10 +64,10 @@ async def shop_set_name(message: types.Message, state: FSMContext):
 async def shop_set_type(call: types.CallbackQuery, state: FSMContext):
     if "money" in call.data:
         item_type = "money"
-        prompt = "Введите количество валюты, которое получит пользователь:"
+        prompt = "Введите количество валюты:"
     elif "priv" in call.data:
         item_type = "privilege"
-        prompt = "Введите название привилегии (админ должен выдать вручную):"
+        prompt = "Введите название привилегии:"
     else:
         item_type = "item"
         prompt = "Введите Roblox Item ID:"
@@ -84,15 +91,15 @@ async def shop_finish(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
 
-    with SessionLocal() as s:
+    async with async_session() as session:
         item = ShopItem(
             name=data["name"],
             item_type=data["item_type"],
             value=data["value"],
             price=price,
         )
-        s.add(item)
-        s.commit()
+        session.add(item)
+        await session.commit()
 
     await message.answer("✅ Товар добавлен!")
     await state.finish()
@@ -101,11 +108,14 @@ async def shop_finish(message: types.Message, state: FSMContext):
 # === SHOW ITEMS ===
 
 async def shop_list(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
 
-    with SessionLocal() as s:
-        items = s.query(ShopItem).all()
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    async with async_session() as session:
+        items = (await session.scalars(select(ShopItem))).all()
 
     if not items:
         return await call.message.edit_text(
@@ -128,51 +138,30 @@ async def shop_list(call: types.CallbackQuery):
 
 
 async def shop_delete(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
     item_id = int(call.data.split(":")[1])
-    with SessionLocal() as s:
-        item = s.query(ShopItem).filter_by(id=item_id).first()
+
+    async with async_session() as session:
+        item = await session.get(ShopItem, item_id)
         if item:
-            s.delete(item)
-            s.commit()
+            await session.delete(item)
+            await session.commit()
 
     await call.answer("Удалено ✅")
     await shop_list(call)
 
 
 def register_admin_shop(dp: Dispatcher):
-    dp.register_callback_query_handler(
-        admin_shop_menu,
-        lambda c: c.data == "admin_shop",
-    )
-    dp.register_callback_query_handler(
-        shop_add,
-        lambda c: c.data == "shop_add",
-    )
-    dp.register_message_handler(
-        shop_set_name,
-        state=ShopCreateState.waiting_for_name,
-    )
-    dp.register_callback_query_handler(
-        shop_set_type,
-        lambda c: c.data.startswith("shop_type"),
-        state=ShopCreateState.waiting_for_type,
-    )
-    dp.register_message_handler(
-        shop_set_value,
-        state=ShopCreateState.waiting_for_value,
-    )
-    dp.register_message_handler(
-        shop_finish,
-        state=ShopCreateState.waiting_for_price,
-    )
-    dp.register_callback_query_handler(
-        shop_list,
-        lambda c: c.data == "shop_list",
-    )
-    dp.register_callback_query_handler(
-        shop_delete,
-        lambda c: c.data.startswith("shop_del"),
-    )
+    dp.register_callback_query_handler(admin_shop_menu, lambda c: c.data == "admin_shop")
+    dp.register_callback_query_handler(shop_add, lambda c: c.data == "shop_add")
+    dp.register_message_handler(shop_set_name, state=ShopCreateState.waiting_for_name)
+    dp.register_callback_query_handler(shop_set_type, lambda c: c.data.startswith("shop_type"), state=ShopCreateState.waiting_for_type)
+    dp.register_message_handler(shop_set_value, state=ShopCreateState.waiting_for_value)
+    dp.register_message_handler(shop_finish, state=ShopCreateState.waiting_for_price)
+    dp.register_callback_query_handler(shop_list, lambda c: c.data == "shop_list")
+    dp.register_callback_query_handler(shop_delete, lambda c: c.data.startswith("shop_del"))

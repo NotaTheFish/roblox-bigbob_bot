@@ -3,9 +3,12 @@ from aiogram.dispatcher import FSMContext
 from bot.states.verify_state import VerifyState
 from bot.keyboards.verify_kb import verify_button, verify_check_button
 from bot.utils.roblox import get_roblox_profile
-from bot.db import SessionLocal, User
+import asyncio
+from sqlalchemy import select
+
+from bot.db import User, async_session
 from random import randint
-from time import sleep
+
 
 # === Start verify ===
 async def start_verify(call: types.CallbackQuery, state: FSMContext):
@@ -16,14 +19,19 @@ async def start_verify(call: types.CallbackQuery, state: FSMContext):
 # === User enters nickname ===
 async def set_username(message: types.Message, state: FSMContext):
     username = message.text.strip()
-
     code = randint(10000, 99999)
-    
-    with SessionLocal() as s:
-        user = s.query(User).filter_by(tg_id=message.from_user.id).first()
+
+    if not message.from_user:
+        return
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
+        if not user:
+            return
+
         user.username = username
         user.code = str(code)
-        s.commit()
+        await session.commit()
 
     text = (
         f"✅ Ваш Roblox ник: <b>{username}</b>\n\n"
@@ -40,30 +48,35 @@ async def set_username(message: types.Message, state: FSMContext):
 async def check_verify(call: types.CallbackQuery, state: FSMContext):
     await call.message.answer("⏳ Проверяем ваш Roblox профиль…\nЭто может занять до 5 секунд 🔥")
 
-    with SessionLocal() as s:
-        user = s.query(User).filter_by(tg_id=call.from_user.id).first()
+    if not call.from_user:
+        return await call.message.answer("❌ Пользователь не найден. Нажмите /start")
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
+        if not user:
+            return await call.message.answer("❌ Профиль не найден. Нажмите /start")
         username = user.username
         code = user.code
 
-    sleep(2)  # имитация загрузки
+    await asyncio.sleep(2)  # имитация загрузки
 
     desc, status = get_roblox_profile(username)
-
     if desc is None:
         return await call.message.answer("❌ Не удалось найти профиль Roblox.\nПроверьте ник и попробуйте снова.")
 
     full_text = f"{desc} {status}"
 
     if code and code in full_text:
-        with SessionLocal() as s:
-            user = s.query(User).filter_by(tg_id=call.from_user.id).first()
-            user.verified = True
-            s.commit()
+        async with async_session() as session:
+            db_user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
+            if db_user:
+                db_user.verified = True
+                await session.commit()
 
         await call.message.answer("✅ Аккаунт Roblox успешно подтверждён!\nДобро пожаловать! 🎉")
         await state.finish()
         return
-    
+
     await call.message.answer("❌ Код не найден. Убедитесь, что он в описании или статусе и попробуйте снова.")
     await call.message.answer("Нажмите «🔍 Проверить» снова, когда будете готовы:", reply_markup=verify_check_button())
 
