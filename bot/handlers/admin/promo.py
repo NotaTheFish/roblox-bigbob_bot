@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
 
-from bot.db import Admin, PromoCode, async_session
-from bot.keyboards.admin_keyboards import admin_main_menu_kb
-from bot.keyboards.promo_keyboards import promo_reward_type_kb
+from bot.db import async_session, Admin, PromoCode
+from bot.keyboards.admin_keyboards import admin_main_menu_kb, promo_reward_type_kb
 from bot.states.promo_states import PromoCreateState
 
 
