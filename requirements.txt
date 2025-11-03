@@ -7,3 +7,4 @@ sqlalchemy==2.0.28
 python-dotenv==1.0.1
 beautifulsoup4==4.12.3
 asyncpg==0.29.0
+alembic==1.13.1
