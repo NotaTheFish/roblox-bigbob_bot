@@ -23,10 +23,12 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # ---- Copy project ----
 COPY . .
 
+# ---- Copy entrypoint ----
+COPY render_start.sh ./render_start.sh
+RUN chmod +x ./render_start.sh
+
 # ---- Expose port for Render ----
 EXPOSE 10000
 
-# ---- Start bot web server ----
-# Flask app = bot/web_server.py -> app
-# Render sets $PORT automatically
-CMD ["gunicorn", "bot.web_server:app", "--bind", "0.0.0.0:${PORT}"]
+# ---- Start appropriate service ----
+CMD ["./render_start.sh"]

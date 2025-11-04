@@ -1,25 +1,60 @@
 services:
+  # === BACKEND SERVICE ===
+  - type: web
+    name: roblox-backend
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: SERVICE_ROLE
+        value: backend
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: BACKEND_HMAC_SECRET
+        sync: false
+
+      - key: BACKEND_IDEMPOTENCY_TTL
+        value: "3600"
+
+      - key: ROBLOX_API_BASE_URL
+        sync: false
+
+      - key: TELEGRAM_PAYMENT_SECRET
+        sync: false
+
+  # === TELEGRAM BOT SERVICE ===
   - type: web
     name: roblox-bot
     runtime: docker
     plan: free
     autoDeploy: true
-
     envVars:
+      - key: SERVICE_ROLE
+        value: bot
+
       - key: TELEGRAM_TOKEN
         sync: false
+
       - key: SECRET_KEY
         sync: false
+
       - key: DOMAIN
         sync: false
+
       - key: DATABASE_URL
         sync: false
+
       - key: ADMINS
         sync: false
+
       - key: ADMIN_ROOT_IDS
         sync: false
+
       - key: ADMIN_LOGIN_PASSWORD
         sync: false
+
       - key: WEBHOOK_PATH
         value: /webhook
 
