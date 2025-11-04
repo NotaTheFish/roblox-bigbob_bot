@@ -1,9 +1,10 @@
 from aiogram import types, Dispatcher
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from bot.db import Admin, async_session
+from bot.db import Admin, Referral, ReferralReward, User, async_session
 from bot.handlers.user.shop import user_shop
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, support_menu, play_menu
+from bot.utils.referrals import ensure_referral_code
 
 
 async def _is_admin(uid: int) -> bool:
@@ -22,7 +23,8 @@ async def open_shop_menu(message: types.Message):
 
 
 async def open_support_menu(message: types.Message):
-    await message.answer("🆘 Поддержка\nНапишите ваш вопрос, нажав «✍️ Написать в поддержку».", reply_markup=support_menu())
+    await message.answer("🆘 Поддержка\nНапишите ваш вопрос, нажав «✍️ Написать в поддержку».",
+                         reply_markup=support_menu())
 
 
 async def open_play_menu(message: types.Message):
@@ -59,10 +61,46 @@ async def back_to_main(message: types.Message):
     await message.answer("↩ Главное меню", reply_markup=main_menu(is_admin=is_admin))
 
 
-# --- Заглушки профиля ---
+# --- Профиль / Рефералка ---
 
 async def profile_ref_link(message: types.Message):
-    await message.answer("🔗 Ваша реферальная ссылка: будет добавлено скоро.")
+    if not message.from_user:
+        return
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
+        if not user:
+            return await message.answer("❗ Сначала нажмите /start")
+
+        code = await ensure_referral_code(session, user)
+
+        invited = (
+            await session.execute(
+                select(func.count(Referral.id)).where(Referral.referrer_id == user.id)
+            )
+        ).scalar_one()
+
+        total_rewards = (
+            await session.execute(
+                select(func.coalesce(func.sum(ReferralReward.amount), 0)).where(
+                    ReferralReward.referrer_id == user.id,
+                    ReferralReward.status == "granted",
+                )
+            )
+        ).scalar_one()
+
+        await session.commit()
+
+    bot_info = await message.bot.get_me()
+    link = f"https://t.me/{bot_info.username}?start={code}" if bot_info.username else code
+
+    await message.answer(
+        "🔗 <b>Ваша реферальная ссылка</b>\n"
+        f"{link}\n\n"
+        f"👥 Приглашено: {invited}\n"
+        f"💰 Получено бонусов: {total_rewards}",
+        parse_mode="HTML",
+    )
 
 
 async def profile_promo(message: types.Message):

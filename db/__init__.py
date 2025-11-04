@@ -1,10 +1,5 @@
-"""Database session factory and model re-exports for the bot and backend."""
-from __future__ import annotations
-
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from bot.config import DATABASE_URL
-from db import (
+"""Shared database models and base metadata."""
+from .models import (  # noqa: F401
     Base,
     Achievement,
     Admin,
@@ -29,21 +24,11 @@ from db import (
     Withdrawal,
 )
 
-async_engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True, future=True)
-async_session = async_sessionmaker(bind=async_engine, expire_on_commit=False, class_=AsyncSession)
-
-
-async def init_db() -> None:
-    async with async_engine.begin() as conn:  # type: ignore[arg-type]
-        await conn.run_sync(Base.metadata.create_all)
-
-
 __all__ = [
+    "Base",
     "Achievement",
     "Admin",
     "AdminRequest",
-    "AsyncSession",
-    "Base",
     "GameProgress",
     "GrantEvent",
     "IdempotencyKey",
@@ -62,7 +47,4 @@ __all__ = [
     "User",
     "UserAchievement",
     "Withdrawal",
-    "async_engine",
-    "async_session",
-    "init_db",
 ]

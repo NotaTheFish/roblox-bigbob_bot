@@ -4,7 +4,14 @@ from aiogram import types, Dispatcher
 from sqlalchemy import select
 
 from bot.bot_instance import bot
-from bot.db import async_session, TopUpRequest, User, Admin
+from bot.db import (
+    Admin,
+    LogEntry,
+    Payment,
+    TopUpRequest,
+    User,
+    async_session,
+)
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -22,36 +29,60 @@ async def approve_topup(call: types.CallbackQuery) -> None:
         return await call.answer("Нет доступа", show_alert=True)
 
     req_id = int(call.data.split(":")[1])
-    user_id = None
-    amount = None
 
     async with async_session() as session:
-        request_result = await session.execute(select(TopUpRequest).where(TopUpRequest.id == req_id))
-        request = request_result.scalar_one_or_none()
+        request = await session.get(TopUpRequest, req_id)
         if not request or request.status != "pending":
             return await call.answer("❌ Заявка не найдена", show_alert=True)
 
-        user_result = await session.execute(select(User).where(User.tg_id == request.user_id))
-        user = user_result.scalar_one_or_none()
+        user = await session.get(User, request.user_id)
         if not user:
             request.status = "denied"
             await session.commit()
             return await call.answer("❌ Пользователь не найден", show_alert=True)
 
+        # Create payment log
+        payment = Payment(
+            provider="admin_manual",
+            provider_payment_id=request.request_id,
+            user_id=user.id,
+            telegram_id=user.tg_id,
+            amount=request.amount,
+            currency=request.currency,
+            status="completed",
+            metadata={"topup_request_id": request.id},
+        )
+        session.add(payment)
+        await session.flush()
+
+        # Update balance
         user.balance += request.amount
         request.status = "approved"
-        user_id = request.user_id
-        amount = request.amount
+        request.payment_id = payment.id
+
+        session.add(
+            LogEntry(
+                user_id=user.id,
+                telegram_id=user.tg_id,
+                request_id=payment.request_id,
+                event_type="topup_approved",
+                message=f"Пополнение на {request.amount} {request.currency}",
+                data={"topup_request_id": request.id},
+            )
+        )
+
         await session.commit()
 
-        # Чекаем ачивки после обновления — передадим ID
+        # Check achievements
         await check_achievements(user)
 
-    if user_id is not None and amount is not None:
-        try:
-            await bot.send_message(user_id, f"✅ Ваш баланс пополнен на {amount} монет!")
-        except Exception:
-            pass
+    try:
+        await bot.send_message(
+            request.telegram_id,
+            f"✅ Ваш баланс пополнен на {request.amount} {request.currency.upper()}!",
+        )
+    except Exception:
+        pass
 
     await call.message.edit_text(f"✅ Заявка #{req_id} выполнена")
     await call.answer("✅ Готово")
@@ -65,23 +96,32 @@ async def deny_topup(call: types.CallbackQuery) -> None:
         return await call.answer("Нет доступа", show_alert=True)
 
     req_id = int(call.data.split(":")[1])
-    user_id = None
 
     async with async_session() as session:
-        request_result = await session.execute(select(TopUpRequest).where(TopUpRequest.id == req_id))
-        request = request_result.scalar_one_or_none()
+        request = await session.get(TopUpRequest, req_id)
         if request:
             request.status = "denied"
-            user_id = request.user_id
+            session.add(
+                LogEntry(
+                    user_id=request.user_id,
+                    telegram_id=request.telegram_id,
+                    request_id=request.request_id,
+                    event_type="topup_denied",
+                    message="Заявка на пополнение отклонена",
+                    data={"topup_request_id": request.id},
+                )
+            )
             await session.commit()
 
     await call.message.edit_text(f"❌ Заявка #{req_id} отклонена")
 
-    if user_id is not None:
-        try:
-            await bot.send_message(user_id, f"❌ Ваша заявка #{req_id} отклонена")
-        except Exception:
-            pass
+    try:
+        await bot.send_message(
+            request.telegram_id,
+            f"❌ Ваша заявка #{req_id} отклонена",
+        )
+    except Exception:
+        pass
 
     await call.answer("✅ Отклонено")
 

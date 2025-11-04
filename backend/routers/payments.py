@@ -49,7 +49,11 @@ async def telegram_payment_webhook(
         payload=payload.payload,
     )
 
-    await apply_payment_to_user(session, payload.telegram_user_id, payload.amount)
+    payment = event.payment
+    if payment is None:
+        raise RuntimeError("Payment record missing for webhook event")
+
+    await apply_payment_to_user(session, payment, payload.telegram_user_id, payload.amount)
     await mark_payment_processed(event)
 
     response = {

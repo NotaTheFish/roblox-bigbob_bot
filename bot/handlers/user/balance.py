@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
-from bot.db import TopUpRequest, User, async_session
+from bot.db import LogEntry, TopUpRequest, User, async_session
 from bot.keyboards.user_keyboards import payment_methods_kb
 from bot.states.user_states import TopUpState
 
@@ -52,8 +52,26 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
             await state.finish()
             return await message.answer("Сначала нажмите /start, чтобы зарегистрироваться")
 
-        req = TopUpRequest(user_id=user_id, amount=amount, currency=currency)
+        req = TopUpRequest(
+            user_id=user.id,
+            telegram_id=user.tg_id,
+            amount=amount,
+            currency=currency
+        )
         session.add(req)
+        await session.flush()
+
+        session.add(
+            LogEntry(
+                user_id=user.id,
+                telegram_id=user.tg_id,
+                request_id=req.request_id,
+                event_type="topup_requested",
+                message=f"Заявка на пополнение на {amount} {currency}",
+                data={"topup_request_id": req.id},
+            )
+        )
+
         await session.commit()
         request_id = req.id
 
@@ -71,7 +89,8 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
         ROOT_ADMIN_ID,
         f"💰 Заявка на пополнение #{request_id}\n"
         f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
-        f"Сумма: {amount} {currency.upper()}",
+        f"Сумма: {amount} {currency.upper()}\n"
+        f"Request ID: {req.request_id}",
         reply_markup=kb,
     )
 

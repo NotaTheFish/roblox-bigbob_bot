@@ -1,9 +1,10 @@
 from aiogram import types, Dispatcher
 from sqlalchemy import select
 
-from bot.db import Admin, User, async_session
+from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.verify_kb import verify_button
 from bot.keyboards.main_menu import main_menu
+from bot.utils.referrals import attach_referral, ensure_referral_code, find_referrer_by_code
 
 
 async def start_cmd(message: types.Message):
@@ -12,6 +13,7 @@ async def start_cmd(message: types.Message):
 
     tg_id = message.from_user.id
     tg_username = message.from_user.username or "Unknown"
+    referral_code = (message.get_args() or "").strip()
 
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == tg_id))
@@ -29,6 +31,43 @@ async def start_cmd(message: types.Message):
                 is_blocked=False,
             )
             session.add(user)
+            await session.flush()
+
+            code = await ensure_referral_code(session, user)
+            referrer = None
+            if referral_code:
+                referrer = await find_referrer_by_code(session, referral_code)
+            if referrer:
+                referral = await attach_referral(session, referrer, user)
+                if referral:
+                    session.add(
+                        LogEntry(
+                            user_id=referrer.id,
+                            telegram_id=referrer.tg_id,
+                            event_type="referral_attached",
+                            message="Новый реферал",
+                            data={"referred_id": user.id, "referral_code": referral_code},
+                        )
+                    )
+                    session.add(
+                        LogEntry(
+                            user_id=user.id,
+                            telegram_id=user.tg_id,
+                            event_type="referred_signup",
+                            message="Регистрация по реферальной ссылке",
+                            data={"referrer_id": referrer.id},
+                        )
+                    )
+
+            session.add(
+                LogEntry(
+                    user_id=user.id,
+                    telegram_id=user.tg_id,
+                    event_type="user_registered",
+                    message="Пользователь зарегистрирован",
+                    data={"referral_code": code},
+                )
+            )
             await session.commit()
 
             return await message.answer(
@@ -40,6 +79,10 @@ async def start_cmd(message: types.Message):
         # Обновляем username если человек сменил ник в Telegram
         if user.tg_username != tg_username:
             user.tg_username = tg_username
+            await ensure_referral_code(session, user)
+            await session.commit()
+        else:
+            await ensure_referral_code(session, user)
             await session.commit()
 
         # Проверка блокировки

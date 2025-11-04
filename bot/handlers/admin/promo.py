@@ -41,12 +41,14 @@ async def promo_create_start(call: types.CallbackQuery):
     await PromoCreateState.waiting_for_code.set()
 
 
+# ✅ Ввод кода промо
 async def promo_set_code(message: types.Message, state: FSMContext):
     await state.update_data(code=message.text.upper())
     await message.answer("Выберите тип награды:", reply_markup=promo_reward_type_kb())
     await PromoCreateState.waiting_for_reward_type.set()
 
 
+# ✅ Выбор типа награды
 async def promo_set_reward_type(call: types.CallbackQuery, state: FSMContext):
     promo_type = "money" if "money" in call.data else "item"
     await state.update_data(promo_type=promo_type)
@@ -59,25 +61,29 @@ async def promo_set_reward_type(call: types.CallbackQuery, state: FSMContext):
     await PromoCreateState.waiting_for_reward_value.set()
 
 
+# ✅ Ввод значения награды
 async def promo_set_reward_value(message: types.Message, state: FSMContext):
     data = await state.get_data()
     promo_type = data.get("promo_type", "money")
 
     if promo_type == "money":
         try:
-            value = int(message.text)
+            reward_amount = int(message.text)
         except ValueError:
             return await message.answer("Введите ЧИСЛО")
+        value = str(reward_amount)
     else:
         value = message.text.strip()
         if not value:
             return await message.answer("Введите значение награды")
+        reward_amount = 0
 
-    await state.update_data(value=value)
+    await state.update_data(value=value, reward_amount=reward_amount)
     await message.answer("📊 Введите лимит использований (число, 0 — без ограничения):")
     await PromoCreateState.waiting_for_usage_limit.set()
 
 
+# ✅ Ввод лимита
 async def promo_set_limit(message: types.Message, state: FSMContext):
     try:
         limit = int(message.text)
@@ -97,7 +103,6 @@ async def promo_finish(message: types.Message, state: FSMContext):
         return await message.answer("Введите число дней")
 
     data = await state.get_data()
-
     expires_at = datetime.utcnow() + timedelta(days=days) if days > 0 else None
 
     async with async_session() as session:
@@ -105,9 +110,12 @@ async def promo_finish(message: types.Message, state: FSMContext):
             code=data["code"],
             promo_type=data["promo_type"],
             value=data["value"],
-            max_uses=data["max_uses"],
+            reward_amount=data.get("reward_amount", 0),
+            reward_type="balance" if data["promo_type"] == "money" else "item",
+            max_uses=data.get("max_uses"),
             uses=0,
             expires_at=expires_at,
+            active=True,
         )
         session.add(promo)
         await session.commit()
