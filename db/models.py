@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -26,6 +27,12 @@ def _generate_request_id() -> str:
 
 
 Base = declarative_base()
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, compiler, **kwargs):
+    """Render JSONB columns as JSON for SQLite compatibility."""
+    return "JSON"
 
 
 class User(Base):
@@ -101,7 +108,7 @@ class PromoCode(Base):
     max_uses = Column(Integer)
     uses = Column(Integer, default=0, nullable=False)
     expires_at = Column(DateTime(timezone=True))
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -144,7 +151,7 @@ class Server(Base):
     telegram_chat_id = Column(BigInteger, unique=True)
     description = Column(Text)
     status = Column(String(32), default="active", nullable=False)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -168,7 +175,7 @@ class Product(Base):
     per_user_limit = Column(Integer)
     stock_limit = Column(Integer)
     referral_bonus = Column(Integer, default=0, nullable=False)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -192,7 +199,7 @@ class Purchase(Base):
     total_price = Column(Integer, nullable=False)
     status = Column(String(32), default="pending", nullable=False)
     notes = Column(Text)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))
@@ -217,7 +224,7 @@ class Payment(Base):
     amount = Column(Integer, nullable=False)
     currency = Column(String(16), nullable=False)
     status = Column(String(32), default="received", nullable=False)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))
@@ -240,7 +247,7 @@ class Withdrawal(Base):
     status = Column(String(32), default="pending", nullable=False)
     method = Column(String(64))
     destination = Column(String(255))
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     processed_at = Column(DateTime(timezone=True))
 
@@ -257,7 +264,7 @@ class PromocodeRedemption(Base):
     telegram_id = Column(BigInteger, index=True, nullable=False)
     reward_amount = Column(Integer)
     reward_type = Column(String(32))
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     redeemed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     promocode = relationship("PromoCode", back_populates="redemptions")
@@ -275,7 +282,7 @@ class Referral(Base):
     referred_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     referred_telegram_id = Column(BigInteger, nullable=False, index=True)
     referral_code = Column(String(64), nullable=False, index=True)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     referrer = relationship("User", back_populates="referrals", foreign_keys=[referrer_id])
@@ -295,7 +302,7 @@ class ReferralReward(Base):
     payment_id = Column(Integer, ForeignKey("payments.id"))
     amount = Column(Integer, nullable=False)
     status = Column(String(32), default="pending", nullable=False)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     granted_at = Column(DateTime(timezone=True))
 
@@ -332,7 +339,7 @@ class TopUpRequest(Base):
     amount = Column(Integer, nullable=False)
     currency = Column(String(16), nullable=False, default="rub")
     status = Column(String(32), default="pending", nullable=False)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     payment_id = Column(Integer, ForeignKey("payments.id"))
@@ -348,7 +355,7 @@ class GameProgress(Base):
     roblox_user_id = Column(String(255), index=True, nullable=False)
     progress = Column(JSONB, nullable=False)
     version = Column(Integer, nullable=False, default=1)
-    metadata = Column(JSONB)
+    metadata_json = Column("metadata", JSONB)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -373,31 +380,3 @@ class IdempotencyKey(Base):
     response_body = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
-
-
-class PaymentWebhookEvent(Base):
-    __tablename__ = "payment_webhooks"
-
-    id = Column(Integer, primary_key=True)
-    payment_id = Column(Integer, ForeignKey("payments.id"))
-    telegram_payment_id = Column(String(128), unique=True, nullable=False)
-    telegram_user_id = Column(BigInteger, index=True, nullable=False)
-    amount = Column(Integer, nullable=False)
-    currency = Column(String(16), nullable=False)
-    raw_payload = Column(JSONB, nullable=False)
-    status = Column(String(32), nullable=False, default="received")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    processed_at = Column(DateTime(timezone=True))
-
-    payment = relationship("Payment", back_populates="webhook_events")
-
-
-class RobloxSyncEvent(Base):
-    __tablename__ = "roblox_sync_events"
-
-    id = Column(Integer, primary_key=True)
-    roblox_user_id = Column(String(255), index=True, nullable=False)
-    action = Column(String(255), nullable=False)
-    payload = Column(JSONB, nullable=False)
-    response = Column(Text)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())

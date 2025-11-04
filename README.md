@@ -14,7 +14,7 @@ Production-ready Telegram bot for Roblox with Render deploy.
 
 &nbsp;  (for example `postgresql+asyncpg://user:password@localhost:5432/database`).
 
-2\. Install dependencies and create the database schema:
+2\. Install dependencies:
 
 
 
@@ -22,13 +22,23 @@ Production-ready Telegram bot for Roblox with Render deploy.
 
 &nbsp;  pip install -r requirements.txt
 
-&nbsp;  python create\_db.py
+&nbsp;  ```
+
+
+
+3\. Apply the database migrations (requires `DB_URL` or `DATABASE_URL` to be set):
+
+
+
+&nbsp;  ```bash
+
+&nbsp;  alembic upgrade head
 
 &nbsp;  ```
 
 
 
-3\. Start the bot core:
+4\. Start the bot core:
 
 
 

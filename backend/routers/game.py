@@ -76,14 +76,14 @@ async def push_progress(
     if progress:
         progress.progress = payload.progress
         progress.version = payload.version or (progress.version + 1)
-        progress.metadata = payload.metadata
+        progress.metadata_json = payload.metadata
         progress.updated_at = now
     else:
         progress = GameProgress(
             roblox_user_id=payload.roblox_user_id,
             progress=payload.progress,
             version=payload.version or 1,
-            metadata=payload.metadata,
+            metadata_json=payload.metadata,
             updated_at=now,
         )
         session.add(progress)
