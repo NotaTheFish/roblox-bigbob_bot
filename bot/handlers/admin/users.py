@@ -82,7 +82,9 @@ async def admin_search_user(message: types.Message):
     filters = []
 
     if query.isdigit():
-        filters.append(User.tg_id == int(query))
+        tg_id = int(query)
+        filters.append(User.tg_id == tg_id)
+
 
     like_pattern = f"%{query}%"
     filters.append(User.tg_username.ilike(like_pattern))
