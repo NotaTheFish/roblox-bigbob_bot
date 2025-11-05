@@ -52,7 +52,7 @@ async def record_payment(
             amount=amount,
             currency=currency,
             status="received",
-            metadata=payload,
+            metadata_json=payload,
         )
         session.add(payment)
         await session.flush()

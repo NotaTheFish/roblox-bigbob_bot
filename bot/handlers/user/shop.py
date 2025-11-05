@@ -202,7 +202,7 @@ async def user_buy_finish(call: types.CallbackQuery):
                 amount=product.referral_bonus,
                 status="granted",
                 granted_at=datetime.utcnow(),
-                metadata={"product_id": product.id},
+                metadata_json={"product_id": product.id},
             )
             session.add(reward)
             referrer = referral.referrer

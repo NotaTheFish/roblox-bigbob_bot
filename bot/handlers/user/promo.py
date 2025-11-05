@@ -68,7 +68,7 @@ async def activate_promo(message: types.Message):
             telegram_id=user.tg_id,
             reward_amount=reward_amount,
             reward_type=reward_type,
-            metadata={"promo_value": promo.value},
+            metadata_json={"promo_value": promo.value},
         )
         session.add(redemption)
         await session.flush()
