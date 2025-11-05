@@ -1,7 +1,6 @@
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
-from aiogram.exceptions import SkipHandler
 from aiogram.types import CallbackQuery, Message, TelegramObject
 from sqlalchemy import select
 
@@ -17,6 +16,7 @@ class BlockMiddleware(BaseMiddleware):
     ) -> Any:
         user_id: int | None = None
 
+        # Check event type and get user ID
         if isinstance(event, Message) and event.from_user:
             user_id = event.from_user.id
         elif isinstance(event, CallbackQuery) and event.from_user:
@@ -31,6 +31,7 @@ class BlockMiddleware(BaseMiddleware):
             )
             user = result.scalar_one_or_none()
 
+        # ❌ If blocked — send message and stop here
         if user and user.is_blocked:
             try:
                 if isinstance(event, CallbackQuery):
@@ -39,6 +40,8 @@ class BlockMiddleware(BaseMiddleware):
                     await event.answer("⛔ Вы заблокированы и не можете пользоваться ботом.")
             except Exception:
                 pass
-            raise SkipHandler()
 
+            return  # ⬅️ ключевой момент — просто завершаем middleware
+
+        # ✅ Continue processing
         return await handler(event, data)

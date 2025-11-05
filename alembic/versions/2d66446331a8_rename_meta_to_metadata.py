@@ -3,11 +3,11 @@
 from alembic import op
 import sqlalchemy as sa
 
-# If you want you can set real revision IDs here
-revision = "fix_meta_metadata_all"
-down_revision = None
+revision = "2d66446331a84fbe8e3b0f90a9210a8d"
+down_revision = "1f14fc542827"
 branch_labels = None
 depends_on = None
+
 
 tables = [
     "game_progress",
@@ -24,28 +24,30 @@ tables = [
 ]
 
 
-def safe_rename(table, old, new):
+def _column_set(table_name):
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
     try:
-        op.execute(f'ALTER TABLE "{table}" RENAME COLUMN "{old}" TO "{new}";')
-    except Exception:
-        pass
+        columns = inspector.get_columns(table_name)
+    except sa.exc.NoSuchTableError:
+        return set()
+    return {column["name"] for column in columns}
+
+
+def safe_rename(table, old, new):
+    columns = _column_set(table)
+
+    if old not in columns or new in columns:
+        return
+
+    op.execute(sa.text(f'ALTER TABLE "{table}" RENAME COLUMN "{old}" TO "{new}"'))
 
 
 def upgrade():
-    # meta -> metadata, if exists
     for table in tables:
         safe_rename(table, "meta", "metadata")
 
-    # metadata -> metadata_json, if exists
-    for table in tables:
-        safe_rename(table, "metadata", "metadata_json")
-
 
 def downgrade():
-    # rollback: metadata_json -> metadata (if exists)
-    for table in tables:
-        safe_rename(table, "metadata_json", "metadata")
-
-    # metadata -> meta (if exists)
     for table in tables:
         safe_rename(table, "metadata", "meta")

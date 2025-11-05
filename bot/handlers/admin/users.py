@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
-from aiogram.exceptions import SkipHandler
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import or_, select
@@ -66,7 +65,7 @@ async def admin_search_user(message: types.Message):
         return
 
     if not await is_admin(message.from_user.id):
-        raise SkipHandler()
+        return  # <--- заменили raise SkipHandler()
 
     query = message.text.strip().lstrip("@")
     if not query:
@@ -90,7 +89,9 @@ async def admin_search_user(message: types.Message):
     tg_username = f"@{user.tg_username}" if user.tg_username else "—"
     roblox_username = user.username or "—"
     roblox_id = user.roblox_id or "—"
-    created_at = user.created_at.strftime("%d.%m.%Y %H:%M") if user.created_at else "—"
+    created_at = (
+        user.created_at.strftime("%d.%m.%Y %H:%M") if user.created_at else "—"
+    )
 
     text = (
         f"<b>👤 Пользователь найден</b>\n"
@@ -141,14 +142,14 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
             await session.commit()
             await call.bot.send_message(user_id, "⛔ Ваш доступ к боту заблокирован.")
             await call.message.edit_text("✅ Пользователь заблокирован")
-            return await call.answer()
+            return
 
         if action == "unblock_user":
             user.is_blocked = False
             await session.commit()
             await call.bot.send_message(user_id, "✅ Ваш доступ восстановлен.")
             await call.message.edit_text("✅ Пользователь разблокирован")
-            return await call.answer()
+            return
 
 
 # -------- Процесс выдачи валюты --------

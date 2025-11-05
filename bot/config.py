@@ -1,5 +1,9 @@
 import os
 from typing import List
+from dotenv import load_dotenv
+
+# Загружаем переменные из .env
+load_dotenv()
 
 
 def _parse_int_list(value: str | None) -> List[int]:
