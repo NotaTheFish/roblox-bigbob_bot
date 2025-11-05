@@ -54,7 +54,11 @@ class User(Base):
     referral_code = Column(String(64), unique=True, index=True)
     referred_at = Column(DateTime(timezone=True))
 
-    achievements = relationship("UserAchievement", back_populates="user")
+    achievements = relationship(
+        "UserAchievement",
+        back_populates="user",
+        foreign_keys="UserAchievement.user_id",
+    )
     referrals = relationship("Referral", back_populates="referrer", foreign_keys="Referral.referrer_id")
     referred_referral = relationship(
         "Referral",
@@ -131,15 +135,12 @@ class UserAchievement(Base):
 
     id = Column(Integer, primary_key=True)
     tg_id = Column(BigInteger, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=False)
     earned_at = Column(DateTime(timezone=True), server_default=func.now())
 
     achievement = relationship("Achievement", back_populates="user_achievements")
-    user = relationship(
-        "User",
-        primaryjoin="User.tg_id == UserAchievement.tg_id",
-        viewonly=True,
-    )
+    user = relationship("User", back_populates="achievements")
 
 
 class Server(Base):

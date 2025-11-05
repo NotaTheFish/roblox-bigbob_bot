@@ -28,7 +28,11 @@ async def check_achievements(user: User) -> None:
             # Начало игры
             if achievement.name == "Начало игры":
                 session.add(
-                    UserAchievement(tg_id=db_user.tg_id, achievement_id=achievement.id)
+                    UserAchievement(
+                        tg_id=db_user.tg_id,
+                        user_id=db_user.id,
+                        achievement_id=achievement.id,
+                    )
                 )
                 db_user.balance += achievement.reward
                 granted = True
@@ -36,7 +40,11 @@ async def check_achievements(user: User) -> None:
             # Первый донат
             elif achievement.name == "Первый донат" and db_user.balance >= 100:
                 session.add(
-                    UserAchievement(tg_id=db_user.tg_id, achievement_id=achievement.id)
+                    UserAchievement(
+                        tg_id=db_user.tg_id,
+                        user_id=db_user.id,
+                        achievement_id=achievement.id,
+                    )
                 )
                 db_user.balance += achievement.reward
                 granted = True
@@ -44,7 +52,11 @@ async def check_achievements(user: User) -> None:
             # Магнат
             elif achievement.name == "Магнат" and db_user.balance >= 10000:
                 session.add(
-                    UserAchievement(tg_id=db_user.tg_id, achievement_id=achievement.id)
+                    UserAchievement(
+                        tg_id=db_user.tg_id,
+                        user_id=db_user.id,
+                        achievement_id=achievement.id,
+                    )
                 )
                 db_user.balance += achievement.reward
                 granted = True

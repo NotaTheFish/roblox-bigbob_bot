@@ -70,7 +70,11 @@ services: the FastAPI backend (`roblox-backend`) and the Telegram bot webhook ha
 
 &nbsp;  optional `WEBHOOK\_URL`) are set in your `.env` before syncing the environment.
 
-5\. Verify the deployment with the Postman collection in
+5\. Before restarting services when new migrations are deployed, open the Render shell for
+&nbsp;  `roblox-backend` (or run your deployment script) and execute `alembic upgrade head`
+&nbsp;  so the database schema stays current.
+
+6\. Verify the deployment with the Postman collection in
 &nbsp;  [`docs/postman/collection.json`](docs/postman/collection.json) and the companion
 &nbsp;  environment file [`docs/postman/environment.json`](docs/postman/environment.json).
 

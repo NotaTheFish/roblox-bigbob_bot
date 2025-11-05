@@ -73,6 +73,8 @@ match your deployment before sending requests.
 Before deploying via `render.yaml`, copy `.env.example` to `.env` and provide the same
 secrets used locally. Render will read the values defined in `.env` when synchronising
 environment variables for the `roblox-backend` and `roblox-bot` services. See
-[DEPLOYMENT.md](DEPLOYMENT.md) for a step-by-step walkthrough.
-
+[DEPLOYMENT.md](DEPLOYMENT.md) for a step-by-step walkthrough. When applying schema
+changes in production, open the Render shell for the backend service (or run your
+automation script) and execute `alembic upgrade head` before restarting workers so the
+database stays in sync.
 
