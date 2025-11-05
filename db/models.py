@@ -236,6 +236,27 @@ class Payment(Base):
     referral_rewards = relationship("ReferralReward", back_populates="payment")
 
 
+class PaymentWebhookEvent(Base):
+    __tablename__ = "payment_webhooks"
+
+    id = Column(Integer, primary_key=True)
+    payment_id = Column(Integer, ForeignKey("payments.id"), index=True)
+    telegram_payment_id = Column(String(128), nullable=False, unique=True)
+    telegram_user_id = Column(BigInteger, nullable=False, index=True)
+    amount = Column(Integer, nullable=False)
+    currency = Column(String(16), nullable=False)
+    raw_payload = Column(JSONB, nullable=False)
+    status = Column(String(32), default="received", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at = Column(DateTime(timezone=True))
+
+    payment = relationship("Payment", back_populates="webhook_events")
+
+    __table_args__ = (
+        UniqueConstraint("telegram_payment_id", name="uq_payment_webhooks_telegram_payment_id"),
+    )
+
+
 class Withdrawal(Base):
     __tablename__ = "withdrawals"
 
@@ -367,6 +388,17 @@ class GrantEvent(Base):
     rewards = Column(JSONB, nullable=False)
     source = Column(String(255))
     request_id = Column(String(64), unique=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RobloxSyncEvent(Base):
+    __tablename__ = "roblox_sync_events"
+
+    id = Column(Integer, primary_key=True)
+    roblox_user_id = Column(String(255), index=True, nullable=False)
+    action = Column(String(255), nullable=False)
+    payload = Column(JSONB, nullable=False)
+    response = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

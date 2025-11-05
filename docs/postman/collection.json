@@ -1,0 +1,178 @@
+{
+  "info": {
+    "_postman_id": "7c6f0f0e-1b0a-4d2c-8df0-6b2c55d629c1",
+    "name": "BigBob Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Requests covering the Roblox BigBob backend endpoints with HMAC authentication."
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get(\"hmac_secret\")) {",
+          "  throw new Error(\"Set hmac_secret in the active Postman environment.\");",
+          "}",
+          "let body = '';",
+          "if (pm.request && pm.request.body) {",
+          "  if (pm.request.body.mode === 'raw') {",
+          "    body = pm.variables.replaceIn(pm.request.body.raw || '');",
+          "  }",
+          "}",
+          "const signature = CryptoJS.HmacSHA256(body, pm.environment.get('hmac_secret')).toString();",
+          "pm.variables.set('computed_signature', signature);",
+          "pm.request.headers.upsert({ key: 'X-Signature', value: signature });",
+          "let idempotencyKey = pm.request.headers.get('Idempotency-Key');",
+          "if (!idempotencyKey) {",
+          "  idempotencyKey = pm.environment.get('idempotency_key') || `postman-${Date.now()}`;",
+          "  pm.request.headers.upsert({ key: 'Idempotency-Key', value: idempotencyKey });",
+          "  if (!pm.environment.get('idempotency_key')) {",
+          "    pm.environment.set('idempotency_key', idempotencyKey);",
+          "  }",
+          "}",
+          "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Game",
+      "item": [
+        {
+          "name": "Push Progress",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roblox_user_id\": \"{{roblox_user_id}}\",\n  \"progress\": {\n    \"level\": 5,\n    \"xp\": 1250,\n    \"inventory\": [\"starter-sword\", \"health-potion\"]\n  },\n  \"version\": {{progress_version}},\n  \"metadata\": {\n    \"clientVersion\": \"1.2.3\",\n    \"platform\": \"ios\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/game/progress/push",
+              "host": ["{{base_url}}"],
+              "path": ["game", "progress", "push"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pull Progress",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roblox_user_id\": \"{{roblox_user_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/game/progress/pull",
+              "host": ["{{base_url}}"],
+              "path": ["game", "progress", "pull"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant Rewards",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{grant_request_id}}\",\n  \"roblox_user_id\": \"{{roblox_user_id}}\",\n  \"rewards\": [\n    {\n      \"type\": \"currency\",\n      \"amount\": 1000\n    },\n    {\n      \"type\": \"item\",\n      \"item_id\": \"{{roblox_item_id}}\"\n    }\n  ],\n  \"source\": \"postman-collection\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/game/grant",
+              "host": ["{{base_url}}"],
+              "path": ["game", "grant"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Telegram Payment Webhook",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{telegram_payment_id}}\",\n  \"telegram_user_id\": {{telegram_user_id}},\n  \"amount\": {{payment_amount}},\n  \"currency\": \"{{payment_currency}}\",\n  \"payload\": {\n    \"purchaseId\": \"sample-purchase-123\",\n    \"notes\": \"Example payload echoed from Telegram\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payments/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "webhook"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "computed_signature",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

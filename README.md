@@ -59,6 +59,15 @@ Production-ready Telegram bot for Roblox with Render deploy.
 
 &nbsp;  ```
 
+## API testing with Postman
+
+Import the collection under [`docs/postman/collection.json`](docs/postman/collection.json)
+to exercise every backend endpoint from Postman (or any compatible client). The companion
+environment file [`docs/postman/environment.json`](docs/postman/environment.json)
+pre-populates variables for the base URL, HMAC secret, reusable idempotency keys, and
+sample Roblox identifiers used in the example payloads. Update the environment values to
+match your deployment before sending requests.
+
 ## Deploying to Render
 
 Before deploying via `render.yaml`, copy `.env.example` to `.env` and provide the same
