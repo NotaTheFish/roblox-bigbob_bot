@@ -3,13 +3,17 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
+from aiogram import F, Router, types
+from aiogram.filters import StateFilter
+from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
 from bot.db import Admin, LogEntry, Product, Server, async_session
 from bot.states.shop_states import ShopCreateState
+
+
+router = Router(name="admin_shop")
 
 
 async def is_admin(uid: int) -> bool:
@@ -46,7 +50,7 @@ async def _ensure_unique_slug(session, server_id: Optional[int], base_slug: str)
 
 
 # === ADMIN MENU ===
-
+@router.callback_query(F.data == "admin_shop")
 async def admin_shop_menu(call: types.CallbackQuery):
     if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
@@ -68,15 +72,16 @@ async def admin_shop_menu(call: types.CallbackQuery):
 
 
 # === CREATE ITEM FLOW ===
-
-async def shop_add(call: types.CallbackQuery):
+@router.callback_query(F.data == "shop_add")
+async def shop_add(call: types.CallbackQuery, state: FSMContext):
     if not call.from_user or not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
     await call.message.answer("Введите название товара:")
-    await ShopCreateState.waiting_for_name.set()
+    await state.set_state(ShopCreateState.waiting_for_name)
 
 
+@router.message(StateFilter(ShopCreateState.waiting_for_name))
 async def shop_set_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
 
@@ -88,9 +93,13 @@ async def shop_set_name(message: types.Message, state: FSMContext):
     )
 
     await message.answer("Выберите тип товара:", reply_markup=kb)
-    await ShopCreateState.waiting_for_type.set()
+    await state.set_state(ShopCreateState.waiting_for_type)
 
 
+@router.callback_query(
+    StateFilter(ShopCreateState.waiting_for_type),
+    F.data.startswith("shop_type"),
+)
 async def shop_set_type(call: types.CallbackQuery, state: FSMContext):
     if "money" in call.data:
         item_type = "money"
@@ -104,15 +113,17 @@ async def shop_set_type(call: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(item_type=item_type)
     await call.message.answer(prompt)
-    await ShopCreateState.waiting_for_value.set()
+    await state.set_state(ShopCreateState.waiting_for_value)
 
 
+@router.message(StateFilter(ShopCreateState.waiting_for_value))
 async def shop_set_value(message: types.Message, state: FSMContext):
     await state.update_data(value=message.text.strip())
     await message.answer("Введите цену товара (игровая валюта):")
-    await ShopCreateState.waiting_for_price.set()
+    await state.set_state(ShopCreateState.waiting_for_price)
 
 
+@router.message(StateFilter(ShopCreateState.waiting_for_price))
 async def shop_set_price(message: types.Message, state: FSMContext):
     try:
         price = int(message.text)
@@ -123,9 +134,10 @@ async def shop_set_price(message: types.Message, state: FSMContext):
 
     await state.update_data(price=price)
     await message.answer("Сколько раз можно купить? (0 — без ограничений)")
-    await ShopCreateState.waiting_for_limit.set()
+    await state.set_state(ShopCreateState.waiting_for_limit)
 
 
+@router.message(StateFilter(ShopCreateState.waiting_for_limit))
 async def shop_set_limit(message: types.Message, state: FSMContext):
     try:
         raw = int(message.text)
@@ -135,9 +147,10 @@ async def shop_set_limit(message: types.Message, state: FSMContext):
 
     await state.update_data(per_user_limit=per_user_limit)
     await message.answer("Введите бонус рефереру (0 — нет бонуса):")
-    await ShopCreateState.waiting_for_referral_bonus.set()
+    await state.set_state(ShopCreateState.waiting_for_referral_bonus)
 
 
+@router.message(StateFilter(ShopCreateState.waiting_for_referral_bonus))
 async def shop_finish(message: types.Message, state: FSMContext):
     try:
         referral_bonus = int(message.text)
@@ -184,11 +197,11 @@ async def shop_finish(message: types.Message, state: FSMContext):
         await session.commit()
 
     await message.answer("✅ Товар добавлен!")
-    await state.finish()
+    await state.clear()
 
 
 # === LIST & DELETE ===
-
+@router.callback_query(F.data == "shop_list")
 async def shop_list(call: types.CallbackQuery):
     if not call.from_user or not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
@@ -220,6 +233,7 @@ async def shop_list(call: types.CallbackQuery):
     await call.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode="HTML")
 
 
+@router.callback_query(F.data.startswith("shop_del"))
 async def shop_delete(call: types.CallbackQuery):
     if not call.from_user or not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
@@ -242,16 +256,3 @@ async def shop_delete(call: types.CallbackQuery):
 
     await call.answer("Удалено ✅")
     await shop_list(call)
-
-
-def register_admin_shop(dp: Dispatcher):
-    dp.register_callback_query_handler(admin_shop_menu, lambda c: c.data == "admin_shop")
-    dp.register_callback_query_handler(shop_add, lambda c: c.data == "shop_add")
-    dp.register_message_handler(shop_set_name, state=ShopCreateState.waiting_for_name)
-    dp.register_callback_query_handler(shop_set_type, lambda c: c.data.startswith("shop_type"), state=ShopCreateState.waiting_for_type)
-    dp.register_message_handler(shop_set_value, state=ShopCreateState.waiting_for_value)
-    dp.register_message_handler(shop_set_price, state=ShopCreateState.waiting_for_price)
-    dp.register_message_handler(shop_set_limit, state=ShopCreateState.waiting_for_limit)
-    dp.register_message_handler(shop_finish, state=ShopCreateState.waiting_for_referral_bonus)
-    dp.register_callback_query_handler(shop_list, lambda c: c.data == "shop_list")
-    dp.register_callback_query_handler(shop_delete, lambda c: c.data.startswith("shop_del"))

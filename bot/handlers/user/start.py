@@ -1,4 +1,5 @@
-from aiogram import types, Dispatcher
+from aiogram import Router, types
+from aiogram.filters import CommandStart
 from sqlalchemy import select
 
 from bot.db import Admin, LogEntry, User, async_session
@@ -7,6 +8,10 @@ from bot.keyboards.main_menu import main_menu
 from bot.utils.referrals import attach_referral, ensure_referral_code, find_referrer_by_code
 
 
+router = Router(name="user_start")
+
+
+@router.message(CommandStart())
 async def start_cmd(message: types.Message):
     if not message.from_user:
         return  # защита от фейк-апдейтов
@@ -76,7 +81,7 @@ async def start_cmd(message: types.Message):
                 reply_markup=verify_button(),
             )
 
-        # Обновляем username если человек сменил ник в Telegram
+        # Обновляем username, если человек сменил ник в Telegram
         if user.tg_username != tg_username:
             user.tg_username = tg_username
             await ensure_referral_code(session, user)
@@ -101,12 +106,8 @@ async def start_cmd(message: types.Message):
             await session.scalar(select(Admin).where(Admin.telegram_id == tg_id))
         )
 
-    # Если уже зарегистрирован и верифицирован — даём меню
+    # Уже зарегистрирован и верифицирован — даём меню
     await message.answer(
         f"✅ Добро пожаловать, <b>{tg_username}</b>!",
         reply_markup=main_menu(is_admin=is_admin),
     )
-
-
-def register_start(dp: Dispatcher):
-    dp.register_message_handler(start_cmd, commands=["start"])

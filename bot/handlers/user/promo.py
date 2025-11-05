@@ -1,14 +1,18 @@
-from aiogram import types, Dispatcher
-from aiogram.dispatcher.filters import Command
 from datetime import datetime
+
+from aiogram import Router, types
+from aiogram.filters import Command
 from sqlalchemy import select
 
-from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
 from bot.utils.achievement_checker import check_achievements
 
 
+router = Router(name="user_promo")
+
+
+@router.message(Command("promo"))
 async def activate_promo(message: types.Message):
     code = message.get_args().upper()
 
@@ -36,7 +40,7 @@ async def activate_promo(message: types.Message):
         if not user:
             return await message.reply("❗ Ошибка: вы не зарегистрированы")
 
-        # Проверяем что пользователь не использовал этот промо ранее
+        # Проверка, что пользователь не активировал промокод ранее
         already_used = await session.scalar(
             select(PromocodeRedemption).where(
                 PromocodeRedemption.promocode_id == promo.id,
@@ -87,15 +91,11 @@ async def activate_promo(message: types.Message):
     await message.reply(f"✅ Промокод активирован!\nВы получили: {reward_text}")
 
     try:
-        await bot.send_message(
+        await message.bot.send_message(
             ROOT_ADMIN_ID,
             f"🎟 Промокод <code>{code}</code> активировал @{message.from_user.username}\n"
             f"Выдано: {reward_text}",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
-    except:
+    except Exception:
         pass
-
-
-def register_promo(dp: Dispatcher):
-    dp.register_message_handler(activate_promo, Command("promo"))

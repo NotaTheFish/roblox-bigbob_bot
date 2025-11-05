@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
+from aiogram import F, Router, types
+from aiogram.filters import StateFilter
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from bot.db import async_session, Admin, Achievement
+from bot.db import Achievement, Admin, async_session
 from bot.keyboards.admin_keyboards import admin_achievements_kb
 from bot.states.admin_states import AchievementsState
+
+
+router = Router(name="admin_achievements")
 
 
 async def is_admin(uid: int) -> bool:
@@ -14,6 +18,7 @@ async def is_admin(uid: int) -> bool:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
+@router.callback_query(F.data == "admin_achievements")
 async def admin_achievements_menu(call: types.CallbackQuery):
     if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
@@ -27,23 +32,27 @@ async def admin_achievements_menu(call: types.CallbackQuery):
     )
 
 
-async def ach_add(call: types.CallbackQuery):
+@router.callback_query(F.data == "ach_add")
+async def ach_add(call: types.CallbackQuery, state: FSMContext):
     await call.message.answer("Введите название достижения:")
-    await AchievementsState.waiting_for_name.set()
+    await state.set_state(AchievementsState.waiting_for_name)
 
 
+@router.message(StateFilter(AchievementsState.waiting_for_name))
 async def ach_set_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
     await message.answer("Введите описание:")
-    await AchievementsState.waiting_for_description.set()
+    await state.set_state(AchievementsState.waiting_for_description)
 
 
+@router.message(StateFilter(AchievementsState.waiting_for_description))
 async def ach_set_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
     await message.answer("Введите награду (монеты):")
-    await AchievementsState.waiting_for_reward.set()
+    await state.set_state(AchievementsState.waiting_for_reward)
 
 
+@router.message(StateFilter(AchievementsState.waiting_for_reward))
 async def ach_finish(message: types.Message, state: FSMContext):
     try:
         reward = int(message.text)
@@ -62,9 +71,10 @@ async def ach_finish(message: types.Message, state: FSMContext):
         await session.commit()
 
     await message.answer("✅ Достижение создано!")
-    await state.finish()
+    await state.clear()
 
 
+@router.callback_query(F.data == "ach_list")
 async def ach_list(call: types.CallbackQuery):
     if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
@@ -89,31 +99,4 @@ async def ach_list(call: types.CallbackQuery):
         text,
         reply_markup=admin_achievements_kb(),
         parse_mode="HTML",
-    )
-
-
-def register_admin_achievements(dp: Dispatcher):
-    dp.register_callback_query_handler(
-        admin_achievements_menu,
-        lambda c: c.data == "admin_achievements",
-    )
-    dp.register_callback_query_handler(
-        ach_add,
-        lambda c: c.data == "ach_add",
-    )
-    dp.register_message_handler(
-        ach_set_name,
-        state=AchievementsState.waiting_for_name,
-    )
-    dp.register_message_handler(
-        ach_set_description,
-        state=AchievementsState.waiting_for_description,
-    )
-    dp.register_message_handler(
-        ach_finish,
-        state=AchievementsState.waiting_for_reward,
-    )
-    dp.register_callback_query_handler(
-        ach_list,
-        lambda c: c.data == "ach_list",
     )

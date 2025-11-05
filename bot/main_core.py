@@ -1,122 +1,72 @@
+import asyncio
 import logging
-from aiogram import types
 from aiohttp import web
+from aiogram import Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from sqlalchemy import select
 
-from bot.bot_instance import bot, dp
+from bot.bot_instance import bot
 from bot.config import (
-    WEBHOOK_URL,
-    WEBHOOK_PATH,
+    ROOT_ADMIN_ID,
     WEBAPP_HOST,
     WEBAPP_PORT,
-    ROOT_ADMIN_ID,
+    WEBHOOK_PATH,
+    WEBHOOK_URL,
 )
 from bot.db import Admin, async_session, init_db
+from bot.handlers.admin import routers as admin_routers
+from bot.handlers.user import routers as user_routers
 from bot.utils.block_middleware import BlockMiddleware
 
-# --- Логирование ---
-logging.basicConfig(level=logging.INFO)
 
-# ==========================================================
-#  ✅ Подключаем handlers
-# ==========================================================
-
-# --- User handlers ---
-from bot.handlers.user.start import register_start
-from bot.handlers.user.menu import register_user_menu
-from bot.handlers.user.verify import register_verify
-from bot.handlers.user.promo import register_promo
-from bot.handlers.user.shop import register_user_shop
-from bot.handlers.user.balance import register_user_balance
-
-# --- Admin handlers ---
-from bot.handlers.admin.users import register_admin_users
-from bot.handlers.admin.promo import register_admin_promo
-from bot.handlers.admin.shop import register_admin_shop
-from bot.handlers.admin.payments import register_admin_payments
-from bot.handlers.admin.menu import register_admin_menu
-from bot.handlers.admin.login import register_admin_login
-from bot.handlers.admin.achievements import register_admin_achievements
-
-_handlers_registered = False
+logger = logging.getLogger(__name__)
 
 
-def setup_handlers() -> None:
-    global _handlers_registered
-    if _handlers_registered:
-        return
-
-    # middleware
-    dp.middleware.setup(BlockMiddleware())
-
-    # user
-    register_start(dp)
-    register_user_menu(dp)
-    register_verify(dp)
-    register_promo(dp)
-    register_user_shop(dp)
-    register_user_balance(dp)
-
-    # admin
-    register_admin_users(dp)
-    register_admin_promo(dp)
-    register_admin_shop(dp)
-    register_admin_payments(dp)
-    register_admin_menu(dp)
-    register_admin_login(dp)
-    register_admin_achievements(dp)
-
-    _handlers_registered = True
-
-
-# ==========================================================
-#  ✅ Webhook system
-# ==========================================================
-
-async def handle(request):
-    data = await request.json()
-    update = types.Update(**data)
-    await dp.process_update(update)
-    return web.Response()
-
-
-async def ensure_root_admin():
+async def ensure_root_admin() -> None:
     async with async_session() as session:
         result = await session.execute(select(Admin).where(Admin.telegram_id == ROOT_ADMIN_ID))
         root = result.scalar_one_or_none()
-
         if not root and ROOT_ADMIN_ID != 0:
             session.add(Admin(telegram_id=ROOT_ADMIN_ID, is_root=True))
             await session.commit()
-            logging.info("✅ Root admin создан")
+            logger.info("✅ Root admin создан")
 
 
-async def on_startup(app):
-    # webhook
-    await bot.delete_webhook()
-    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
-    logging.info(f"✅ Webhook установлен: {WEBHOOK_URL}{WEBHOOK_PATH}")
+def build_dispatcher() -> Dispatcher:
+    dispatcher = Dispatcher(storage=MemoryStorage())
+    dispatcher.update.outer_middleware(BlockMiddleware())
+    for router in (*user_routers, *admin_routers):
+        dispatcher.include_router(router)
+    return dispatcher
 
-    # init DB async
+
+async def on_startup(dispatcher: Dispatcher) -> None:
     await init_db()
-
-    # ensure admin exists
     await ensure_root_admin()
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+    logger.info("✅ Webhook установлен")
 
 
-async def on_shutdown(app):
+async def on_shutdown(dispatcher: Dispatcher) -> None:
     await bot.delete_webhook()
-    logging.info("🛑 Webhook удалён")
+    logger.info("🛑 Webhook удалён")
 
 
-def main():
-    setup_handlers()
+async def init_app() -> web.Application:
+    dispatcher = build_dispatcher()
+    dispatcher.startup.register(on_startup)
+    dispatcher.shutdown.register(on_shutdown)
     app = web.Application()
-    app.router.add_post(WEBHOOK_PATH, handle)
+    SimpleRequestHandler(dispatcher, bot).register(app, path=WEBHOOK_PATH)
+    setup_application(app, dispatcher, bot=bot)
+    return app
 
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
 
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    app = asyncio.run(init_app())
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
 
 

@@ -1,10 +1,13 @@
-from aiogram import types, Dispatcher
+from aiogram import F, Router, types
 from sqlalchemy import func, select
 
 from bot.db import Admin, Referral, ReferralReward, User, async_session
 from bot.handlers.user.shop import user_shop
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, support_menu, play_menu
 from bot.utils.referrals import ensure_referral_code
+
+
+router = Router(name="user_menu")
 
 
 async def _is_admin(uid: int) -> bool:
@@ -14,55 +17,67 @@ async def _is_admin(uid: int) -> bool:
 
 # --- Открыть подменю ---
 
+@router.message(F.text == "👤 Профиль")
 async def open_profile_menu(message: types.Message):
     await message.answer("👤 Профиль", reply_markup=profile_menu())
 
 
+@router.message(F.text == "🛒 Магазин")
 async def open_shop_menu(message: types.Message):
     await message.answer("🛒 Магазин", reply_markup=shop_menu())
 
 
+@router.message(F.text == "🆘 Поддержка")
 async def open_support_menu(message: types.Message):
-    await message.answer("🆘 Поддержка\nНапишите ваш вопрос, нажав «✍️ Написать в поддержку».",
-                         reply_markup=support_menu())
+    await message.answer(
+        "🆘 Поддержка\nНапишите ваш вопрос, нажав «✍️ Написать в поддержку».",
+        reply_markup=support_menu(),
+    )
 
 
+@router.message(F.text == "🎮 Играть")
 async def open_play_menu(message: types.Message):
     await message.answer("🎮 Выберите сервер:", reply_markup=play_menu())
 
 
+@router.message(F.text == "🌐 Сервер #1")
 async def play_server_one(message: types.Message):
     await message.answer("🌐 Сервер #1: ссылка появится позже")
 
 
+@router.message(F.text == "🌐 Сервер #2")
 async def play_server_two(message: types.Message):
     await message.answer("🌐 Сервер #2: ссылка появится позже")
 
 
+@router.message(F.text == "🎁 Предметы")
 async def open_shop_items(message: types.Message):
     await user_shop(message, "item")
 
 
+@router.message(F.text == "🛡 Привилегии")
 async def open_shop_privileges(message: types.Message):
     await user_shop(message, "privilege")
 
 
+@router.message(F.text == "💰 Кеш")
 async def open_shop_currency(message: types.Message):
     await user_shop(message, "money")
 
 
 # --- Назад в главное меню ---
 
+@router.message(F.text == "⬅️ Назад")
 async def back_to_main(message: types.Message):
     if not message.from_user:
         return
-
     is_admin = await _is_admin(message.from_user.id)
     await message.answer("↩ Главное меню", reply_markup=main_menu(is_admin=is_admin))
 
 
 # --- Профиль / Рефералка ---
 
+@router.message(F.text == "🔗 Реферальная ссылка")
 async def profile_ref_link(message: types.Message):
     if not message.from_user:
         return
@@ -103,39 +118,21 @@ async def profile_ref_link(message: types.Message):
     )
 
 
+@router.message(F.text == "🎟 Промокод")
 async def profile_promo(message: types.Message):
     await message.answer("🎟 Введите промокод командой: /promo CODE")
 
 
+@router.message(F.text == "💳 Пополнить баланс")
 async def profile_topup(message: types.Message):
     await message.answer("💳 Пополнение: используйте /topup")
 
 
+@router.message(F.text == "🏆 Топ игроков")
 async def profile_top(message: types.Message):
     await message.answer("🏆 Топ игроков: скоро добавим красивый вывод!")
 
 
+@router.message(F.text == "✍️ Написать в поддержку")
 async def support_contact(message: types.Message):
     await message.answer("✍️ Напишите @your_support или ответьте на это сообщение — мы поможем!")
-
-
-# --- Регистрация ---
-
-def register_user_menu(dp: Dispatcher):
-    dp.register_message_handler(open_profile_menu, lambda m: m.text == "👤 Профиль")
-    dp.register_message_handler(open_shop_menu, lambda m: m.text == "🛒 Магазин")
-    dp.register_message_handler(open_support_menu, lambda m: m.text == "🆘 Поддержка")
-    dp.register_message_handler(open_play_menu, lambda m: m.text == "🎮 Играть")
-    dp.register_message_handler(play_server_one, lambda m: m.text == "🌐 Сервер #1")
-    dp.register_message_handler(play_server_two, lambda m: m.text == "🌐 Сервер #2")
-    dp.register_message_handler(back_to_main, lambda m: m.text == "⬅️ Назад")
-
-    dp.register_message_handler(open_shop_items, lambda m: m.text == "🎁 Предметы")
-    dp.register_message_handler(open_shop_privileges, lambda m: m.text == "🛡 Привилегии")
-    dp.register_message_handler(open_shop_currency, lambda m: m.text == "💰 Кеш")
-
-    dp.register_message_handler(profile_ref_link, lambda m: m.text == "🔗 Реферальная ссылка")
-    dp.register_message_handler(profile_promo, lambda m: m.text == "🎟 Промокод")
-    dp.register_message_handler(profile_topup, lambda m: m.text == "💳 Пополнить баланс")
-    dp.register_message_handler(profile_top, lambda m: m.text == "🏆 Топ игроков")
-    dp.register_message_handler(support_contact, lambda m: m.text == "✍️ Написать в поддержку")

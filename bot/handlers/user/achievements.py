@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from aiogram import types, Dispatcher
+from aiogram import Router, types
+from aiogram.filters import Command
 from sqlalchemy import select
 
 from bot.db import Achievement, UserAchievement, async_session
 
 
+router = Router(name="user_achievements")
+
+
+@router.message(Command("achievements"))
 async def my_achievements(message: types.Message):
     if not message.from_user:
         return
@@ -30,7 +35,3 @@ async def my_achievements(message: types.Message):
             text += f"❌ {a.name} — не получено\n"
 
     await message.answer(text, parse_mode="HTML")
-
-
-def register_user_achievements(dp: Dispatcher):
-    dp.register_message_handler(my_achievements, commands=["achievements"])

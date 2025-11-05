@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from aiogram import types, Dispatcher
+from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import func, select
 
-from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
 from bot.db import (
     LogEntry,
@@ -19,6 +19,9 @@ from bot.db import (
     async_session,
 )
 from bot.utils.achievement_checker import check_achievements
+
+
+router = Router(name="user_shop")
 
 
 def user_shop_kb(items: list[Product]) -> InlineKeyboardMarkup:
@@ -53,14 +56,11 @@ async def user_shop(message: types.Message, item_type: Optional[str] = None):
     elif item_type == "item":
         header = "🎁 <b>Roblox-предметы</b>"
 
-    await message.answer(
-        header,
-        reply_markup=user_shop_kb(items),
-        parse_mode="HTML",
-    )
+    await message.answer(header, reply_markup=user_shop_kb(items), parse_mode="HTML")
 
 
 async def _check_purchase_limits(session, user: User, product: Product) -> Optional[str]:
+    """Проверка лимитов покупок для пользователя"""
     if product.per_user_limit is not None:
         count_stmt = select(func.count(Purchase.id)).where(
             Purchase.user_id == user.id,
@@ -82,6 +82,7 @@ async def _check_purchase_limits(session, user: User, product: Product) -> Optio
     return None
 
 
+@router.callback_query(F.data.startswith("user_buy:"))
 async def user_buy_confirm(call: types.CallbackQuery):
     if not call.from_user:
         return await call.answer("❌ Пользователь не найден", show_alert=True)
@@ -120,11 +121,13 @@ async def user_buy_confirm(call: types.CallbackQuery):
     await call.answer()
 
 
+@router.callback_query(F.data == "cancel_buy")
 async def cancel_buy(call: types.CallbackQuery):
     await call.message.answer("❌ Покупка отменена")
     await call.answer()
 
 
+@router.callback_query(F.data.startswith("user_buy_ok:"))
 async def user_buy_finish(call: types.CallbackQuery):
     if not call.from_user:
         return await call.answer("❌ Пользователь не найден", show_alert=True)
@@ -162,6 +165,7 @@ async def user_buy_finish(call: types.CallbackQuery):
         session.add(purchase)
         await session.flush()
 
+        # Обработка разных типов товаров
         if product.item_type == "money":
             try:
                 reward_amount = int(product.value or 0)
@@ -218,7 +222,7 @@ async def user_buy_finish(call: types.CallbackQuery):
             f"Тип: {product.item_type}\nЗначение: {product.value}\n"
             f"ID заявки: {purchase.request_id}"
         )
-        await bot.send_message(ROOT_ADMIN_ID, notify_text, parse_mode="HTML")
+        await call.bot.send_message(ROOT_ADMIN_ID, notify_text, parse_mode="HTML")
 
     await call.message.answer(
         f"✅ Покупка успешна!\n{reward_text}{referral_message}",
@@ -227,13 +231,6 @@ async def user_buy_finish(call: types.CallbackQuery):
     await call.answer()
 
 
-def register_user_shop(dp: Dispatcher):
-    dp.register_message_handler(user_shop, commands=["shop"])
-    dp.register_callback_query_handler(
-        user_buy_confirm,
-        lambda c: c.data.startswith("user_buy:"),
-    )
-    dp.register_callback_query_handler(
-        user_buy_finish,
-        lambda c: c.data.startswith("user_buy_ok:"),
-    )
+@router.message(Command("shop"))
+async def user_shop_command(message: types.Message):
+    await user_shop(message)

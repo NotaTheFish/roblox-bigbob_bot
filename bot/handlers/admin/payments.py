@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from aiogram import types, Dispatcher
+from aiogram import F, Router, types
 from sqlalchemy import select
 
-from bot.bot_instance import bot
 from bot.db import (
     Admin,
     LogEntry,
@@ -15,12 +14,16 @@ from bot.db import (
 from bot.utils.achievement_checker import check_achievements
 
 
+router = Router(name="admin_payments")
+
+
 async def is_admin(uid: int) -> bool:
     async with async_session() as session:
         result = await session.execute(select(Admin).where(Admin.telegram_id == uid))
         return result.scalar_one_or_none() is not None
 
 
+@router.callback_query(F.data.startswith("topup_ok"))
 async def approve_topup(call: types.CallbackQuery) -> None:
     if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
@@ -50,7 +53,7 @@ async def approve_topup(call: types.CallbackQuery) -> None:
             amount=request.amount,
             currency=request.currency,
             status="completed",
-            metadata={"topup_request_id": request.id},
+            metadata_json={"topup_request_id": request.id},
         )
         session.add(payment)
         await session.flush()
@@ -77,7 +80,7 @@ async def approve_topup(call: types.CallbackQuery) -> None:
         await check_achievements(user)
 
     try:
-        await bot.send_message(
+        await call.bot.send_message(
             request.telegram_id,
             f"✅ Ваш баланс пополнен на {request.amount} {request.currency.upper()}!",
         )
@@ -88,6 +91,7 @@ async def approve_topup(call: types.CallbackQuery) -> None:
     await call.answer("✅ Готово")
 
 
+@router.callback_query(F.data.startswith("topup_no"))
 async def deny_topup(call: types.CallbackQuery) -> None:
     if not call.from_user:
         return await call.answer("Нет доступа", show_alert=True)
@@ -116,7 +120,7 @@ async def deny_topup(call: types.CallbackQuery) -> None:
     await call.message.edit_text(f"❌ Заявка #{req_id} отклонена")
 
     try:
-        await bot.send_message(
+        await call.bot.send_message(
             request.telegram_id,
             f"❌ Ваша заявка #{req_id} отклонена",
         )
@@ -124,8 +128,3 @@ async def deny_topup(call: types.CallbackQuery) -> None:
         pass
 
     await call.answer("✅ Отклонено")
-
-
-def register_admin_payments(dp: Dispatcher) -> None:
-    dp.register_callback_query_handler(approve_topup, lambda c: c.data.startswith("topup_ok"))
-    dp.register_callback_query_handler(deny_topup, lambda c: c.data.startswith("topup_no"))

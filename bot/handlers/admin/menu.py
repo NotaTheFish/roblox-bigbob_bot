@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from aiogram import types, Dispatcher
+from aiogram import F, Router, types
+from aiogram.filters import Command
 from sqlalchemy import select
 
 from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
+
+
+router = Router(name="admin_menu")
 
 
 # Проверка администратора
@@ -14,6 +18,7 @@ async def is_admin(uid: int) -> bool:
 
 
 # Команда для входа в админ панель
+@router.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if not message.from_user:
         return
@@ -28,6 +33,7 @@ async def admin_panel(message: types.Message):
 
 
 # Обработка кнопок админ-панели
+@router.callback_query(F.data.in_({"admin_logs", "back_to_menu"}))
 async def admin_menu_callbacks(call: types.CallbackQuery):
     if not call.from_user:
         return await call.answer("⛔ Нет доступа", show_alert=True)
@@ -47,12 +53,3 @@ async def admin_menu_callbacks(call: types.CallbackQuery):
         )
 
     await call.answer()
-
-
-# Регистрация
-def register_admin_menu(dp: Dispatcher):
-    dp.register_message_handler(admin_panel, commands=["admin"])
-    dp.register_callback_query_handler(
-        admin_menu_callbacks,
-        lambda c: c.data in {"admin_logs", "back_to_menu"},
-    )

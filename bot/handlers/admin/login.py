@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from aiogram import types, Dispatcher
-from aiogram.dispatcher.filters import Command
+from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
 
-from bot.bot_instance import bot
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
 from bot.db import Admin, AdminRequest, async_session
+
+
+# ---------------- Router ----------------
+router = Router(name="admin_login")
 
 
 # ---------------- Проверка админа ----------------
@@ -17,6 +20,7 @@ async def is_admin(uid: int) -> bool:
 
 
 # ---------------- Команда /admin_login ----------------
+@router.message(Command("admin_login"))
 async def admin_login(message: types.Message):
     args = message.get_args()
     if not args:
@@ -60,7 +64,7 @@ async def admin_login(message: types.Message):
         InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_no:{uid}")
     )
 
-    await bot.send_message(
+    await message.bot.send_message(
         ROOT_ADMIN_ID,
         f"👤 Пользователь @{message.from_user.username} хочет стать админом",
         reply_markup=kb
@@ -70,6 +74,7 @@ async def admin_login(message: types.Message):
 
 
 # ---------------- Callback: approve / deny ----------------
+@router.callback_query(F.data.startswith("admin_ok") | F.data.startswith("admin_no"))
 async def admin_request_callback(call: types.CallbackQuery):
     uid = int(call.data.split(":")[1])
 
@@ -96,15 +101,6 @@ async def admin_request_callback(call: types.CallbackQuery):
 
         await session.commit()
 
-    await bot.send_message(uid, msg)
+    await call.bot.send_message(uid, msg)
     await call.message.edit_text(result)
     await call.answer()
-
-
-# ---------------- Register ----------------
-def register_admin_login(dp: Dispatcher):
-    dp.register_message_handler(admin_login, Command("admin_login"))
-    dp.register_callback_query_handler(
-        admin_request_callback,
-        lambda c: c.data.startswith("admin_ok") or c.data.startswith("admin_no")
-    )
