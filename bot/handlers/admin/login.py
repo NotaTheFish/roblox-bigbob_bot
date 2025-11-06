@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router, types
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
@@ -21,15 +21,15 @@ async def is_admin(uid: int) -> bool:
 
 # ---------------- Команда /admin_login ----------------
 @router.message(Command("admin_login"))
-async def admin_login(message: types.Message):
-    args = message.get_args()
+async def admin_login(message: types.Message, command: CommandObject):
+    args = (command.args or "").strip()
     if not args:
         return await message.reply(
             "Введите секретный код:\n`/admin_login CODE`",
             parse_mode="Markdown"
         )
 
-    if args.strip() != ADMIN_LOGIN_PASSWORD:
+    if args != ADMIN_LOGIN_PASSWORD:
         return await message.reply("❌ Неверный код")
 
     if not message.from_user:

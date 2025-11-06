@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from aiogram import Router, types
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
@@ -13,11 +13,13 @@ router = Router(name="user_promo")
 
 
 @router.message(Command("promo"))
-async def activate_promo(message: types.Message):
-    code = message.get_args().upper()
+async def activate_promo(message: types.Message, command: CommandObject):
+    raw_code = (command.args or "").strip()
 
-    if not code:
+    if not raw_code:
         return await message.reply("Введите промокод:\n`/promo CODE`", parse_mode="Markdown")
+
+    code = raw_code.upper()
 
     if not message.from_user:
         return
