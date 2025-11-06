@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import or_, select
 
 from bot.db import Admin, User, async_session
@@ -22,14 +22,21 @@ async def is_admin(uid: int) -> bool:
 
 # -------- Кнопки карточки пользователя --------
 def user_card_kb(user_id, is_blocked):
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(InlineKeyboardButton("➕ Выдать валюту", callback_data=f"give_money:{user_id}"))
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="➕ Выдать валюту", callback_data=f"give_money:{user_id}"
+    )
     if is_blocked:
-        kb.add(InlineKeyboardButton("✅ Разблокировать", callback_data=f"unblock_user:{user_id}"))
+        builder.button(
+            text="✅ Разблокировать", callback_data=f"unblock_user:{user_id}"
+        )
     else:
-        kb.add(InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_user:{user_id}"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_users"))
-    return kb
+        builder.button(
+            text="🚫 Заблокировать", callback_data=f"block_user:{user_id}"
+        )
+    builder.button(text="⬅️ Назад", callback_data="admin_users")
+    builder.adjust(2, 1)
+    return builder.as_markup()
 
 
 # -------- /admin_users — список --------

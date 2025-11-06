@@ -6,7 +6,7 @@ from typing import Optional
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.db import Admin, LogEntry, Product, Server, async_session
@@ -58,16 +58,16 @@ async def admin_shop_menu(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("➕ Добавить товар", callback_data="shop_add"),
-        InlineKeyboardButton("📦 Список товаров", callback_data="shop_list"),
-        InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu"),
-    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Добавить товар", callback_data="shop_add")
+    builder.button(text="📦 Список товаров", callback_data="shop_list")
+    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
+    reply_markup = builder.as_markup() if builder.export() else None
+    reply_kwargs = {"reply_markup": reply_markup} if reply_markup else {}
     await call.message.edit_text(
         "🛒 <b>Магазин</b>\nВыберите:",
-        reply_markup=kb,
         parse_mode="HTML",
+        **reply_kwargs,
     )
 
 
@@ -85,14 +85,17 @@ async def shop_add(call: types.CallbackQuery, state: FSMContext):
 async def shop_set_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
 
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("💰 Валюта", callback_data="shop_type_money"),
-        InlineKeyboardButton("🛡 Привилегия", callback_data="shop_type_priv"),
-        InlineKeyboardButton("🎁 Roblox Item", callback_data="shop_type_item"),
-    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💰 Валюта", callback_data="shop_type_money")
+    builder.button(text="🛡 Привилегия", callback_data="shop_type_priv")
+    builder.button(text="🎁 Roblox Item", callback_data="shop_type_item")
+    builder.adjust(2)
+    reply_markup = builder.as_markup() if builder.export() else None
 
-    await message.answer("Выберите тип товара:", reply_markup=kb)
+    await message.answer(
+        "Выберите тип товара:",
+        **({"reply_markup": reply_markup} if reply_markup else {}),
+    )
     await state.set_state(ShopCreateState.waiting_for_type)
 
 
@@ -209,11 +212,16 @@ async def shop_list(call: types.CallbackQuery):
     async with async_session() as session:
         products = (await session.execute(select(Product).order_by(Product.created_at))).scalars().all()
         if not products:
-            kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_shop"))
-            return await call.message.edit_text("📦 Товары ещё не добавлены.", reply_markup=kb)
+            builder = InlineKeyboardBuilder()
+            builder.button(text="⬅️ Назад", callback_data="admin_shop")
+            reply_markup = builder.as_markup() if builder.export() else None
+            return await call.message.edit_text(
+                "📦 Товары ещё не добавлены.",
+                **({"reply_markup": reply_markup} if reply_markup else {}),
+            )
 
         lines = ["📦 <b>Товары магазина:</b>"]
-        kb = InlineKeyboardMarkup()
+        builder = InlineKeyboardBuilder()
 
         for product in products:
             server = await session.get(Server, product.server_id) if product.server_id else None
@@ -223,14 +231,17 @@ async def shop_list(call: types.CallbackQuery):
                 f"  Лимит: {limit_text} | Реф. бонус: {product.referral_bonus}"
                 + (f" | Сервер: {server.name}" if server else "")
             )
-            kb.add(
-                InlineKeyboardButton(
-                    f"❌ {product.name}", callback_data=f"shop_del:{product.id}"
-                )
+            builder.button(
+                text=f"❌ {product.name}", callback_data=f"shop_del:{product.id}"
             )
-        kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_shop"))
+        builder.button(text="⬅️ Назад", callback_data="admin_shop")
+        reply_markup = builder.as_markup() if builder.export() else None
 
-    await call.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode="HTML")
+    await call.message.edit_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        **({"reply_markup": reply_markup} if reply_markup else {}),
+    )
 
 
 @router.callback_query(F.data.startswith("shop_del"))

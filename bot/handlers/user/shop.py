@@ -5,7 +5,7 @@ from typing import Optional
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
 from bot.config import ROOT_ADMIN_ID
@@ -24,16 +24,16 @@ from bot.utils.achievement_checker import check_achievements
 router = Router(name="user_shop")
 
 
-def user_shop_kb(items: list[Product]) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
+def user_shop_kb(items: list[Product]):
+    builder = InlineKeyboardBuilder()
     for item in items:
-        kb.add(
-            InlineKeyboardButton(
-                f"{item.name} — {item.price}💰",
-                callback_data=f"user_buy:{item.id}",
-            )
+        builder.button(
+            text=f"{item.name} — {item.price}💰", callback_data=f"user_buy:{item.id}"
         )
-    return kb
+    if not builder.export():
+        return None
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 async def user_shop(message: types.Message, item_type: Optional[str] = None):
@@ -56,7 +56,11 @@ async def user_shop(message: types.Message, item_type: Optional[str] = None):
     elif item_type == "item":
         header = "🎁 <b>Roblox-предметы</b>"
 
-    await message.answer(header, reply_markup=user_shop_kb(items), parse_mode="HTML")
+    reply_markup = user_shop_kb(items)
+    if reply_markup:
+        await message.answer(header, reply_markup=reply_markup, parse_mode="HTML")
+    else:
+        await message.answer(header, parse_mode="HTML")
 
 
 async def _check_purchase_limits(session, user: User, product: Product) -> Optional[str]:
@@ -106,17 +110,19 @@ async def user_buy_confirm(call: types.CallbackQuery):
         if user.balance < product.price:
             return await call.answer("💸 Недостаточно валюты!", show_alert=True)
 
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("✅ Подтвердить покупку", callback_data=f"user_buy_ok:{item_id}"),
-        InlineKeyboardButton("❌ Отмена", callback_data="cancel_buy"),
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Подтвердить покупку", callback_data=f"user_buy_ok:{item_id}"
     )
+    builder.button(text="❌ Отмена", callback_data="cancel_buy")
+    builder.adjust(2)
+    reply_markup = builder.as_markup() if builder.export() else None
 
     await call.message.answer(
         f"Вы покупаете: <b>{product.name}</b>\n"
         f"Цена: <b>{product.price}💰</b>\n\nПодтвердить?",
         parse_mode="HTML",
-        reply_markup=kb,
+        **({"reply_markup": reply_markup} if reply_markup else {}),
     )
     await call.answer()
 

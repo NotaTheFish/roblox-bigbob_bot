@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.db import Admin, PromoCode, async_session
@@ -30,14 +30,16 @@ async def admin_promos_menu(call: types.CallbackQuery):
     if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("➕ Создать промокод", callback_data="promo_create"),
-        InlineKeyboardButton("📄 Список промокодов", callback_data="promo_list"),
-        InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu"),
-    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Создать промокод", callback_data="promo_create")
+    builder.button(text="📄 Список промокодов", callback_data="promo_list")
+    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
+    reply_markup = builder.as_markup() if builder.export() else None
 
-    await call.message.edit_text("🎁 <b>Промокоды</b>\nВыберите действие:", reply_markup=kb)
+    await call.message.edit_text(
+        "🎁 <b>Промокоды</b>\nВыберите действие:",
+        **({"reply_markup": reply_markup} if reply_markup else {}),
+    )
 
 
 # ✅ Старт создания промокода
@@ -157,7 +159,7 @@ async def promo_list(call: types.CallbackQuery):
         )
 
     text = "🎫 <b>Активные промокоды:</b>\n\n"
-    kb = InlineKeyboardMarkup()
+    builder = InlineKeyboardBuilder()
 
     for promo in promos:
         usage_info = (
@@ -165,10 +167,16 @@ async def promo_list(call: types.CallbackQuery):
             if promo.max_uses is not None else f"{promo.uses}/∞"
         )
         text += f"• <code>{promo.code}</code> — {promo.promo_type} ({usage_info})\n"
-        kb.add(InlineKeyboardButton(f"❌ {promo.code}", callback_data=f"promo_del:{promo.id}"))
+        builder.button(
+            text=f"❌ {promo.code}", callback_data=f"promo_del:{promo.id}"
+        )
 
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_promos"))
-    await call.message.edit_text(text, reply_markup=kb)
+    builder.button(text="⬅️ Назад", callback_data="admin_promos")
+    reply_markup = builder.as_markup() if builder.export() else None
+    await call.message.edit_text(
+        text,
+        **({"reply_markup": reply_markup} if reply_markup else {}),
+    )
 
 
 # ✅ Удаление промокода

@@ -1,7 +1,7 @@
 from aiogram import F, Router, types
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
@@ -86,11 +86,11 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
         f"✅ Заявка №{request_id} создана!\n⏳ Ожидайте подтверждения администратора.",
     )
 
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("✅ Подтвердить", callback_data=f"topup_ok:{request_id}"),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f"topup_no:{request_id}"),
-    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data=f"topup_ok:{request_id}")
+    builder.button(text="❌ Отклонить", callback_data=f"topup_no:{request_id}")
+    builder.adjust(2)
+    reply_markup = builder.as_markup() if builder.export() else None
 
     await message.bot.send_message(
         ROOT_ADMIN_ID,
@@ -98,7 +98,7 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
         f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
         f"Сумма: {amount} {currency.upper()}\n"
         f"Request ID: {req.request_id}",
-        reply_markup=kb,
+        **({"reply_markup": reply_markup} if reply_markup else {}),
     )
 
     await state.clear()

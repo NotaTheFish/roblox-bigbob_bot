@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
@@ -59,15 +59,16 @@ async def admin_login(message: types.Message):
         )
         await session.commit()
 
-    kb = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("✅ Разрешить", callback_data=f"admin_ok:{uid}"),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_no:{uid}")
-    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Разрешить", callback_data=f"admin_ok:{uid}")
+    builder.button(text="❌ Отклонить", callback_data=f"admin_no:{uid}")
+    builder.adjust(2)
+    reply_markup = builder.as_markup()
 
     await message.bot.send_message(
         ROOT_ADMIN_ID,
         f"👤 Пользователь @{message.from_user.username} хочет стать админом",
-        reply_markup=kb
+        **({"reply_markup": reply_markup} if reply_markup else {})
     )
 
     await message.reply("⌛ Запрос отправлен, ожидайте одобрения")
