@@ -38,8 +38,7 @@ async def on_startup(dispatcher: Dispatcher) -> None:
     await init_db()
     await ensure_root_admin()
     await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(WEBHOOK_URL)
-    logger.info("✅ Webhook отключён, запускаем polling")
+    logger.info("🤖 Бот запущен в режиме polling (webhook отключён)")
 
 
 async def on_shutdown(dispatcher: Dispatcher) -> None:
