@@ -1,19 +1,12 @@
 import asyncio
 import logging
-from aiohttp import web
+
 from aiogram import Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from sqlalchemy import select
 
 from bot.bot_instance import bot
-from bot.config import (
-    ROOT_ADMIN_ID,
-    WEBAPP_HOST,
-    WEBAPP_PORT,
-    WEBHOOK_PATH,
-    WEBHOOK_URL,
-)
+from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
 from bot.handlers.user import routers as user_routers
@@ -46,28 +39,24 @@ async def on_startup(dispatcher: Dispatcher) -> None:
     await ensure_root_admin()
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
-    logger.info("✅ Webhook установлен")
+    logger.info("✅ Webhook отключён, запускаем polling")
 
 
 async def on_shutdown(dispatcher: Dispatcher) -> None:
-    await bot.delete_webhook()
-    logger.info("🛑 Webhook удалён")
+    await bot.session.close()
+    logger.info("🛑 Bot polling остановлен")
 
 
-async def init_app() -> web.Application:
+async def start_bot() -> None:
     dispatcher = build_dispatcher()
     dispatcher.startup.register(on_startup)
     dispatcher.shutdown.register(on_shutdown)
-    app = web.Application()
-    SimpleRequestHandler(dispatcher, bot).register(app, path=WEBHOOK_PATH)
-    setup_application(app, dispatcher, bot=bot)
-    return app
+    await dispatcher.start_polling(bot)
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    app = asyncio.run(init_app())
-    web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
+    asyncio.run(start_bot())
 
 
 if __name__ == "__main__":
