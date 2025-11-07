@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from aiogram import F, Router, types
-from sqlalchemy import select
 
 from bot.db import (
-    Admin,
     LogEntry,
     Payment,
     TopUpRequest,
@@ -12,15 +10,15 @@ from bot.db import (
     async_session,
 )
 from bot.utils.achievement_checker import check_achievements
+from bot.utils.helpers import get_admin_telegram_ids
 
 
 router = Router(name="admin_payments")
 
 
 async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        result = await session.execute(select(Admin).where(Admin.telegram_id == uid))
-        return result.scalar_one_or_none() is not None
+    admin_ids = await get_admin_telegram_ids(include_root=True)
+    return uid in admin_ids
 
 
 @router.callback_query(F.data.startswith("topup_ok"))

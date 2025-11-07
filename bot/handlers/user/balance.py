@@ -1,16 +1,25 @@
 from aiogram import F, Router, types
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
-from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, TopUpRequest, User, async_session
 from bot.keyboards.user_keyboards import payment_methods_kb
 from bot.states.user_states import TopUpState
+from bot.utils.helpers import get_admin_telegram_ids
 
 
 router = Router(name="user_balance")
+
+
+def build_topup_request_keyboard(request_id: int) -> InlineKeyboardMarkup | None:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data=f"topup_ok:{request_id}")
+    builder.button(text="❌ Отклонить", callback_data=f"topup_no:{request_id}")
+    builder.adjust(2)
+    return builder.as_markup() if builder.export() else None
 
 
 @router.message(Command("topup", "balance"))
@@ -80,25 +89,78 @@ async def topup_enter_amount(message: types.Message, state: FSMContext):
         )
 
         await session.commit()
-        request_id = req.id
+        request_db_id = req.id
+        request_public_id = req.request_id
+        db_user_id = user.id
+        db_user_tg = user.tg_id
 
     await message.answer(
-        f"✅ Заявка №{request_id} создана!\n⏳ Ожидайте подтверждения администратора.",
+        f"✅ Заявка №{request_db_id} создана!\n⏳ Ожидайте подтверждения администратора.",
     )
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Подтвердить", callback_data=f"topup_ok:{request_id}")
-    builder.button(text="❌ Отклонить", callback_data=f"topup_no:{request_id}")
-    builder.adjust(2)
-    reply_markup = builder.as_markup() if builder.export() else None
-
-    await message.bot.send_message(
-        ROOT_ADMIN_ID,
-        f"💰 Заявка на пополнение #{request_id}\n"
+    notification_text = (
+        f"💰 Заявка на пополнение #{request_db_id}\n"
         f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
         f"Сумма: {amount} {currency.upper()}\n"
-        f"Request ID: {req.request_id}",
-        **({"reply_markup": reply_markup} if reply_markup else {}),
+        f"Request ID: {request_public_id}"
     )
+    reply_markup = build_topup_request_keyboard(request_db_id)
+
+    recipients = await get_admin_telegram_ids(include_root=True)
+    log_entries: list[LogEntry] = []
+
+    if not recipients:
+        log_entries.append(
+            LogEntry(
+                user_id=db_user_id,
+                telegram_id=db_user_tg,
+                request_id=request_public_id,
+                event_type="topup_notification_failed",
+                message="Нет администраторов для уведомления о заявке",
+                data={"topup_request_id": request_db_id},
+            )
+        )
+
+    for admin_id in recipients:
+        try:
+            await message.bot.send_message(
+                admin_id,
+                notification_text,
+                **({"reply_markup": reply_markup} if reply_markup else {}),
+            )
+        except Exception as exc:  # pragma: no cover - network errors are not deterministic
+            log_entries.append(
+                LogEntry(
+                    user_id=db_user_id,
+                    telegram_id=db_user_tg,
+                    request_id=request_public_id,
+                    event_type="topup_notification_failed",
+                    message=f"Не удалось отправить уведомление админу {admin_id}",
+                    data={
+                        "topup_request_id": request_db_id,
+                        "admin_telegram_id": admin_id,
+                        "error": str(exc),
+                    },
+                )
+            )
+        else:
+            log_entries.append(
+                LogEntry(
+                    user_id=db_user_id,
+                    telegram_id=db_user_tg,
+                    request_id=request_public_id,
+                    event_type="topup_notification_sent",
+                    message=f"Отправлено уведомление админу {admin_id}",
+                    data={
+                        "topup_request_id": request_db_id,
+                        "admin_telegram_id": admin_id,
+                    },
+                )
+            )
+
+    if log_entries:
+        async with async_session() as session:
+            session.add_all(log_entries)
+            await session.commit()
 
     await state.clear()
