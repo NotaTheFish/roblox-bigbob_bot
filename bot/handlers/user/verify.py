@@ -6,7 +6,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy import select
 
-from bot.db import User, async_session
+from bot.db import Admin, User, async_session
+from bot.keyboards.main_menu import main_menu
 from bot.keyboards.verify_kb import verify_button, verify_check_button
 from bot.states.verify_state import VerifyState
 from bot.utils.roblox import get_roblox_profile
@@ -75,14 +76,21 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
     full_text = f"{desc} {status}"
 
     if code and code in full_text:
+        is_admin = False
         async with async_session() as session:
             db_user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
             if db_user:
                 db_user.verified = True
+                is_admin = bool(
+                    await session.scalar(select(Admin).where(Admin.telegram_id == call.from_user.id))
+                )
                 await session.commit()
 
-        await call.message.answer("✅ Аккаунт Roblox успешно подтверждён!\nДобро пожаловать! 🎉")
         await state.clear()
+        await call.message.answer(
+            "✅ Аккаунт Roblox успешно подтверждён!\nДобро пожаловать! 🎉",
+            reply_markup=main_menu(is_admin=is_admin),
+        )
         return
 
     await call.message.answer(
