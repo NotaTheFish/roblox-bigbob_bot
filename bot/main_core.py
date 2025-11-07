@@ -3,6 +3,7 @@ import logging
 
 from aiogram import Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.exceptions import TelegramConflictError
 from sqlalchemy import select
 
 from bot.bot_instance import bot
@@ -11,7 +12,6 @@ from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
 from bot.handlers.user import routers as user_routers
 from bot.utils.block_middleware import BlockMiddleware
-
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,14 @@ async def start_bot() -> None:
     dispatcher = build_dispatcher()
     dispatcher.startup.register(on_startup)
     dispatcher.shutdown.register(on_shutdown)
-    await dispatcher.start_polling(bot)
+
+    try:
+        await dispatcher.start_polling(bot)
+    except TelegramConflictError:
+        logger.warning("⚠️ Polling conflict detected — возможно, предыдущий процесс бота ещё завершается.")
+        await asyncio.sleep(5)
+        logger.info("🔁 Повторный запуск polling...")
+        await dispatcher.start_polling(bot)
 
 
 def main() -> None:
