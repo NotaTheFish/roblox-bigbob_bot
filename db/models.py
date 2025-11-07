@@ -170,7 +170,7 @@ class Server(Base):
     logs = relationship(
         "LogEntry",
         back_populates="server",
-        cascade="all, delete-orphan",
+        cascade="all, delete",
     )
 
 
