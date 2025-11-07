@@ -20,8 +20,7 @@ async def is_admin(uid: int) -> bool:
 
 
 # Команда для входа в админ панель
-@router.message(Command("admin"))
-async def admin_panel(message: types.Message):
+async def _send_admin_panel(message: types.Message):
     if not message.from_user:
         return
 
@@ -34,6 +33,16 @@ async def admin_panel(message: types.Message):
     )
 
 
+@router.message(Command("admin"))
+async def admin_panel(message: types.Message):
+    await _send_admin_panel(message)
+
+
+@router.message(F.text == "🛠 Режим админа")
+async def admin_panel_button(message: types.Message):
+    await _send_admin_panel(message)
+
+
 # Обработка кнопок админ-панели
 @router.message(F.text == "↩️ Назад")
 async def admin_back_to_panel(message: types.Message, state: FSMContext):
@@ -41,7 +50,7 @@ async def admin_back_to_panel(message: types.Message, state: FSMContext):
         return
 
     if not await is_admin(message.from_user.id):
-        return
+        return await message.answer("⛔ У вас нет доступа")
 
     await state.clear()
     await message.answer(
@@ -56,10 +65,10 @@ async def admin_exit_to_main(message: types.Message, state: FSMContext):
         return
 
     if not await is_admin(message.from_user.id):
-        return
+        return await message.answer("⛔ У вас нет доступа")
 
     await state.clear()
     await message.answer(
         "🏠 Вы вернулись в главное меню.",
-        reply_markup=main_menu(is_admin=True),
+        reply_markup=main_menu(is_admin=False),
     )
