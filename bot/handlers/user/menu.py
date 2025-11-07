@@ -6,6 +6,7 @@ from bot.handlers.user.shop import user_shop
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, play_menu
 from bot.states.user_states import PromoInputState
 from bot.utils.referrals import ensure_referral_code
+from bot.services.stats import format_top_users, get_top_users
 
 
 router = Router(name="user_menu")
@@ -150,7 +151,8 @@ async def profile_topup(message: types.Message, state: FSMContext):
 @router.message(F.text == "🏆 Топ игроков")
 async def profile_top(message: types.Message, state: FSMContext):
     await _set_profile_mode(state, True)
-    await message.answer("🏆 Топ игроков: скоро добавим красивый вывод!")
+    top_users = await get_top_users()
+    await message.answer(format_top_users(top_users))
 
 
 @router.message(F.text == "✏️ Редактировать профиль")
