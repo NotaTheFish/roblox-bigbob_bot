@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
 os.environ.setdefault("TELEGRAM_TOKEN", "test:token")
 os.environ.setdefault("ADMIN_LOGIN_PASSWORD", "DEFAULT")
 
+from bot.db import AdminRequest
 from bot.handlers.admin import login
 from bot.handlers.user import promo
 
@@ -50,6 +51,8 @@ class DummySession:
         return next(self._scalar_iter, None)
 
     def add(self, obj):
+        if isinstance(obj, AdminRequest) and getattr(obj, "request_id", None) is None:
+            obj.request_id = f"req-{len(self.added) + 1}"
         self.added.append(obj)
 
     async def commit(self):
@@ -119,10 +122,21 @@ def test_admin_login_with_valid_code(monkeypatch):
     asyncio.run(login.admin_login(message, command))
 
     assert sessions[1].committed is True
+    created_request = sessions[1].added[0]
+    assert isinstance(created_request, AdminRequest)
+    request_id = created_request.request_id
+    assert request_id
     assert any(
         text.startswith("⌛ Запрос отправлен") for text, _ in message.replies
     )
     assert message.bot.sent_messages
+    args, kwargs = message.bot.sent_messages[0]
+    assert request_id in args[1]
+    reply_markup = kwargs.get("reply_markup")
+    assert reply_markup is not None
+    buttons = reply_markup.inline_keyboard[0]
+    assert buttons[0].callback_data == f"approve_admin:{request_id}"
+    assert buttons[1].callback_data == f"reject_admin:{request_id}"
 
 
 def test_promo_without_code(monkeypatch):
@@ -187,3 +201,123 @@ def test_promo_with_valid_code(monkeypatch):
     assert any("Промокод активирован" in text for text, _ in message.replies)
     assert message.bot.sent_messages
     check_achievements_mock.assert_awaited_once_with(user_obj)
+
+
+class DummyCallbackMessage:
+    def __init__(self):
+        self.edits = []
+
+    async def edit_text(self, text: str, **kwargs):
+        self.edits.append((text, kwargs))
+
+
+class DummyCallbackQuery:
+    def __init__(self, data: str, from_user_id: int = 999):
+        self.data = data
+        self.from_user = SimpleNamespace(id=from_user_id)
+        self.message = DummyCallbackMessage()
+        self.bot = DummyBot()
+        self.answered = False
+        self.answer_kwargs: dict | None = None
+
+    async def answer(self, text: str | None = None, show_alert: bool = False):
+        self.answered = True
+        self.answer_kwargs = {"text": text, "show_alert": show_alert}
+
+
+def test_admin_request_callback_approves(monkeypatch):
+    monkeypatch.setattr(login, "ROOT_ADMIN_ID", 999)
+
+    request = SimpleNamespace(
+        telegram_id=42,
+        status="pending",
+        username="tester",
+        request_id="req-123",
+    )
+
+    sessions = [
+        DummySession([request]),
+    ]
+
+    factory = make_session_factory(sessions)
+
+    class AsyncSessionWrapper:
+        def __init__(self, session):
+            self._session = session
+
+        async def __aenter__(self):
+            return await self._session.__aenter__()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return await self._session.__aexit__(exc_type, exc, tb)
+
+    def async_session_stub():
+        session = factory()
+        return AsyncSessionWrapper(session)
+
+    monkeypatch.setattr(login, "async_session", async_session_stub)
+
+    call = DummyCallbackQuery("approve_admin:req-123")
+
+    asyncio.run(login.admin_request_callback(call))
+
+    assert request.status == "approved"
+    assert sessions[0].committed is True
+    assert call.bot.sent_messages
+    user_message = call.bot.sent_messages[0]
+    assert user_message[0][0] == 42
+    assert "одобрена" in user_message[0][1]
+    root_notification = call.bot.sent_messages[1]
+    assert root_notification[0][0] == 999
+    assert "req-123" in root_notification[0][1]
+    assert call.message.edits
+    assert call.answered is True
+
+
+def test_admin_request_callback_rejects(monkeypatch):
+    monkeypatch.setattr(login, "ROOT_ADMIN_ID", 999)
+
+    request = SimpleNamespace(
+        telegram_id=77,
+        status="pending",
+        username="another",
+        request_id="req-999",
+    )
+
+    sessions = [
+        DummySession([request]),
+    ]
+
+    factory = make_session_factory(sessions)
+
+    class AsyncSessionWrapper:
+        def __init__(self, session):
+            self._session = session
+
+        async def __aenter__(self):
+            return await self._session.__aenter__()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return await self._session.__aexit__(exc_type, exc, tb)
+
+    def async_session_stub():
+        session = factory()
+        return AsyncSessionWrapper(session)
+
+    monkeypatch.setattr(login, "async_session", async_session_stub)
+
+    call = DummyCallbackQuery("reject_admin:req-999")
+
+    asyncio.run(login.admin_request_callback(call))
+
+    assert request.status == "denied"
+    assert sessions[0].committed is True
+    assert call.bot.sent_messages
+    user_message = call.bot.sent_messages[0]
+    assert user_message[0][0] == 77
+    assert "отказано" in user_message[0][1]
+    root_notification = call.bot.sent_messages[1]
+    assert root_notification[0][0] == 999
+    assert "req-999" in root_notification[0][1]
+    assert call.message.edits
+    assert call.answered is True
