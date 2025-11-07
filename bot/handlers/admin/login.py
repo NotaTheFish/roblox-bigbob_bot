@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
 from bot.db import Admin, AdminRequest, async_session
+from bot.keyboards.admin_keyboards import admin_main_menu_kb
 
 
 # ---------------- Router ----------------
@@ -38,7 +39,7 @@ async def admin_login(message: types.Message, command: CommandObject):
     uid = message.from_user.id
 
     if await is_admin(uid):
-        return await message.reply("✅ Вы уже админ")
+        return await message.reply("✅ Вы уже админ", reply_markup=admin_main_menu_kb())
 
     async with async_session() as session:
         pending = await session.scalar(
@@ -95,13 +96,18 @@ async def admin_request_callback(call: types.CallbackQuery):
             session.add(Admin(telegram_id=uid, is_root=False))
             msg = "✅ Ваша заявка на админку одобрена"
             result = "Админ одобрен ✅"
+            reply_markup = admin_main_menu_kb()
         else:
             req.status = "denied"
             msg = "❌ Вам отказано"
             result = "Админ отклонён ❌"
+            reply_markup = None
 
         await session.commit()
 
-    await call.bot.send_message(uid, msg)
+    if reply_markup:
+        await call.bot.send_message(uid, msg, reply_markup=reply_markup)
+    else:
+        await call.bot.send_message(uid, msg)
     await call.message.edit_text(result)
     await call.answer()
