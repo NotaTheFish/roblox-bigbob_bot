@@ -263,7 +263,8 @@ async def shop_delete(call: types.CallbackQuery):
             await session.delete(product)
             await session.commit()
 
-text, reply_markup = await _build_shop_list()
+    # <-- этот блок должен быть СЛЕВА, на том же уровне что и `async with`
+    text, reply_markup = await _build_shop_list()
 
     if text:
         await call.message.edit_text(
