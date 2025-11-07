@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-from typing import Final
+from typing import Iterable, Sequence
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
@@ -9,14 +8,18 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.db import Admin, LogEntry, Server, async_session
-from bot.keyboards.admin_keyboards import admin_main_menu_kb
-from bot.states.server_states import ServerCreateState
-
+from bot.keyboards.admin_keyboards import admin_main_menu_kb, admin_servers_menu_kb
+from bot.states.server_states import ServerManageState
+from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 router = Router(name="admin_servers")
 
-SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9-]{3,64}$")
-SKIP_CHAT_ID_VALUES: Final[set[str]] = {"-", "нет", "пропустить"}
+SERVER_MENU_BUTTON = "Сервера"
+SERVER_CREATE_BUTTON = "➕ Создать сервер"
+SERVER_DELETE_BUTTON = "🗑 Удалить сервер"
+SERVER_SET_LINK_BUTTON = "🔗 Назначить ссылку"
+SERVER_CLEAR_LINK_BUTTON = "🚫 Удалить ссылку"
+SERVER_BACK_BUTTON = "⬅️ Назад"
 
 
 async def is_admin(uid: int) -> bool:
@@ -24,122 +27,99 @@ async def is_admin(uid: int) -> bool:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
-@router.message(F.text == "Добавить сервер")
-async def server_create_start(message: types.Message, state: FSMContext) -> None:
+def _reindex_servers(servers: Sequence[Server]) -> None:
+    for idx, server in enumerate(sorted(servers, key=lambda s: s.id or 0), start=1):
+        new_name = f"Сервер {idx}"
+        new_slug = f"server-{idx}"
+        if server.name != new_name:
+            server.name = new_name
+        if server.slug != new_slug:
+            server.slug = new_slug
+
+
+def _format_servers_list(servers: Iterable[Server]) -> str:
+    lines = ["Доступные серверы:"]
+    for server in servers:
+        url = server.url or "нет"
+        lines.append(f"ID <b>{server.id}</b>: {server.name} — ссылка: {url}")
+    return "\n".join(lines)
+
+
+@router.message(F.text == SERVER_MENU_BUTTON)
+async def server_menu(message: types.Message, state: FSMContext) -> None:
     if not message.from_user:
         return
 
     if not await is_admin(message.from_user.id):
         return
 
-    await state.set_state(ServerCreateState.waiting_for_name)
-    await message.answer("Введите название сервера:")
-
-
-@router.message(StateFilter(ServerCreateState.waiting_for_name))
-async def server_set_name(message: types.Message, state: FSMContext) -> None:
-    name = message.text.strip() if message.text else ""
-    if not name:
-        await message.answer("Название не может быть пустым. Повторите ввод:")
-        return
-
-    await state.update_data(name=name)
-    await state.set_state(ServerCreateState.waiting_for_slug)
+    await state.clear()
     await message.answer(
-        "Введите slug сервера (латиница, цифры и дефис, от 3 до 64 символов):"
+        "⚙️ Управление серверами:", reply_markup=admin_servers_menu_kb()
     )
 
 
-@router.message(StateFilter(ServerCreateState.waiting_for_slug))
-async def server_set_slug(message: types.Message, state: FSMContext) -> None:
-    slug_raw = message.text.strip().lower() if message.text else ""
-    if not SLUG_PATTERN.fullmatch(slug_raw):
-        await message.answer(
-            "Slug должен содержать только латиницу, цифры и дефисы (3-64 символа)."
-        )
+@router.message(F.text == SERVER_BACK_BUTTON)
+async def server_back_to_main(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
         return
 
-    async with async_session() as session:
-        exists = await session.scalar(select(Server.id).where(Server.slug == slug_raw))
-
-    if exists:
-        await message.answer("Такой slug уже используется. Укажите другой:")
+    if not await is_admin(message.from_user.id):
         return
 
-    await state.update_data(slug=slug_raw)
-    await state.set_state(ServerCreateState.waiting_for_link)
-    await message.answer("Отправьте ссылку на сервер (например, приглашение):")
-
-
-@router.message(StateFilter(ServerCreateState.waiting_for_link))
-async def server_set_link(message: types.Message, state: FSMContext) -> None:
-    link = message.text.strip() if message.text else ""
-    if not link:
-        await message.answer("Ссылка не может быть пустой. Укажите ссылку:")
-        return
-
-    await state.update_data(link=link)
-    await state.set_state(ServerCreateState.waiting_for_chat_id)
+    await state.clear()
     await message.answer(
-        "Укажите chat_id для уведомлений (опционально). Отправьте '-' чтобы пропустить."
+        "👑 <b>Админ-панель</b>\nВыберите раздел:",
+        reply_markup=admin_main_menu_kb(),
     )
 
 
-@router.message(StateFilter(ServerCreateState.waiting_for_chat_id))
-async def server_set_chat_id(message: types.Message, state: FSMContext) -> None:
-    raw_value = message.text.strip() if message.text else ""
-    chat_id = None
+@router.message(F.text == SERVER_CREATE_BUTTON)
+async def server_create(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
 
-    if raw_value:
-        if raw_value.lower() in SKIP_CHAT_ID_VALUES:
-            chat_id = None
-        else:
-            try:
-                chat_id = int(raw_value)
-            except ValueError:
-                await message.answer("Введите числовой chat_id или '-' для пропуска:")
-                return
-
-            async with async_session() as session:
-                chat_exists = await session.scalar(
-                    select(Server.id).where(Server.telegram_chat_id == chat_id)
-                )
-
-            if chat_exists:
-                await message.answer(
-                    "Этот chat_id уже привязан к другому серверу. Укажите другой или '-'"
-                )
-                return
-
-    await state.update_data(chat_id=chat_id)
-    data = await state.get_data()
+    if not await is_admin(message.from_user.id):
+        return
 
     async with async_session() as session:
-        server = Server(
-            name=data["name"],
-            slug=data["slug"],
-            telegram_chat_id=data.get("chat_id"),
-            url=data["link"],
+        servers = (
+            await session.scalars(select(Server).order_by(Server.id))
+        ).all()
+
+        new_server = Server(
+            name=f"Сервер {len(servers) + 1}",
+            slug=f"server-{len(servers) + 1}",
+            telegram_chat_id=None,
+            url=None,
+            closed_message=SERVER_DEFAULT_CLOSED_MESSAGE,
             status="active",
         )
-        session.add(server)
+
+        session.add(new_server)
         await session.flush()
+
+        servers.append(new_server)
+        _reindex_servers(servers)
 
         session.add(
             LogEntry(
-                server_id=server.id,
+                server_id=new_server.id,
                 event_type="server_created",
-                message=f"Сервер {server.name} создан через админку",
+                message=f"Сервер {new_server.name} создан через админку",
                 data={
-                    "slug": server.slug,
-                    "chat_id": server.telegram_chat_id,
-                    "url": data["link"],
+                    "slug": new_server.slug,
+                    "url": new_server.url,
+                    "closed_message": new_server.closed_message,
                 },
             )
         )
 
         await session.commit()
-        server_id = server.id
+
+        server_id = new_server.id
+        server_name = new_server.name
+        server_slug = new_server.slug
 
     await state.clear()
     await message.answer(
@@ -147,7 +127,275 @@ async def server_set_chat_id(message: types.Message, state: FSMContext) -> None:
             "✅ Сервер <b>{name}</b> создан.\n"
             "ID: <code>{server_id}</code>\n"
             "Slug: <code>{slug}</code>"
-        ).format(name=data["name"], server_id=server_id, slug=data["slug"]),
+        ).format(name=server_name, server_id=server_id, slug=server_slug),
         parse_mode="HTML",
-        reply_markup=admin_main_menu_kb(),
+        reply_markup=admin_servers_menu_kb(),
+    )
+
+
+async def _request_server_choice(
+    message: types.Message,
+    state: FSMContext,
+    *,
+    operation: str,
+    prompt: str,
+) -> None:
+    async with async_session() as session:
+        servers = (
+            await session.scalars(select(Server).order_by(Server.id))
+        ).all()
+
+    if not servers:
+        await message.answer(
+            "ℹ️ Нет доступных серверов.", reply_markup=admin_servers_menu_kb()
+        )
+        await state.clear()
+        return
+
+    await state.set_state(ServerManageState.waiting_for_server)
+    await state.update_data(
+        operation=operation,
+        available_ids={server.id for server in servers},
+    )
+
+    await message.answer(
+        f"{prompt}\n\n{_format_servers_list(servers)}",
+        parse_mode="HTML",
+    )
+
+
+@router.message(F.text == SERVER_DELETE_BUTTON)
+async def server_delete_start(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await _request_server_choice(
+        message,
+        state,
+        operation="delete",
+        prompt="Введите ID сервера, который нужно удалить:",
+    )
+
+
+@router.message(F.text == SERVER_SET_LINK_BUTTON)
+async def server_set_link_start(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await _request_server_choice(
+        message,
+        state,
+        operation="set_link",
+        prompt="Введите ID сервера, для которого нужно установить ссылку:",
+    )
+
+
+@router.message(F.text == SERVER_CLEAR_LINK_BUTTON)
+async def server_clear_link_start(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await _request_server_choice(
+        message,
+        state,
+        operation="clear_link",
+        prompt="Введите ID сервера, для которого нужно удалить ссылку:",
+    )
+
+
+def _parse_server_id(raw: str | None) -> int | None:
+    if not raw:
+        return None
+
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+
+@router.message(StateFilter(ServerManageState.waiting_for_server))
+async def server_select_handler(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    server_id = _parse_server_id(message.text or "")
+    data = await state.get_data()
+    available_ids = data.get("available_ids") or set()
+
+    if server_id is None:
+        await message.answer("Введите числовой ID сервера:")
+        return
+
+    if server_id not in available_ids:
+        await message.answer("Сервер с таким ID не найден. Укажите корректный ID:")
+        return
+
+    operation = data.get("operation")
+
+    if operation == "delete":
+        await _delete_server(message, state, server_id)
+    elif operation == "set_link":
+        await state.update_data(server_id=server_id)
+        await state.set_state(ServerManageState.waiting_for_link)
+        await message.answer("Отправьте новую ссылку для сервера:")
+    elif operation == "clear_link":
+        await state.update_data(server_id=server_id)
+        await state.set_state(ServerManageState.waiting_for_closed_message)
+        await message.answer("Введите новое сообщение для закрытого сервера:")
+    else:
+        await state.clear()
+        await message.answer("Неизвестная операция.", reply_markup=admin_servers_menu_kb())
+
+
+async def _delete_server(message: types.Message, state: FSMContext, server_id: int) -> None:
+    async with async_session() as session:
+        servers = (
+            await session.scalars(select(Server).order_by(Server.id))
+        ).all()
+
+        target = next((server for server in servers if server.id == server_id), None)
+
+        if not target:
+            await message.answer(
+                "Сервер не найден.", reply_markup=admin_servers_menu_kb()
+            )
+            await state.clear()
+            return
+
+        await session.delete(target)
+        servers = [server for server in servers if server.id != server_id]
+        _reindex_servers(servers)
+
+        session.add(
+            LogEntry(
+                server_id=target.id,
+                event_type="server_deleted",
+                message=f"Сервер {target.name} удалён через админку",
+                data={"server_id": server_id},
+            )
+        )
+
+        await session.commit()
+
+    await state.clear()
+    await message.answer(
+        "🗑 Сервер удалён.", reply_markup=admin_servers_menu_kb()
+    )
+
+
+@router.message(StateFilter(ServerManageState.waiting_for_link))
+async def server_set_link_finish(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    link = (message.text or "").strip()
+
+    if not link:
+        await message.answer("Ссылка не может быть пустой. Повторите ввод:")
+        return
+
+    data = await state.get_data()
+    server_id = data.get("server_id")
+
+    async with async_session() as session:
+        servers = (
+            await session.scalars(select(Server).order_by(Server.id))
+        ).all()
+
+        target = next((server for server in servers if server.id == server_id), None)
+
+        if not target:
+            await state.clear()
+            await message.answer(
+                "Сервер не найден.", reply_markup=admin_servers_menu_kb()
+            )
+            return
+
+        target.url = link
+        target.closed_message = SERVER_DEFAULT_CLOSED_MESSAGE
+        _reindex_servers(servers)
+
+        session.add(
+            LogEntry(
+                server_id=target.id,
+                event_type="server_link_updated",
+                message=f"Сервер {target.name} получил новую ссылку",
+                data={"url": link},
+            )
+        )
+
+        await session.commit()
+
+    await state.clear()
+    await message.answer(
+        "🔗 Ссылка обновлена.", reply_markup=admin_servers_menu_kb()
+    )
+
+
+@router.message(StateFilter(ServerManageState.waiting_for_closed_message))
+async def server_clear_link_finish(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    closed_message = (message.text or "").strip()
+
+    if not closed_message:
+        await message.answer(
+            "Сообщение не может быть пустым. Введите новое сообщение для закрытого сервера:")
+        return
+
+    data = await state.get_data()
+    server_id = data.get("server_id")
+
+    async with async_session() as session:
+        servers = (
+            await session.scalars(select(Server).order_by(Server.id))
+        ).all()
+
+        target = next((server for server in servers if server.id == server_id), None)
+
+        if not target:
+            await state.clear()
+            await message.answer(
+                "Сервер не найден.", reply_markup=admin_servers_menu_kb()
+            )
+            return
+
+        target.url = None
+        target.closed_message = closed_message
+        _reindex_servers(servers)
+
+        session.add(
+            LogEntry(
+                server_id=target.id,
+                event_type="server_link_removed",
+                message=f"С сервера {target.name} удалена ссылка",
+                data={"closed_message": closed_message},
+            )
+        )
+
+        await session.commit()
+
+    await state.clear()
+    await message.answer(
+        "🚫 Ссылка удалена, сообщение обновлено.",
+        reply_markup=admin_servers_menu_kb(),
     )

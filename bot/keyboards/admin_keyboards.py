@@ -6,7 +6,7 @@ def admin_main_menu_kb() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="🎟 Промокоды")],
         [KeyboardButton(text="🛠 Управление магазином"), KeyboardButton(text="📜 Логи")],
         [KeyboardButton(text="🏆 Достижения"), KeyboardButton(text="Пополнение")],
-        [KeyboardButton(text="Добавить сервер")],
+        [KeyboardButton(text="Сервера")],
         [KeyboardButton(text="↩️ В меню")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -56,5 +56,14 @@ def admin_achievements_kb() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="➕ Создать"), KeyboardButton(text="📃 Список")],
         [KeyboardButton(text="↩️ Назад")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def admin_servers_menu_kb() -> ReplyKeyboardMarkup:
+    buttons = [
+        [KeyboardButton(text="➕ Создать сервер"), KeyboardButton(text="🗑 Удалить сервер")],
+        [KeyboardButton(text="🔗 Назначить ссылку"), KeyboardButton(text="🚫 Удалить ссылку")],
+        [KeyboardButton(text="⬅️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)

@@ -156,6 +156,7 @@ class FakeAsyncSession:
         self.committed = False
         self.flushed = False
         self.execute_calls = 0
+        self.deleted: list = []
 
     async def __aenter__(self):
         return self
@@ -190,6 +191,9 @@ class FakeAsyncSession:
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def delete(self, obj):
+        self.deleted.append(obj)
 
     async def flush(self):
         self.flushed = True
