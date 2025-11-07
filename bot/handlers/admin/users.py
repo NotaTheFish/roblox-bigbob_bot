@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import or_, select
 
 from bot.db import Admin, User, async_session
+from bot.keyboards.admin_keyboards import admin_users_menu_kb
 from bot.states.admin_states import GiveMoneyState
 from bot.utils.achievement_checker import check_achievements
 
@@ -40,13 +41,13 @@ def user_card_kb(user_id, is_blocked):
 
 
 # -------- /admin_users — список --------
-@router.callback_query(F.data == "admin_users")
-async def admin_users_list(call: types.CallbackQuery):
-    if not call.from_user:
-        return await call.answer("⛔ Нет доступа", show_alert=True)
+@router.message(F.text.in_({"👥 Пользователи", "🔁 Обновить список"}))
+async def admin_users_list(message: types.Message):
+    if not message.from_user:
+        return
 
-    if not await is_admin(call.from_user.id):
-        return await call.answer("⛔ Нет доступа", show_alert=True)
+    if not await is_admin(message.from_user.id):
+        return
 
     async with async_session() as session:
         users = (
@@ -54,7 +55,10 @@ async def admin_users_list(call: types.CallbackQuery):
         ).all()
 
     if not users:
-        return await call.message.edit_text("Пользователей пока нет.")
+        return await message.answer(
+            "Пользователей пока нет.",
+            reply_markup=admin_users_menu_kb(),
+        )
 
     text = "👥 <b>ТОП 50 пользователей по балансу</b>\n\n"
     for u in users:
@@ -62,7 +66,7 @@ async def admin_users_list(call: types.CallbackQuery):
         text += f"• <code>{name}</code> — 💰 {u.balance}\n"
 
     text += "\n🔎 Отправьте Telegram ID, @username или Roblox ник для поиска"
-    await call.message.edit_text(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
 
 # -------- Поиск пользователя --------
@@ -74,9 +78,15 @@ async def admin_search_user(message: types.Message):
     if not await is_admin(message.from_user.id):
         return  # <--- заменили raise SkipHandler()
 
+    if message.text in {"👥 Пользователи", "🔁 Обновить список", "↩️ Назад", "↩️ В меню"}:
+        return
+
     query = message.text.strip().lstrip("@")
     if not query:
-        return await message.reply("Введите запрос для поиска")
+        return await message.reply(
+            "Введите запрос для поиска",
+            reply_markup=admin_users_menu_kb(),
+        )
 
     filters = []
     if query.isdigit():
@@ -91,7 +101,10 @@ async def admin_search_user(message: types.Message):
         user = await session.scalar(select(User).where(or_(*filters)))
 
     if not user:
-        return await message.reply("❌ Пользователь не найден")
+        return await message.reply(
+            "❌ Пользователь не найден",
+            reply_markup=admin_users_menu_kb(),
+        )
 
     tg_username = f"@{user.tg_username}" if user.tg_username else "—"
     roblox_username = user.username or "—"

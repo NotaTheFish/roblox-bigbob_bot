@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.db import Admin, LogEntry, Product, Server, async_session
+from bot.keyboards.admin_keyboards import admin_shop_menu_kb, shop_type_kb
 from bot.states.shop_states import ShopCreateState
 
 
@@ -50,34 +51,28 @@ async def _ensure_unique_slug(session, server_id: Optional[int], base_slug: str)
 
 
 # === ADMIN MENU ===
-@router.callback_query(F.data == "admin_shop")
-async def admin_shop_menu(call: types.CallbackQuery):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(F.text == "🛒 Магазин")
+async def admin_shop_menu(message: types.Message):
+    if not message.from_user:
+        return
 
-    if not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
+    if not await is_admin(message.from_user.id):
+        return
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ Добавить товар", callback_data="shop_add")
-    builder.button(text="📦 Список товаров", callback_data="shop_list")
-    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
-    reply_markup = builder.as_markup() if builder.export() else None
-    reply_kwargs = {"reply_markup": reply_markup} if reply_markup else {}
-    await call.message.edit_text(
+    await message.answer(
         "🛒 <b>Магазин</b>\nВыберите:",
         parse_mode="HTML",
-        **reply_kwargs,
+        reply_markup=admin_shop_menu_kb(),
     )
 
 
 # === CREATE ITEM FLOW ===
-@router.callback_query(F.data == "shop_add")
-async def shop_add(call: types.CallbackQuery, state: FSMContext):
-    if not call.from_user or not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(F.text == "➕ Добавить товар")
+async def shop_add(message: types.Message, state: FSMContext):
+    if not message.from_user or not await is_admin(message.from_user.id):
+        return
 
-    await call.message.answer("Введите название товара:")
+    await message.answer("Введите название товара:")
     await state.set_state(ShopCreateState.waiting_for_name)
 
 
@@ -85,29 +80,19 @@ async def shop_add(call: types.CallbackQuery, state: FSMContext):
 async def shop_set_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text="💰 Валюта", callback_data="shop_type_money")
-    builder.button(text="🛡 Привилегия", callback_data="shop_type_priv")
-    builder.button(text="🎁 Roblox Item", callback_data="shop_type_item")
-    builder.adjust(2)
-    reply_markup = builder.as_markup() if builder.export() else None
-
-    await message.answer(
-        "Выберите тип товара:",
-        **({"reply_markup": reply_markup} if reply_markup else {}),
-    )
+    await message.answer("Выберите тип товара:", reply_markup=shop_type_kb())
     await state.set_state(ShopCreateState.waiting_for_type)
 
 
-@router.callback_query(
+@router.message(
     StateFilter(ShopCreateState.waiting_for_type),
-    F.data.startswith("shop_type"),
+    F.text.in_({"💰 Валюта", "🛡 Привилегия", "🎁 Roblox предмет"}),
 )
-async def shop_set_type(call: types.CallbackQuery, state: FSMContext):
-    if "money" in call.data:
+async def shop_set_type(message: types.Message, state: FSMContext):
+    if message.text == "💰 Валюта":
         item_type = "money"
         prompt = "Введите количество валюты:"
-    elif "priv" in call.data:
+    elif message.text == "🛡 Привилегия":
         item_type = "privilege"
         prompt = "Введите название привилегии:"
     else:
@@ -115,7 +100,7 @@ async def shop_set_type(call: types.CallbackQuery, state: FSMContext):
         prompt = "Введите Roblox Item ID:"
 
     await state.update_data(item_type=item_type)
-    await call.message.answer(prompt)
+    await message.answer(prompt)
     await state.set_state(ShopCreateState.waiting_for_value)
 
 
@@ -199,26 +184,19 @@ async def shop_finish(message: types.Message, state: FSMContext):
 
         await session.commit()
 
-    await message.answer("✅ Товар добавлен!")
+    await message.answer("✅ Товар добавлен!", reply_markup=admin_shop_menu_kb())
     await state.clear()
 
 
 # === LIST & DELETE ===
-@router.callback_query(F.data == "shop_list")
-async def shop_list(call: types.CallbackQuery):
-    if not call.from_user or not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
-
+async def _build_shop_list() -> tuple[str | None, types.InlineKeyboardMarkup | None]:
     async with async_session() as session:
-        products = (await session.execute(select(Product).order_by(Product.created_at))).scalars().all()
+        products = (
+            await session.execute(select(Product).order_by(Product.created_at))
+        ).scalars().all()
+
         if not products:
-            builder = InlineKeyboardBuilder()
-            builder.button(text="⬅️ Назад", callback_data="admin_shop")
-            reply_markup = builder.as_markup() if builder.export() else None
-            return await call.message.edit_text(
-                "📦 Товары ещё не добавлены.",
-                **({"reply_markup": reply_markup} if reply_markup else {}),
-            )
+            return None, None
 
         lines = ["📦 <b>Товары магазина:</b>"]
         builder = InlineKeyboardBuilder()
@@ -234,13 +212,33 @@ async def shop_list(call: types.CallbackQuery):
             builder.button(
                 text=f"❌ {product.name}", callback_data=f"shop_del:{product.id}"
             )
-        builder.button(text="⬅️ Назад", callback_data="admin_shop")
-        reply_markup = builder.as_markup() if builder.export() else None
 
-    await call.message.edit_text(
-        "\n".join(lines),
+    reply_markup = builder.as_markup() if builder.export() else None
+    return "\n".join(lines), reply_markup
+
+
+@router.message(F.text == "📦 Список товаров")
+async def shop_list(message: types.Message):
+    if not message.from_user or not await is_admin(message.from_user.id):
+        return
+
+    text, reply_markup = await _build_shop_list()
+
+    if not text:
+        await message.answer(
+            "📦 Товары ещё не добавлены.",
+            reply_markup=admin_shop_menu_kb(),
+        )
+        return
+
+    await message.answer(
+        text,
         parse_mode="HTML",
-        **({"reply_markup": reply_markup} if reply_markup else {}),
+        reply_markup=reply_markup,
+    )
+    await message.answer(
+        "Выберите следующее действие:",
+        reply_markup=admin_shop_menu_kb(),
     )
 
 
@@ -265,5 +263,19 @@ async def shop_delete(call: types.CallbackQuery):
             await session.delete(product)
             await session.commit()
 
+text, reply_markup = await _build_shop_list()
+
+    if text:
+        await call.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+    else:
+        await call.message.edit_text("📦 Товары ещё не добавлены.")
+        await call.message.answer(
+            "Выберите следующее действие:",
+            reply_markup=admin_shop_menu_kb(),
+        )
+
     await call.answer("Удалено ✅")
-    await shop_list(call)

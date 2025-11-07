@@ -18,23 +18,26 @@ async def is_admin(uid: int) -> bool:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
-@router.callback_query(F.data == "admin_achievements")
-async def admin_achievements_menu(call: types.CallbackQuery):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(F.text == "🏆 Достижения")
+async def admin_achievements_menu(message: types.Message):
+    if not message.from_user:
+        return
 
-    if not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
+    if not await is_admin(message.from_user.id):
+        return
 
-    await call.message.edit_text(
+    await message.answer(
         "🏆 Достижения",
         reply_markup=admin_achievements_kb(),
     )
 
 
-@router.callback_query(F.data == "ach_add")
-async def ach_add(call: types.CallbackQuery, state: FSMContext):
-    await call.message.answer("Введите название достижения:")
+@router.message(F.text == "➕ Создать")
+async def ach_add(message: types.Message, state: FSMContext):
+    if not message.from_user or not await is_admin(message.from_user.id):
+        return
+
+    await message.answer("Введите название достижения:")
     await state.set_state(AchievementsState.waiting_for_name)
 
 
@@ -70,32 +73,30 @@ async def ach_finish(message: types.Message, state: FSMContext):
         session.add(achievement)
         await session.commit()
 
-    await message.answer("✅ Достижение создано!")
+    await message.answer("✅ Достижение создано!", reply_markup=admin_achievements_kb())
     await state.clear()
 
 
-@router.callback_query(F.data == "ach_list")
-async def ach_list(call: types.CallbackQuery):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
-
-    if not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(F.text == "📃 Список")
+async def ach_list(message: types.Message):
+    if not message.from_user or not await is_admin(message.from_user.id):
+        return
 
     async with async_session() as session:
         items = (await session.scalars(select(Achievement))).all()
 
     if not items:
-        return await call.message.edit_text(
+        await message.answer(
             "Нет достижений",
             reply_markup=admin_achievements_kb(),
         )
+        return
 
     text = "🏆 <b>Список достижений:</b>\n\n"
     for achievement in items:
         text += f"• {achievement.name} — {achievement.reward}💰\n"
 
-    await call.message.edit_text(
+    await message.answer(
         text,
         reply_markup=admin_achievements_kb(),
         parse_mode="HTML",

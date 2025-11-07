@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
+from bot.keyboards.main_menu import main_menu
 
 
 router = Router(name="admin_menu")
@@ -33,23 +35,31 @@ async def admin_panel(message: types.Message):
 
 
 # Обработка кнопок админ-панели
-@router.callback_query(F.data.in_({"admin_logs", "back_to_menu"}))
-async def admin_menu_callbacks(call: types.CallbackQuery):
-    if not call.from_user:
-        return await call.answer("⛔ Нет доступа", show_alert=True)
+@router.message(F.text == "↩️ Назад")
+async def admin_back_to_panel(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
 
-    if not await is_admin(call.from_user.id):
-        return await call.answer("⛔ Нет доступа", show_alert=True)
+    if not await is_admin(message.from_user.id):
+        return
 
-    if call.data == "back_to_menu":
-        await call.message.edit_text(
-            "👑 <b>Админ-панель</b>\nВыберите раздел:",
-            reply_markup=admin_main_menu_kb(),
-        )
-    elif call.data == "admin_logs":
-        await call.message.edit_text(
-            "📜 Раздел логов появится позже.",
-            reply_markup=admin_main_menu_kb(),
-        )
+    await state.clear()
+    await message.answer(
+        "👑 <b>Админ-панель</b>\nВыберите раздел:",
+        reply_markup=admin_main_menu_kb(),
+    )
 
-    await call.answer()
+
+@router.message(F.text == "↩️ В меню")
+async def admin_exit_to_main(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await state.clear()
+    await message.answer(
+        "🏠 Вы вернулись в главное меню.",
+        reply_markup=main_menu(is_admin=True),
+    )

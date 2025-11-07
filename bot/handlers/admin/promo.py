@@ -8,7 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.db import Admin, PromoCode, async_session
-from bot.keyboards.admin_keyboards import admin_main_menu_kb, promo_reward_type_kb
+from bot.keyboards.admin_keyboards import admin_promos_menu_kb, promo_reward_type_kb
 from bot.states.promo_states import PromoCreateState
 
 
@@ -22,36 +22,30 @@ async def is_admin(uid: int) -> bool:
 
 
 # ✅ Меню промокодов для админа
-@router.callback_query(F.data == "admin_promos")
-async def admin_promos_menu(call: types.CallbackQuery):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(F.text == "🎟 Промокоды")
+async def admin_promos_menu(message: types.Message):
+    if not message.from_user:
+        return
 
-    if not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
+    if not await is_admin(message.from_user.id):
+        return
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ Создать промокод", callback_data="promo_create")
-    builder.button(text="📄 Список промокодов", callback_data="promo_list")
-    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
-    reply_markup = builder.as_markup() if builder.export() else None
-
-    await call.message.edit_text(
-        "🎁 <b>Промокоды</b>\nВыберите действие:",
-        **({"reply_markup": reply_markup} if reply_markup else {}),
+    await message.answer(
+        "🎟 <b>Промокоды</b>\nВыберите действие:",
+        reply_markup=admin_promos_menu_kb(),
     )
 
 
 # ✅ Старт создания промокода
-@router.callback_query(F.data == "promo_create")
-async def promo_create_start(call: types.CallbackQuery, state: FSMContext):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(F.text == "➕ Создать промокод")
+async def promo_create_start(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
 
-    if not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
+    if not await is_admin(message.from_user.id):
+        return
 
-    await call.message.answer("📝 Введите название промокода:")
+    await message.answer("📝 Введите название промокода:")
     await state.set_state(PromoCreateState.waiting_for_code)
 
 
@@ -64,18 +58,18 @@ async def promo_set_code(message: types.Message, state: FSMContext):
 
 
 # ✅ Выбор типа награды
-@router.callback_query(
+@router.message(
     StateFilter(PromoCreateState.waiting_for_reward_type),
-    F.data.startswith("promo_reward"),
+    F.text.in_({"💰 Валюта", "🎁 Roblox предмет"}),
 )
-async def promo_set_reward_type(call: types.CallbackQuery, state: FSMContext):
-    promo_type = "money" if "money" in call.data else "item"
+async def promo_set_reward_type(message: types.Message, state: FSMContext):
+    promo_type = "money" if message.text == "💰 Валюта" else "item"
     await state.update_data(promo_type=promo_type)
 
     if promo_type == "money":
-        await call.message.answer("💰 Введите сумму валюты для награды:")
+        await message.answer("💰 Введите сумму валюты для награды:")
     else:
-        await call.message.answer("🎁 Введите ID Roblox-предмета:")
+        await message.answer("🎁 Введите ID Roblox-предмета:")
 
     await state.set_state(PromoCreateState.waiting_for_reward_value)
 
@@ -142,21 +136,21 @@ async def promo_finish(message: types.Message, state: FSMContext):
         session.add(promo)
         await session.commit()
 
-    await message.answer(f"✅ Промокод <code>{data['code']}</code> создан!", parse_mode="HTML")
+    await message.answer(
+        f"✅ Промокод <code>{data['code']}</code> создан!",
+        parse_mode="HTML",
+        reply_markup=admin_promos_menu_kb(),
+    )
     await state.clear()
 
 
 # ✅ Список промокодов
-@router.callback_query(F.data == "promo_list")
-async def promo_list(call: types.CallbackQuery):
+async def _build_promo_list() -> tuple[str | None, types.InlineKeyboardMarkup | None]:
     async with async_session() as session:
         promos = (await session.scalars(select(PromoCode))).all()
 
     if not promos:
-        return await call.message.edit_text(
-            "📦 Промокодов нет.",
-            reply_markup=admin_main_menu_kb(),
-        )
+        return None, None
 
     text = "🎫 <b>Активные промокоды:</b>\n\n"
     builder = InlineKeyboardBuilder()
@@ -171,11 +165,35 @@ async def promo_list(call: types.CallbackQuery):
             text=f"❌ {promo.code}", callback_data=f"promo_del:{promo.id}"
         )
 
-    builder.button(text="⬅️ Назад", callback_data="admin_promos")
     reply_markup = builder.as_markup() if builder.export() else None
-    await call.message.edit_text(
+    return text, reply_markup
+
+
+@router.message(F.text == "📄 Список промокодов")
+async def promo_list(message: types.Message):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    text, reply_markup = await _build_promo_list()
+
+    if not text:
+        await message.answer(
+            "📦 Промокодов нет.",
+            reply_markup=admin_promos_menu_kb(),
+        )
+        return
+
+    await message.answer(
         text,
-        **({"reply_markup": reply_markup} if reply_markup else {}),
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
+    await message.answer(
+        "Выберите следующее действие:",
+        reply_markup=admin_promos_menu_kb(),
     )
 
 
@@ -190,5 +208,19 @@ async def promo_delete(call: types.CallbackQuery):
             await session.delete(promo)
             await session.commit()
 
+    text, reply_markup = await _build_promo_list()
+
+    if text:
+        await call.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+    else:
+        await call.message.edit_text("📦 Промокодов нет.")
+        await call.message.answer(
+            "Выберите следующее действие:",
+            reply_markup=admin_promos_menu_kb(),
+        )
+
     await call.answer("✅ Удалено")
-    await promo_list(call)
