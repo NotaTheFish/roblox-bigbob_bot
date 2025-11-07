@@ -51,7 +51,7 @@ async def _ensure_unique_slug(session, server_id: Optional[int], base_slug: str)
 
 
 # === ADMIN MENU ===
-@router.message(F.text == "Управление магазином")
+@router.message(F.text == "🛠 Управление магазином")
 async def admin_shop_menu(message: types.Message):
     if not message.from_user:
         return
