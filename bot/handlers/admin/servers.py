@@ -119,7 +119,7 @@ async def server_set_chat_id(message: types.Message, state: FSMContext) -> None:
             name=data["name"],
             slug=data["slug"],
             telegram_chat_id=data.get("chat_id"),
-            metadata_json={"link": data["link"]},
+            url=data["link"],
             status="active",
         )
         session.add(server)
@@ -133,7 +133,7 @@ async def server_set_chat_id(message: types.Message, state: FSMContext) -> None:
                 data={
                     "slug": server.slug,
                     "chat_id": server.telegram_chat_id,
-                    "link": data["link"],
+                    "url": data["link"],
                 },
             )
         )

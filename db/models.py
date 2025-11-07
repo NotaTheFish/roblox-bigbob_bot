@@ -29,6 +29,9 @@ def _generate_request_id() -> str:
 Base = declarative_base()
 
 
+SERVER_DEFAULT_CLOSED_MESSAGE = "Сервер закрыт"
+
+
 @compiles(JSONB, "sqlite")
 def _compile_jsonb_for_sqlite(_type, compiler, **kwargs):
     """Render JSONB columns as JSON for SQLite compatibility."""
@@ -153,6 +156,13 @@ class Server(Base):
     description = Column(Text)
     status = Column(String(32), default="active", nullable=False)
     metadata_json = Column("metadata", JSONB)
+    url = Column(String, nullable=True)
+    closed_message = Column(
+        String,
+        nullable=True,
+        default=SERVER_DEFAULT_CLOSED_MESSAGE,
+        server_default=SERVER_DEFAULT_CLOSED_MESSAGE,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
