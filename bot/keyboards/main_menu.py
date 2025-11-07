@@ -56,16 +56,3 @@ def support_menu() -> ReplyKeyboardMarkup:
         keyboard=buttons,
         resize_keyboard=True
     )
-
-
-# --- Серверы Roblox ---
-
-def play_menu() -> ReplyKeyboardMarkup:
-    buttons = [
-        [KeyboardButton(text="🌐 Сервер #1"), KeyboardButton(text="🌐 Сервер #2")],
-        [KeyboardButton(text="⬅️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(
-        keyboard=buttons,
-        resize_keyboard=True
-    )

@@ -1,12 +1,15 @@
 from aiogram import F, Router, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import func, select
 from bot.db import Admin, Referral, ReferralReward, User, async_session
 from bot.handlers.user.shop import user_shop
-from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, play_menu
+from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu
 from bot.states.user_states import PromoInputState
 from bot.utils.referrals import ensure_referral_code
 from bot.services.stats import format_top_users, get_top_users
+from bot.services.servers import get_ordered_servers, get_server_by_id
+from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 
 router = Router(name="user_menu")
@@ -46,19 +49,50 @@ async def open_shop_menu(message: types.Message, state: FSMContext):
 @router.message(F.text == "🎮 Играть")
 async def open_play_menu(message: types.Message, state: FSMContext):
     await _set_profile_mode(state, False)
-    await message.answer("🎮 Выберите сервер:", reply_markup=play_menu())
+
+    servers = await get_ordered_servers()
+    if not servers:
+        await message.answer("ℹ️ Доступных серверов пока нет")
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=server.name,
+                    url=server.url,
+                )
+                if server.url
+                else InlineKeyboardButton(
+                    text=server.name,
+                    callback_data=f"server_closed:{server.id}",
+                )
+            ]
+            for server in servers
+        ]
+    )
+
+    await message.answer("🎮 Выберите сервер:", reply_markup=keyboard)
 
 
-@router.message(F.text == "🌐 Сервер #1")
-async def play_server_one(message: types.Message, state: FSMContext):
-    await _set_profile_mode(state, False)
-    await message.answer("🌐 Сервер #1: ссылка появится позже")
+@router.callback_query(F.data.startswith("server_closed:"))
+async def handle_server_closed(callback: types.CallbackQuery) -> None:
+    data = callback.data or ""
+    try:
+        _, server_id_raw = data.split(":", 1)
+        server_id = int(server_id_raw)
+    except (ValueError, AttributeError):
+        server_info = None
+    else:
+        server_info = await get_server_by_id(server_id)
 
+    message = (
+        (server_info.closed_message or SERVER_DEFAULT_CLOSED_MESSAGE)
+        if server_info
+        else SERVER_DEFAULT_CLOSED_MESSAGE
+    )
 
-@router.message(F.text == "🌐 Сервер #2")
-async def play_server_two(message: types.Message, state: FSMContext):
-    await _set_profile_mode(state, False)
-    await message.answer("🌐 Сервер #2: ссылка появится позже")
+    await callback.answer(message, show_alert=True)
 
 
 @router.message(F.text == "🎁 Предметы")
