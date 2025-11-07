@@ -5,9 +5,20 @@ from typing import Iterable, Sequence
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
-from bot.db import Admin, LogEntry, Server, async_session
+from bot.db import (
+    Admin,
+    LogEntry,
+    Payment,
+    PaymentWebhookEvent,
+    Product,
+    Purchase,
+    ReferralReward,
+    Server,
+    async_session,
+)
 from bot.keyboards.admin_keyboards import admin_main_menu_kb, admin_servers_menu_kb
 from bot.states.server_states import ServerManageState
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
@@ -222,6 +233,43 @@ def _parse_server_id(raw: str | None) -> int | None:
         return None
 
 
+async def _cleanup_server_related_data(session, server_id: int) -> None:
+    purchase_ids = (
+        await session.scalars(select(Purchase.id).where(Purchase.server_id == server_id))
+    ).all()
+
+    if purchase_ids:
+        purchase_id_tuple = tuple(purchase_ids)
+        payment_ids = (
+            await session.scalars(
+                select(Payment.id).where(Payment.purchase_id.in_(purchase_id_tuple))
+            )
+        ).all()
+
+        if payment_ids:
+            payment_id_tuple = tuple(payment_ids)
+            await session.execute(
+                delete(PaymentWebhookEvent).where(
+                    PaymentWebhookEvent.payment_id.in_(payment_id_tuple)
+                )
+            )
+            await session.execute(
+                delete(ReferralReward).where(
+                    ReferralReward.payment_id.in_(payment_id_tuple)
+                )
+            )
+            await session.execute(
+                delete(Payment).where(Payment.id.in_(payment_id_tuple))
+            )
+
+        await session.execute(
+            delete(ReferralReward).where(ReferralReward.purchase_id.in_(purchase_id_tuple))
+        )
+        await session.execute(delete(Purchase).where(Purchase.id.in_(purchase_id_tuple)))
+
+    await session.execute(delete(Product).where(Product.server_id == server_id))
+
+
 @router.message(StateFilter(ServerManageState.waiting_for_server))
 async def server_select_handler(message: types.Message, state: FSMContext) -> None:
     if not message.from_user:
@@ -274,23 +322,37 @@ async def _delete_server(message: types.Message, state: FSMContext, server_id: i
             await state.clear()
             return
 
-        session.add(
-            LogEntry(
-                server_id=None,
-                event_type="server_deleted",
-                message=f"Сервер {target.name} удалён через админку",
-                data={
-                    "server_id": target.id,
-                    "server_name": target.name,
-                },
+        try:
+            await _cleanup_server_related_data(session, target.id)
+
+            session.add(
+                LogEntry(
+                    server_id=None,
+                    event_type="server_deleted",
+                    message=f"Сервер {target.name} удалён через админку",
+                    data={
+                        "server_id": target.id,
+                        "server_name": target.name,
+                    },
+                )
             )
-        )
 
-        await session.delete(target)
-        servers = [server for server in servers if server.id != server_id]
-        _reindex_servers(servers)
+            await session.delete(target)
+            servers = [server for server in servers if server.id != server_id]
+            _reindex_servers(servers)
 
-        await session.commit()
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await state.clear()
+            await message.answer(
+                (
+                    "⚠️ Не удалось удалить сервер. Сначала удалите связанные покупки,"
+                    " товары и начисления, затем повторите попытку."
+                ),
+                reply_markup=admin_servers_menu_kb(),
+            )
+            return
 
     await state.clear()
     await message.answer(

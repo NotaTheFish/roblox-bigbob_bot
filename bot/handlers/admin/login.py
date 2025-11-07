@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 
 from aiogram import F, Router, types
 from aiogram.filters import Command, CommandObject
@@ -48,7 +49,8 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
         await message.reply("✅ Вы уже админ", reply_markup=admin_main_menu_kb())
         return True
 
-    username = message.from_user.username or "unknown"
+    username = (message.from_user.username or "").strip() or None
+    full_name = (message.from_user.full_name or "").strip() or None
 
     async with async_session() as session:
         pending = await session.scalar(
@@ -61,15 +63,18 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
         if pending:
             request_id = pending.request_id
             is_repeat_request = True
-            if pending.username != username:
+            if pending.username != username or pending.full_name != full_name:
                 pending.username = username
+                pending.full_name = full_name
                 await session.commit()
         else:
             request = AdminRequest(
                 telegram_id=uid,
-                username=username
+                username=username,
+                full_name=full_name,
             )
             session.add(request)
+            await session.flush()
             await session.commit()
             request_id = request.request_id
             is_repeat_request = False
@@ -80,12 +85,18 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
     builder.adjust(2)
     reply_markup = builder.as_markup()
 
+    display_full_name = full_name or "Без имени"
+    display_username = f"@{username}" if username else "—"
+
     await message.bot.send_message(
         ROOT_ADMIN_ID,
         (
             "👤 Новый запрос на получение прав администратора\n"
-            "User: @{} ({})"
-        ).format(username, uid),
+            f"<b>{escape(display_full_name)}</b> ( "
+            f"{escape(display_username)} / <code>{uid}</code> )\n"
+            f"🆔 Заявка: <code>{escape(request_id)}</code>"
+        ),
+        parse_mode="HTML",
         **({"reply_markup": reply_markup} if reply_markup else {})
     )
 
@@ -143,7 +154,13 @@ async def admin_request_callback(call: types.CallbackQuery):
             return await call.answer("Заявка не найдена", show_alert=True)
 
         uid = req.telegram_id
-        username = req.username or "unknown"
+        username = (req.username or "").strip() or None
+        full_name = (req.full_name or "").strip() or None
+
+        display_full_name = full_name or "Без имени"
+        display_username = f"@{username}" if username else "—"
+        escaped_full_name = escape(display_full_name)
+        escaped_username = escape(display_username)
 
         moderator_id = call.from_user.id if call.from_user else "unknown"
 
@@ -180,8 +197,18 @@ async def admin_request_callback(call: types.CallbackQuery):
     await call.bot.send_message(
         ROOT_ADMIN_ID,
         (
-            "🆔 Заявка {request_id} пользователя @{username}: {result}"
-        ).format(request_id=request_id, username=username, result=result)
+            f"🆔 Заявка <code>{escape(request_id)}</code> пользователя "
+            f"<b>{escaped_full_name}</b> ( {escaped_username} / <code>{uid}</code> ):"
+            f" {escape(result)}"
+        ),
+        parse_mode="HTML",
     )
-    await call.message.edit_text(f"{result}\n🆔 Заявка: {request_id}")
+    await call.message.edit_text(
+        (
+            f"{escape(result)}\n"
+            f"🆔 Заявка: <code>{escape(request_id)}</code>\n"
+            f"👤 <b>{escaped_full_name}</b> ( {escaped_username} / <code>{uid}</code> )"
+        ),
+        parse_mode="HTML",
+    )
     await call.answer()

@@ -157,6 +157,8 @@ class FakeAsyncSession:
         self.flushed = False
         self.execute_calls = 0
         self.deleted: list = []
+        self.executed_statements: list = []
+        self.rolled_back = False
 
     async def __aenter__(self):
         return self
@@ -181,8 +183,12 @@ class FakeAsyncSession:
             return self._get_results.pop(0)
         return None
 
-    async def execute(self, *_args, **_kwargs):
+    async def execute(self, *args, **kwargs):
         self.execute_calls += 1
+        if args:
+            self.executed_statements.append(args[0])
+        else:
+            self.executed_statements.append(None)
         if self._execute_results:
             rows = self._execute_results.pop(0)
         else:
@@ -205,6 +211,9 @@ class FakeAsyncSession:
 
     async def commit(self):
         self.committed = True
+
+    async def rollback(self):
+        self.rolled_back = True
 
 
 def make_async_session_stub(*sessions: FakeAsyncSession) -> Callable[[], FakeAsyncSession]:

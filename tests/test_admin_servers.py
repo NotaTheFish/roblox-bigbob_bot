@@ -8,6 +8,7 @@ from bot.handlers.admin import servers
 from bot.states.server_states import ServerManageState
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE, LogEntry, Server
 from tests.conftest import FakeAsyncSession, make_async_session_stub
+from sqlalchemy.exc import IntegrityError
 
 
 def _make_server(server_id: int, *, url: str | None = None) -> Server:
@@ -130,6 +131,85 @@ async def test_server_create_then_delete(monkeypatch, message_factory, mock_stat
     assert text == "✅ Сервер успешно удалён"
     assert "reply_markup" in params
 
+
+@pytest.mark.anyio("asyncio")
+async def test_server_delete_removes_related_data(monkeypatch, message_factory, mock_state):
+    server = _make_server(1)
+
+    session_list = [
+        FakeAsyncSession(scalars_results=[[server]]),
+        FakeAsyncSession(
+            scalars_results=[[server], [101, 102], [201]],
+            execute_results=[[], [], [], [], [], []],
+        ),
+    ]
+    monkeypatch.setattr(
+        servers,
+        "async_session",
+        make_async_session_stub(*session_list),
+    )
+
+    start_message = message_factory(text=servers.SERVER_DELETE_BUTTON)
+    await servers.server_delete_start(start_message, mock_state)
+
+    confirm_message = message_factory(text="1")
+    await servers.server_select_handler(confirm_message, mock_state)
+
+    delete_session = session_list[1]
+    assert delete_session.execute_calls == 6
+    table_names = [
+        stmt.table.name for stmt in delete_session.executed_statements if stmt is not None
+    ]
+    assert table_names.count("referral_rewards") == 2
+    assert "payment_webhooks" in table_names
+    assert "payments" in table_names
+    assert "purchases" in table_names
+    assert "products" in table_names
+    assert delete_session.deleted and delete_session.deleted[0] is server
+    assert delete_session.committed is True
+
+    assert confirm_message.answers
+    text, params = confirm_message.answers[-1]
+    assert text == "✅ Сервер успешно удалён"
+    assert "reply_markup" in params
+
+
+@pytest.mark.anyio("asyncio")
+async def test_server_delete_integrity_error(monkeypatch, message_factory, mock_state):
+    server = _make_server(1)
+
+    delete_session = FakeAsyncSession(scalars_results=[[server]])
+    cleanup_mock = AsyncMock()
+    commit_mock = AsyncMock(side_effect=IntegrityError("", "", Exception()))
+
+    monkeypatch.setattr(servers, "_cleanup_server_related_data", cleanup_mock)
+    monkeypatch.setattr(delete_session, "commit", commit_mock)
+
+    session_list = [
+        FakeAsyncSession(scalars_results=[[server]]),
+        delete_session,
+    ]
+    monkeypatch.setattr(
+        servers,
+        "async_session",
+        make_async_session_stub(*session_list),
+    )
+
+    start_message = message_factory(text=servers.SERVER_DELETE_BUTTON)
+    await servers.server_delete_start(start_message, mock_state)
+
+    confirm_message = message_factory(text="1")
+    await servers.server_select_handler(confirm_message, mock_state)
+
+    assert cleanup_mock.await_count == 1
+    assert commit_mock.await_count == 1
+    assert delete_session.rolled_back is True
+
+    assert confirm_message.answers
+    text, params = confirm_message.answers[-1]
+    assert "⚠️ Не удалось удалить сервер" in text
+    assert "reply_markup" in params
+    assert await mock_state.get_state() is None
 
 @pytest.mark.anyio("asyncio")
 async def test_server_set_link_updates(monkeypatch, message_factory, mock_state):

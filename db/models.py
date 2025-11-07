@@ -96,6 +96,7 @@ class AdminRequest(Base):
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, index=True, nullable=False)
     username = Column(String(255))
+    full_name = Column(String(255))
     status = Column(String(32), default="pending", nullable=False)
     request_id = Column(String(64), unique=True, nullable=False, default=_generate_request_id)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
