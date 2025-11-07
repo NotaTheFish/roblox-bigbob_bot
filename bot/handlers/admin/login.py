@@ -59,16 +59,20 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
         )
 
         if pending:
-            await message.reply("⌛ Ваша заявка уже ожидает рассмотрения")
-            return True
-
-        request = AdminRequest(
-            telegram_id=uid,
-            username=username
-        )
-        session.add(request)
-        await session.commit()
-        request_id = request.request_id
+            request_id = pending.request_id
+            is_repeat_request = True
+            if pending.username != username:
+                pending.username = username
+                await session.commit()
+        else:
+            request = AdminRequest(
+                telegram_id=uid,
+                username=username
+            )
+            session.add(request)
+            await session.commit()
+            request_id = request.request_id
+            is_repeat_request = False
 
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Разрешить", callback_data=f"approve_admin:{request_id}")
@@ -79,13 +83,18 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
     await message.bot.send_message(
         ROOT_ADMIN_ID,
         (
-            "👤 Пользователь @{} хочет стать админом\n"
-            "🆔 ID заявки: {}"
-        ).format(username, request_id),
+            "👤 Новый запрос на получение прав администратора\n"
+            "User: @{} ({})"
+        ).format(username, uid),
         **({"reply_markup": reply_markup} if reply_markup else {})
     )
 
-    await message.reply("⌛ Запрос отправлен, ожидайте одобрения")
+    if is_repeat_request:
+        reply_text = "⌛ Уведомление root администратору отправлено повторно, ожидайте решения"
+    else:
+        reply_text = "⌛ Запрос отправлен, ожидайте одобрения"
+
+    await message.reply(reply_text)
     return True
 
 
