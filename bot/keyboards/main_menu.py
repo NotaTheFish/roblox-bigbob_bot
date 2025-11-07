@@ -4,10 +4,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="🛒 Магазин")],
-        [KeyboardButton(text="🎮 Играть"), KeyboardButton(text="🆘 Поддержка")],
-        [KeyboardButton(text="🏆 Топ игроков"), KeyboardButton(text="💳 Пополнить баланс")],
-        [KeyboardButton(text="🎟 Промокод")]
+        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="🎮 Играть")],
+        [KeyboardButton(text="🛒 Магазин"), KeyboardButton(text="🆘 Поддержка")],
     ]
 
     if is_admin:
@@ -23,8 +21,9 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
 
 def profile_menu() -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton(text="🔗 Реферальная ссылка"), KeyboardButton(text="💳 Пополнить баланс")],
-        [KeyboardButton(text="🎟 Промокод"), KeyboardButton(text="🏆 Топ игроков")],
+        [KeyboardButton(text="🏆 Топ игроков"), KeyboardButton(text="💳 Пополнить баланс")],
+        [KeyboardButton(text="🎟 Промокод"), KeyboardButton(text="✏️ Редактировать профиль")],
+        [KeyboardButton(text="🔗 Реферальная ссылка")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
     return ReplyKeyboardMarkup(

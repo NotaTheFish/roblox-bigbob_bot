@@ -151,3 +151,11 @@ async def profile_topup(message: types.Message, state: FSMContext):
 async def profile_top(message: types.Message, state: FSMContext):
     await _set_profile_mode(state, True)
     await message.answer("🏆 Топ игроков: скоро добавим красивый вывод!")
+
+
+@router.message(F.text == "✏️ Редактировать профиль")
+async def profile_edit(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, True)
+    await message.answer(
+        "✏️ Редактирование профиля: функциональность появится в ближайшее время"
+    )
