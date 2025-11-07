@@ -1,48 +1,53 @@
 from datetime import datetime
+import re
 
-from aiogram import Router, types
+from aiogram import F, Router, types
 from aiogram.filters import Command, CommandObject
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
 from bot.utils.achievement_checker import check_achievements
+from bot.states.user_states import PromoInputState
 
 
 router = Router(name="user_promo")
 
 
-@router.message(Command("promo"))
-async def activate_promo(message: types.Message, command: CommandObject):
-    raw_code = (command.args or "").strip()
+PROMOCODE_PATTERN = re.compile(r"^[A-Z0-9-]{4,32}$", re.IGNORECASE)
 
-    if not raw_code:
-        return await message.reply("Введите промокод:\n`/promo CODE`", parse_mode="Markdown")
 
-    code = raw_code.upper()
-
+async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
     if not message.from_user:
-        return
+        return False
 
-    uid = message.from_user.id
+    code = (raw_code or "").strip().upper()
+
+    if not code:
+        await message.reply("⚠️ Промокод не должен быть пустым")
+        return False
 
     async with async_session() as session:
         promo = await session.scalar(select(PromoCode).where(PromoCode.code == code))
 
         if not promo or not promo.active:
-            return await message.reply("❌ Такой промокод не существует")
+            await message.reply("❌ Такой промокод не существует")
+            return False
 
         if promo.max_uses is not None and (promo.uses or 0) >= promo.max_uses:
-            return await message.reply("⚠️ Этот промокод больше недоступен")
+            await message.reply("⚠️ Этот промокод больше недоступен")
+            return False
 
         if promo.expires_at and datetime.utcnow() > promo.expires_at:
-            return await message.reply("⛔ Срок действия промокода истёк")
+            await message.reply("⛔ Срок действия промокода истёк")
+            return False
 
-        user = await session.scalar(select(User).where(User.tg_id == uid))
+        user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
         if not user:
-            return await message.reply("❗ Ошибка: вы не зарегистрированы")
+            await message.reply("❗ Ошибка: вы не зарегистрированы")
+            return False
 
-        # Проверка, что пользователь не активировал промокод ранее
         already_used = await session.scalar(
             select(PromocodeRedemption).where(
                 PromocodeRedemption.promocode_id == promo.id,
@@ -50,7 +55,8 @@ async def activate_promo(message: types.Message, command: CommandObject):
             )
         )
         if already_used:
-            return await message.reply("⚠️ Вы уже активировали этот промокод")
+            await message.reply("⚠️ Вы уже активировали этот промокод")
+            return False
 
         reward_amount = 0
         if promo.promo_type == "money":
@@ -99,5 +105,52 @@ async def activate_promo(message: types.Message, command: CommandObject):
             f"Выдано: {reward_text}",
             parse_mode="HTML",
         )
-    except Exception:
+    except Exception:  # pragma: no cover - network errors are not deterministic
         pass
+
+    return True
+
+
+@router.message(Command("promo"))
+async def activate_promo(
+    message: types.Message, command: CommandObject, state: FSMContext
+):
+    raw_code = (command.args or "").strip()
+
+    if not raw_code:
+        await state.set_state(PromoInputState.waiting_for_code)
+        await message.reply("Введите код прямо в чат")
+        return
+
+    redeemed = await redeem_promocode(message, raw_code)
+
+    if redeemed:
+        current_state = await state.get_state()
+        if current_state == PromoInputState.waiting_for_code.state:
+            data = await state.get_data()
+            in_profile = data.get("in_profile", False)
+            await state.clear()
+            if in_profile:
+                await state.update_data(in_profile=True)
+
+
+@router.message(F.text.regexp(PROMOCODE_PATTERN))
+async def promo_from_message(message: types.Message, state: FSMContext):
+    text = (message.text or "").strip()
+    if not PROMOCODE_PATTERN.fullmatch(text):
+        return
+
+    data = await state.get_data()
+    current_state = await state.get_state()
+    in_profile = data.get("in_profile", False)
+    waiting = current_state == PromoInputState.waiting_for_code.state
+
+    if not in_profile and not waiting:
+        return
+
+    redeemed = await redeem_promocode(message, text)
+
+    if redeemed and waiting:
+        await state.clear()
+        if in_profile:
+            await state.update_data(in_profile=True)

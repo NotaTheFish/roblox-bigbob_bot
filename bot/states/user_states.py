@@ -8,3 +8,7 @@ class TopUpState(StatesGroup):
 
 class SupportRequestState(StatesGroup):
     waiting_for_message = State()
+
+
+class PromoInputState(StatesGroup):
+    waiting_for_code = State()

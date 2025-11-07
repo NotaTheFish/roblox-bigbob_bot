@@ -1,13 +1,26 @@
 from aiogram import F, Router, types
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import func, select
-
 from bot.db import Admin, Referral, ReferralReward, User, async_session
 from bot.handlers.user.shop import user_shop
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, play_menu
+from bot.states.user_states import PromoInputState
 from bot.utils.referrals import ensure_referral_code
 
 
 router = Router(name="user_menu")
+
+
+async def _set_profile_mode(state: FSMContext, active: bool) -> None:
+    current_state = await state.get_state()
+
+    if not active:
+        if current_state == PromoInputState.waiting_for_code.state:
+            await state.clear()
+        await state.update_data(in_profile=False)
+        return
+
+    await state.update_data(in_profile=True)
 
 
 async def _is_admin(uid: int) -> bool:
@@ -18,51 +31,60 @@ async def _is_admin(uid: int) -> bool:
 # --- Открыть подменю ---
 
 @router.message(F.text == "👤 Профиль")
-async def open_profile_menu(message: types.Message):
+async def open_profile_menu(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, True)
     await message.answer("👤 Профиль", reply_markup=profile_menu())
 
 
 @router.message(F.text == "🛒 Магазин")
-async def open_shop_menu(message: types.Message):
+async def open_shop_menu(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await message.answer("🛒 Магазин", reply_markup=shop_menu())
 
 
 @router.message(F.text == "🎮 Играть")
-async def open_play_menu(message: types.Message):
+async def open_play_menu(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await message.answer("🎮 Выберите сервер:", reply_markup=play_menu())
 
 
 @router.message(F.text == "🌐 Сервер #1")
-async def play_server_one(message: types.Message):
+async def play_server_one(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await message.answer("🌐 Сервер #1: ссылка появится позже")
 
 
 @router.message(F.text == "🌐 Сервер #2")
-async def play_server_two(message: types.Message):
+async def play_server_two(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await message.answer("🌐 Сервер #2: ссылка появится позже")
 
 
 @router.message(F.text == "🎁 Предметы")
-async def open_shop_items(message: types.Message):
+async def open_shop_items(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await user_shop(message, "item")
 
 
 @router.message(F.text == "🛡 Привилегии")
-async def open_shop_privileges(message: types.Message):
+async def open_shop_privileges(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await user_shop(message, "privilege")
 
 
 @router.message(F.text == "💰 Кеш")
-async def open_shop_currency(message: types.Message):
+async def open_shop_currency(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, False)
     await user_shop(message, "money")
 
 
 # --- Назад в главное меню ---
 
 @router.message(F.text == "⬅️ Назад")
-async def back_to_main(message: types.Message):
+async def back_to_main(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
+    await _set_profile_mode(state, False)
     is_admin = await _is_admin(message.from_user.id)
     await message.answer("↩ Главное меню", reply_markup=main_menu(is_admin=is_admin))
 
@@ -70,9 +92,11 @@ async def back_to_main(message: types.Message):
 # --- Профиль / Рефералка ---
 
 @router.message(F.text == "🔗 Реферальная ссылка")
-async def profile_ref_link(message: types.Message):
+async def profile_ref_link(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
+
+    await _set_profile_mode(state, True)
 
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
@@ -111,15 +135,19 @@ async def profile_ref_link(message: types.Message):
 
 
 @router.message(F.text == "🎟 Промокод")
-async def profile_promo(message: types.Message):
-    await message.answer("🎟 Введите промокод командой: /promo CODE")
+async def profile_promo(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, True)
+    await state.set_state(PromoInputState.waiting_for_code)
+    await message.answer("🎟 Введите код прямо в чат")
 
 
 @router.message(F.text == "💳 Пополнить баланс")
-async def profile_topup(message: types.Message):
+async def profile_topup(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, True)
     await message.answer("💳 Пополнение: используйте /topup")
 
 
 @router.message(F.text == "🏆 Топ игроков")
-async def profile_top(message: types.Message):
+async def profile_top(message: types.Message, state: FSMContext):
+    await _set_profile_mode(state, True)
     await message.answer("🏆 Топ игроков: скоро добавим красивый вывод!")

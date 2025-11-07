@@ -137,7 +137,8 @@ async def promo_finish(message: types.Message, state: FSMContext):
         await session.commit()
 
     await message.answer(
-        f"✅ Промокод <code>{data['code']}</code> создан!",
+        f"✅ Промокод <code>{data['code']}</code> создан!\n"
+        "💬 Подскажите игрокам: «Введите код прямо в чат».",
         parse_mode="HTML",
         reply_markup=admin_promos_menu_kb(),
     )

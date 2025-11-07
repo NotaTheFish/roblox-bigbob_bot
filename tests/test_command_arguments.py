@@ -19,6 +19,7 @@ os.environ.setdefault("ADMIN_LOGIN_PASSWORD", "DEFAULT")
 from bot.db import AdminRequest
 from bot.handlers.admin import login
 from bot.handlers.user import promo
+from bot.states.user_states import PromoInputState
 
 
 class DummyBot:
@@ -38,6 +39,32 @@ class DummyMessage:
     async def reply(self, text: str, **kwargs):
         self.replies.append((text, kwargs))
         return text
+
+
+class DummyFSMContext:
+    def __init__(self):
+        self._state: str | None = None
+        self._data: dict = {}
+
+    async def set_state(self, state):
+        if state is None:
+            self._state = None
+        else:
+            self._state = getattr(state, "state", state)
+
+    async def get_state(self):
+        return self._state
+
+    async def clear(self):
+        self._state = None
+        self._data = {}
+
+    async def update_data(self, **kwargs):
+        self._data.update(kwargs)
+        return dict(self._data)
+
+    async def get_data(self):
+        return dict(self._data)
 
 
 class DummySession:
@@ -142,16 +169,19 @@ def test_admin_login_with_valid_code(monkeypatch):
 def test_promo_without_code(monkeypatch):
     message = DummyMessage()
     command = CommandObject(command="promo", args=None)
+    state = DummyFSMContext()
 
-    asyncio.run(promo.activate_promo(message, command))
+    asyncio.run(promo.activate_promo(message, command, state))
 
     assert message.replies
-    assert message.replies[0][0].startswith("Введите промокод")
+    assert message.replies[0][0].startswith("Введите код прямо в чат")
+    assert asyncio.run(state.get_state()) == PromoInputState.waiting_for_code.state
 
 
 def test_promo_with_valid_code(monkeypatch):
     message = DummyMessage(user_id=7, username="player")
     command = CommandObject(command="promo", args="promo2024")
+    state = DummyFSMContext()
 
     monkeypatch.setattr(promo, "ROOT_ADMIN_ID", 555)
 
@@ -193,7 +223,7 @@ def test_promo_with_valid_code(monkeypatch):
     check_achievements_mock = AsyncMock()
     monkeypatch.setattr(promo, "check_achievements", check_achievements_mock)
 
-    asyncio.run(promo.activate_promo(message, command))
+    asyncio.run(promo.activate_promo(message, command, state))
 
     assert promo_obj.uses == 1
     assert user_obj.balance == 100
