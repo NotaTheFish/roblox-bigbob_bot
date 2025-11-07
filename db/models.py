@@ -167,7 +167,11 @@ class Server(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     products = relationship("Product", back_populates="server")
-    logs = relationship("LogEntry", back_populates="server")
+    logs = relationship(
+        "LogEntry",
+        back_populates="server",
+        cascade="all, delete-orphan",
+    )
 
 
 class Product(Base):
@@ -351,7 +355,7 @@ class LogEntry(Base):
     request_id = Column(String(64), index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     telegram_id = Column(BigInteger, index=True)
-    server_id = Column(Integer, ForeignKey("servers.id"))
+    server_id = Column(Integer, ForeignKey("servers.id", ondelete="CASCADE"), nullable=True)
     event_type = Column(String(64), nullable=False)
     message = Column(Text)
     data = Column(JSONB)
