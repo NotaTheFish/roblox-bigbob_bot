@@ -274,24 +274,28 @@ async def _delete_server(message: types.Message, state: FSMContext, server_id: i
             await state.clear()
             return
 
+        session.add(
+            LogEntry(
+                server_id=None,
+                event_type="server_deleted",
+                message=f"Сервер {target.name} удалён через админку",
+                data={
+                    "server_id": target.id,
+                    "server_name": target.name,
+                },
+            )
+        )
+
         await session.delete(target)
         servers = [server for server in servers if server.id != server_id]
         _reindex_servers(servers)
-
-        session.add(
-            LogEntry(
-                server_id=target.id,
-                event_type="server_deleted",
-                message=f"Сервер {target.name} удалён через админку",
-                data={"server_id": server_id},
-            )
-        )
 
         await session.commit()
 
     await state.clear()
     await message.answer(
-        "🗑 Сервер удалён.", reply_markup=admin_servers_menu_kb()
+        "✅ Сервер успешно удалён",
+        reply_markup=admin_servers_menu_kb(),
     )
 
 

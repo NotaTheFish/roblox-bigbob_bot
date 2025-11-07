@@ -80,7 +80,55 @@ async def test_server_delete_reindexes(monkeypatch, message_factory, mock_state)
 
     log_entry = next(obj for obj in delete_session.added if isinstance(obj, LogEntry))
     assert log_entry.event_type == "server_deleted"
+    assert log_entry.server_id is None
+    assert log_entry.data == {"server_id": 1, "server_name": "Legacy 1"}
     assert delete_session.committed is True
+
+    assert delete_message.answers
+    text, params = delete_message.answers[-1]
+    assert text == "✅ Сервер успешно удалён"
+    assert "reply_markup" in params
+
+
+@pytest.mark.anyio("asyncio")
+async def test_server_create_then_delete(monkeypatch, message_factory, mock_state):
+    create_session = FakeAsyncSession(scalars_results=[[]])
+    delete_start_session = FakeAsyncSession()
+    delete_session = FakeAsyncSession()
+
+    monkeypatch.setattr(
+        servers,
+        "async_session",
+        make_async_session_stub(create_session, delete_start_session, delete_session),
+    )
+
+    create_message = message_factory(text=servers.SERVER_CREATE_BUTTON)
+    await servers.server_create(create_message, mock_state)
+
+    created_server = next(obj for obj in create_session.added if isinstance(obj, Server))
+    created_server.id = 1
+
+    delete_start_session._scalars_results = [[created_server]]
+    delete_session._scalars_results = [[created_server]]
+
+    delete_start_message = message_factory(text=servers.SERVER_DELETE_BUTTON)
+    await servers.server_delete_start(delete_start_message, mock_state)
+
+    delete_confirm_message = message_factory(text="1")
+    await servers.server_select_handler(delete_confirm_message, mock_state)
+
+    delete_log = next(obj for obj in delete_session.added if isinstance(obj, LogEntry))
+    assert delete_log.event_type == "server_deleted"
+    assert delete_log.server_id is None
+    assert delete_log.data == {"server_id": 1, "server_name": created_server.name}
+
+    assert delete_session.deleted and delete_session.deleted[0] is created_server
+    assert delete_session.committed is True
+
+    assert delete_confirm_message.answers
+    text, params = delete_confirm_message.answers[-1]
+    assert text == "✅ Сервер успешно удалён"
+    assert "reply_markup" in params
 
 
 @pytest.mark.anyio("asyncio")
