@@ -13,3 +13,7 @@ class AchievementsState(StatesGroup):
     waiting_for_name = State()
     waiting_for_description = State()
     waiting_for_reward = State()
+
+
+class SupportReplyState(StatesGroup):
+    waiting_for_message = State()

@@ -6,6 +6,7 @@ from .menu import router as menu_router
 from .payments import router as payments_router
 from .promo import router as promo_router
 from .shop import router as shop_router
+from .support import router as support_router
 from .users import router as users_router
 
 
@@ -17,6 +18,7 @@ routers = [
     shop_router,
     payments_router,
     achievements_router,
+    support_router,
 ]
 
 __all__ = ["routers"]

@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 
 from bot.db import Admin, Referral, ReferralReward, User, async_session
 from bot.handlers.user.shop import user_shop
-from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, support_menu, play_menu
+from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu, play_menu
 from bot.utils.referrals import ensure_referral_code
 
 
@@ -25,14 +25,6 @@ async def open_profile_menu(message: types.Message):
 @router.message(F.text == "🛒 Магазин")
 async def open_shop_menu(message: types.Message):
     await message.answer("🛒 Магазин", reply_markup=shop_menu())
-
-
-@router.message(F.text == "🆘 Поддержка")
-async def open_support_menu(message: types.Message):
-    await message.answer(
-        "🆘 Поддержка\nНапишите ваш вопрос, нажав «✍️ Написать в поддержку».",
-        reply_markup=support_menu(),
-    )
 
 
 @router.message(F.text == "🎮 Играть")
@@ -131,8 +123,3 @@ async def profile_topup(message: types.Message):
 @router.message(F.text == "🏆 Топ игроков")
 async def profile_top(message: types.Message):
     await message.answer("🏆 Топ игроков: скоро добавим красивый вывод!")
-
-
-@router.message(F.text == "✍️ Написать в поддержку")
-async def support_contact(message: types.Message):
-    await message.answer("✍️ Напишите @your_support или ответьте на это сообщение — мы поможем!")
