@@ -7,8 +7,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import or_, select
 
 from bot.db import Admin, User, async_session
-from bot.keyboards.admin_keyboards import admin_users_menu_kb
-from bot.states.admin_states import GiveMoneyState
+from bot.keyboards.admin_keyboards import (
+    admin_main_menu_kb,
+    admin_users_menu_kb,
+)
+from bot.states.admin_states import AdminUsersState, GiveMoneyState
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -41,14 +44,7 @@ def user_card_kb(user_id, is_blocked):
 
 
 # -------- /admin_users — список --------
-@router.message(F.text.in_({"👥 Пользователи", "🔁 Обновить список"}))
-async def admin_users_list(message: types.Message):
-    if not message.from_user:
-        return
-
-    if not await is_admin(message.from_user.id):
-        return
-
+async def _send_users_list(message: types.Message):
     async with async_session() as session:
         users = (
             await session.scalars(select(User).order_by(User.balance.desc()).limit(50))
@@ -69,17 +65,56 @@ async def admin_users_list(message: types.Message):
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
 
+@router.message(F.text == "👥 Пользователи")
+async def admin_users_entry(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await state.set_state(AdminUsersState.searching)
+    await _send_users_list(message)
+
+
+@router.message(StateFilter(AdminUsersState.searching), F.text == "🔁 Обновить список")
+async def admin_users_list(message: types.Message):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await _send_users_list(message)
+
+
+@router.message(StateFilter(AdminUsersState.searching), F.text == "↩️ Назад")
+async def admin_users_back(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await state.clear()
+    await message.answer(
+        "👑 <b>Админ-панель</b>\nВыберите раздел:",
+        reply_markup=admin_main_menu_kb(),
+    )
+
+
 # -------- Поиск пользователя --------
-@router.message(F.text)
+@router.message(
+    StateFilter(AdminUsersState.searching),
+    F.text,
+    ~F.text.in_({"👥 Пользователи", "🔁 Обновить список", "↩️ Назад", "↩️ В меню"}),
+)
 async def admin_search_user(message: types.Message):
     if not message.from_user:
         return
 
     if not await is_admin(message.from_user.id):
         return  # <--- заменили raise SkipHandler()
-
-    if message.text in {"👥 Пользователи", "🔁 Обновить список", "↩️ Назад", "↩️ В меню"}:
-        return
 
     query = message.text.strip().lstrip("@")
     if not query:
@@ -123,7 +158,11 @@ async def admin_search_user(message: types.Message):
         f"Дата регистрации: {created_at}\n"
     )
 
-    await message.reply(text, reply_markup=user_card_kb(user.tg_id, user.is_blocked), parse_mode="HTML")
+    await message.reply(
+        text,
+        parse_mode="HTML",
+        reply_markup=user_card_kb(user.tg_id, user.is_blocked),
+    )
 
 
 # -------- Управление пользователем: блок/разблок/выдача -------
