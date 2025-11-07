@@ -20,6 +20,7 @@ from bot.db import AdminRequest
 from bot.handlers.admin import login
 from bot.handlers.user import promo
 from bot.states.user_states import PromoInputState
+from bot.states.admin_states import AdminLoginState
 
 
 class DummyBot:
@@ -31,10 +32,11 @@ class DummyBot:
 
 
 class DummyMessage:
-    def __init__(self, user_id: int = 1, username: str | None = "user"):
+    def __init__(self, user_id: int = 1, username: str | None = "user", text: str | None = None):
         self.from_user = SimpleNamespace(id=user_id, username=username)
         self.bot = DummyBot()
         self.replies: list[tuple[str, dict]] = []
+        self.text = text
 
     async def reply(self, text: str, **kwargs):
         self.replies.append((text, kwargs))
@@ -158,6 +160,65 @@ def test_admin_login_with_valid_code(monkeypatch):
     )
     assert message.bot.sent_messages
     args, kwargs = message.bot.sent_messages[0]
+    assert request_id in args[1]
+    reply_markup = kwargs.get("reply_markup")
+    assert reply_markup is not None
+    buttons = reply_markup.inline_keyboard[0]
+    assert buttons[0].callback_data == f"approve_admin:{request_id}"
+    assert buttons[1].callback_data == f"reject_admin:{request_id}"
+
+
+def test_admin_login_button_flow(monkeypatch):
+    message = DummyMessage(user_id=101, username="button_user")
+    state = DummyFSMContext()
+
+    monkeypatch.setattr(login, "ADMIN_LOGIN_PASSWORD", "BUTTON")
+    monkeypatch.setattr(login, "ROOT_ADMIN_ID", 1234)
+
+    sessions = [
+        DummySession([None]),  # is_admin check during code validation
+        DummySession([None]),  # pending request check
+    ]
+
+    factory = make_session_factory(sessions)
+
+    class AsyncSessionWrapper:
+        def __init__(self, session):
+            self._session = session
+
+        async def __aenter__(self):
+            return await self._session.__aenter__()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return await self._session.__aexit__(exc_type, exc, tb)
+
+    def async_session_stub():
+        session = factory()
+        return AsyncSessionWrapper(session)
+
+    monkeypatch.setattr(login, "async_session", async_session_stub)
+
+    asyncio.run(login.admin_login_prompt(message, state))
+
+    assert message.replies
+    prompt_text, _ = message.replies[-1]
+    assert "Введите секретный код" in prompt_text
+    assert asyncio.run(state.get_state()) == AdminLoginState.waiting_for_code.state
+
+    message.text = "BUTTON"
+
+    asyncio.run(login.admin_login_code_input(message, state))
+
+    assert asyncio.run(state.get_state()) is None
+    created_request = sessions[1].added[0]
+    assert isinstance(created_request, AdminRequest)
+    request_id = created_request.request_id
+    assert request_id
+
+    assert any("Запрос отправлен" in text for text, _ in message.replies)
+    assert message.bot.sent_messages
+    args, kwargs = message.bot.sent_messages[0]
+    assert args[0] == 1234
     assert request_id in args[1]
     reply_markup = kwargs.get("reply_markup")
     assert reply_markup is not None

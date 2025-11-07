@@ -4,12 +4,14 @@ import logging
 
 from aiogram import F, Router, types
 from aiogram.filters import Command, CommandObject
+from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
 from bot.db import Admin, AdminRequest, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
+from bot.states.admin_states import AdminLoginState
 
 
 # ---------------- Router ----------------
@@ -26,25 +28,25 @@ async def is_admin(uid: int) -> bool:
 
 
 # ---------------- Команда /admin_login ----------------
-@router.message(Command("admin_login"))
-async def admin_login(message: types.Message, command: CommandObject):
-    args = (command.args or "").strip()
-    if not args:
-        return await message.reply(
-            "Введите секретный код:\n`/admin_login CODE`",
-            parse_mode="Markdown"
-        )
+async def _process_admin_code(message: types.Message, code: str) -> bool:
+    code = (code or "").strip()
 
-    if args != ADMIN_LOGIN_PASSWORD:
-        return await message.reply("❌ Неверный код")
+    if not code:
+        await message.reply("❌ Код не может быть пустым")
+        return False
+
+    if code != ADMIN_LOGIN_PASSWORD:
+        await message.reply("❌ Неверный код")
+        return False
 
     if not message.from_user:
-        return
+        return False
 
     uid = message.from_user.id
 
     if await is_admin(uid):
-        return await message.reply("✅ Вы уже админ", reply_markup=admin_main_menu_kb())
+        await message.reply("✅ Вы уже админ", reply_markup=admin_main_menu_kb())
+        return True
 
     username = message.from_user.username or "unknown"
 
@@ -57,7 +59,8 @@ async def admin_login(message: types.Message, command: CommandObject):
         )
 
         if pending:
-            return await message.reply("⌛ Ваша заявка уже ожидает рассмотрения")
+            await message.reply("⌛ Ваша заявка уже ожидает рассмотрения")
+            return True
 
         request = AdminRequest(
             telegram_id=uid,
@@ -83,6 +86,35 @@ async def admin_login(message: types.Message, command: CommandObject):
     )
 
     await message.reply("⌛ Запрос отправлен, ожидайте одобрения")
+    return True
+
+
+@router.message(Command("admin_login"))
+async def admin_login(message: types.Message, command: CommandObject):
+    args = (command.args or "").strip()
+    if not args:
+        return await message.reply(
+            "Введите секретный код:\n`/admin_login CODE`",
+            parse_mode="Markdown"
+        )
+
+    await _process_admin_code(message, args)
+
+
+@router.message(F.text == "Ввести секретный код администратора")
+async def admin_login_prompt(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    await state.set_state(AdminLoginState.waiting_for_code)
+    await message.reply("🔐 Введите секретный код администратора:")
+
+
+@router.message(AdminLoginState.waiting_for_code)
+async def admin_login_code_input(message: types.Message, state: FSMContext):
+    success = await _process_admin_code(message, message.text or "")
+    if success:
+        await state.clear()
 
 
 # ---------------- Callback: approve / deny ----------------

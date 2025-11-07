@@ -17,3 +17,7 @@ class AchievementsState(StatesGroup):
 
 class SupportReplyState(StatesGroup):
     waiting_for_message = State()
+
+
+class AdminLoginState(StatesGroup):
+    waiting_for_code = State()
