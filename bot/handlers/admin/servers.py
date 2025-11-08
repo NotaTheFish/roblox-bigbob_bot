@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
@@ -39,21 +39,14 @@ async def is_admin(uid: int) -> bool:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
-def _reindex_servers(servers: Sequence[Server]) -> None:
-    for idx, server in enumerate(sorted(servers, key=lambda s: s.id or 0), start=1):
-        new_name = f"Сервер {idx}"
-        new_slug = f"server-{idx}"
-        if server.name != new_name:
-            server.name = new_name
-        if server.slug != new_slug:
-            server.slug = new_slug
-
-
-def _format_servers_list(servers: Iterable[Server]) -> str:
+def _format_servers_list(servers: Sequence[Server]) -> str:
     lines = ["Доступные серверы:"]
-    for server in servers:
+    for idx, server in enumerate(servers, start=1):
         url = server.url or "нет"
-        lines.append(f"ID <b>{server.id}</b>: {server.name} — ссылка: {url}")
+        display_name = f"Сервер {idx}"
+        lines.append(
+            f"ID <b>{server.id}</b>: {display_name} — {server.name} — ссылка: {url}"
+        )
     return "\n".join(lines)
 
 
@@ -112,7 +105,6 @@ async def server_create(message: types.Message, state: FSMContext) -> None:
         await session.flush()
 
         servers.append(new_server)
-        _reindex_servers(servers)
 
         session.add(
             LogEntry(
@@ -342,8 +334,6 @@ async def _delete_server(message: types.Message, state: FSMContext, server_id: i
             )
 
             await session.delete(target)
-            servers = [server for server in servers if server.id != server_id]
-            _reindex_servers(servers)
 
             await session.commit()
         except IntegrityError:
@@ -398,7 +388,6 @@ async def server_set_link_finish(message: types.Message, state: FSMContext) -> N
 
         target.url = link
         target.closed_message = SERVER_DEFAULT_CLOSED_MESSAGE
-        _reindex_servers(servers)
 
         session.add(
             LogEntry(
@@ -451,7 +440,6 @@ async def server_clear_link_finish(message: types.Message, state: FSMContext) ->
 
         target.url = None
         target.closed_message = closed_message
-        _reindex_servers(servers)
 
         session.add(
             LogEntry(

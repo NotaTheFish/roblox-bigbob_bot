@@ -54,8 +54,8 @@ async def test_server_create_auto_fields(monkeypatch, message_factory, mock_stat
     assert new_server.url is None
     assert new_server.closed_message == SERVER_DEFAULT_CLOSED_MESSAGE
 
-    assert existing.name == "Сервер 1"
-    assert existing.slug == "server-1"
+    assert existing.name == "Legacy 1"
+    assert existing.slug == "legacy-1"
 
     log_entry = next(obj for obj in session.added if isinstance(obj, LogEntry))
     assert log_entry.event_type == "server_created"
@@ -69,7 +69,7 @@ async def test_server_create_auto_fields(monkeypatch, message_factory, mock_stat
 
 
 @pytest.mark.anyio("asyncio")
-async def test_server_delete_reindexes(monkeypatch, message_factory, mock_state):
+async def test_server_delete_preserves_names(monkeypatch, message_factory, mock_state):
     server1 = _make_server(1)
     server2 = _make_server(2)
 
@@ -91,8 +91,8 @@ async def test_server_delete_reindexes(monkeypatch, message_factory, mock_state)
 
     delete_session = session_list[1]
     assert delete_session.deleted and delete_session.deleted[0] is server1
-    assert server2.name == "Сервер 1"
-    assert server2.slug == "server-1"
+    assert server2.name == "Legacy 2"
+    assert server2.slug == "legacy-2"
 
     log_entry = next(obj for obj in delete_session.added if isinstance(obj, LogEntry))
     assert log_entry.event_type == "server_deleted"

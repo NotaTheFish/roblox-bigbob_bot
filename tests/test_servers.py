@@ -52,8 +52,13 @@ class ServerSession(FakeAsyncSession):
         super().__init__()
         self._store = store
 
-    async def scalars(self, *_args, **_kwargs):  # type: ignore[override]
-        return FakeScalarResult(self._store.all())
+    async def scalars(self, statement=None, *args, **kwargs):  # type: ignore[override]
+        if statement is not None:
+            column_descriptions = getattr(statement, "column_descriptions", [])
+            if any(desc.get("entity") is Server for desc in column_descriptions):
+                return FakeScalarResult(self._store.all())
+
+        return await super().scalars(statement, *args, **kwargs)
 
     async def get(self, model, ident):  # type: ignore[override]
         if model is Server:
@@ -96,7 +101,7 @@ def _auto_admin(monkeypatch):
 
 
 @pytest.mark.anyio("asyncio")
-async def test_server_creation_and_deletion_reindexes(monkeypatch, message_factory, mock_state):
+async def test_server_creation_and_deletion_updates_display(monkeypatch, message_factory, mock_state):
     store = ServerStore()
     session_factory = make_server_session_factory(store)
     monkeypatch.setattr(admin_servers, "async_session", session_factory)
@@ -111,6 +116,11 @@ async def test_server_creation_and_deletion_reindexes(monkeypatch, message_facto
     all_servers = store.all()
     assert [server.name for server in all_servers] == ["Сервер 1", "Сервер 2"]
 
+    listing = admin_servers._format_servers_list(all_servers)
+    assert "ID <b>" in listing
+    assert "Сервер 1" in listing
+    assert "Сервер 2" in listing
+
     delete_start = message_factory(text=admin_servers.SERVER_DELETE_BUTTON)
     await admin_servers.server_delete_start(delete_start, mock_state)
 
@@ -122,8 +132,11 @@ async def test_server_creation_and_deletion_reindexes(monkeypatch, message_facto
 
     remaining = store.all()
     assert len(remaining) == 1
-    assert remaining[0].name == "Сервер 1"
-    assert remaining[0].slug == "server-1"
+    assert remaining[0].name == "Сервер 2"
+    assert remaining[0].slug == "server-2"
+
+    remaining_listing = admin_servers._format_servers_list(remaining)
+    assert "Сервер 1" in remaining_listing
 
 
 @pytest.mark.anyio("asyncio")
@@ -156,6 +169,7 @@ async def test_setting_server_link_updates_user_menu(monkeypatch, message_factor
     keyboard = params.get("reply_markup")
     assert isinstance(keyboard, InlineKeyboardMarkup)
     button = keyboard.inline_keyboard[0][0]
+    assert button.text == "Сервер 1"
     assert button.url == "https://roblox.example/server"
     assert button.callback_data is None
 
@@ -197,6 +211,7 @@ async def test_clearing_server_link_sets_closed_message(monkeypatch, message_fac
     keyboard = params.get("reply_markup")
     assert isinstance(keyboard, InlineKeyboardMarkup)
     button = keyboard.inline_keyboard[0][0]
+    assert button.text == "Сервер 1"
     assert button.url is None
     assert button.callback_data == f"server_closed:{server_id}"
 

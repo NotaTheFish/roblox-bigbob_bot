@@ -34,8 +34,10 @@ async def test_open_play_menu_builds_inline_keyboard(monkeypatch, message_factor
     first_button = markup.inline_keyboard[0][0]
     second_button = markup.inline_keyboard[1][0]
 
+    assert first_button.text == "Сервер 1"
     assert first_button.url == "https://one.example"
     assert first_button.callback_data is None
+    assert second_button.text == "Сервер 2"
     assert second_button.url is None
     assert second_button.callback_data == "server_closed:2"
 

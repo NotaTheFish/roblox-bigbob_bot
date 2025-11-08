@@ -59,16 +59,16 @@ async def open_play_menu(message: types.Message, state: FSMContext):
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=server.name,
+                    text=f"Сервер {idx}",
                     url=server.url,
                 )
                 if server.url
                 else InlineKeyboardButton(
-                    text=server.name,
+                    text=f"Сервер {idx}",
                     callback_data=f"server_closed:{server.id}",
                 )
             ]
-            for server in servers
+            for idx, server in enumerate(servers, start=1)
         ]
     )
 
