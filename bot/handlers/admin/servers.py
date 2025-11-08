@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Iterable, Sequence
 
 from aiogram import F, Router, types
@@ -228,7 +229,10 @@ def _parse_server_id(raw: str | None) -> int | None:
         return None
 
     try:
-        return int(raw.strip())
+        digits = re.sub(r"\D+", "", raw)
+        if not digits:
+            return None
+        return int(digits)
     except ValueError:
         return None
 

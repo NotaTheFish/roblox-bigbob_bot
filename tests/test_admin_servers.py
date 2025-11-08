@@ -24,6 +24,21 @@ def _auto_admin(monkeypatch):
     monkeypatch.setattr(servers, "is_admin", AsyncMock(return_value=True))
 
 
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("12", 12),
+        ("🗑 12", 12),
+        ("ID: 12", 12),
+        ("server-99", 99),
+        ("no digits", None),
+        (None, None),
+    ],
+)
+def test_parse_server_id_strips_non_digits(raw, expected):
+    assert servers._parse_server_id(raw) == expected
+
+
 @pytest.mark.anyio("asyncio")
 async def test_server_create_auto_fields(monkeypatch, message_factory, mock_state):
     existing = _make_server(1, url="https://old.example")
