@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Optional
 
 from aiogram import F, Router, types
@@ -22,6 +23,7 @@ from bot.utils.achievement_checker import check_achievements
 
 
 router = Router(name="user_shop")
+logger = logging.getLogger(__name__)
 
 
 def user_shop_kb(items: list[Product]):
@@ -228,7 +230,20 @@ async def user_buy_finish(call: types.CallbackQuery):
             f"Тип: {product.item_type}\nЗначение: {product.value}\n"
             f"ID заявки: {purchase.request_id}"
         )
-        await call.bot.send_message(ROOT_ADMIN_ID, notify_text, parse_mode="HTML")
+        try:
+            await call.bot.send_message(ROOT_ADMIN_ID, notify_text, parse_mode="HTML")
+        except Exception:  # pragma: no cover - exercised via unit tests
+            logger.exception(
+                "Failed to notify root admin %s about purchase %s for user %s",
+                ROOT_ADMIN_ID,
+                purchase.request_id,
+                uid,
+                extra={
+                    "user_id": uid,
+                    "request_id": purchase.request_id,
+                    "product_id": product.id,
+                },
+            )
 
     await call.message.answer(
         f"✅ Покупка успешна!\n{reward_text}{referral_message}",

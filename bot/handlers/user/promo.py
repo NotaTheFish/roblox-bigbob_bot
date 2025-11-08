@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 import re
 
 from aiogram import F, Router, types
@@ -13,6 +14,7 @@ from bot.states.user_states import PromoInputState
 
 
 router = Router(name="user_promo")
+logger = logging.getLogger(__name__)
 
 
 PROMOCODE_PATTERN = re.compile(r"^[A-Z0-9-]{4,32}$", re.IGNORECASE)
@@ -105,8 +107,14 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             f"Выдано: {reward_text}",
             parse_mode="HTML",
         )
-    except Exception:  # pragma: no cover - network errors are not deterministic
-        pass
+    except Exception:  # pragma: no cover - exercised via unit tests
+        logger.exception(
+            "Failed to notify root admin %s about promocode redemption %s by user %s",
+            ROOT_ADMIN_ID,
+            code,
+            message.from_user.id,
+            extra={"user_id": message.from_user.id, "promo_code": code},
+        )
 
     return True
 

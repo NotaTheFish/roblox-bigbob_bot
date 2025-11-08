@@ -88,17 +88,26 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
     display_full_name = full_name or "Без имени"
     display_username = f"@{username}" if username else "—"
 
-    await message.bot.send_message(
-        ROOT_ADMIN_ID,
-        (
-            "👤 Новый запрос на получение прав администратора\n"
-            f"<b>{escape(display_full_name)}</b> ( "
-            f"{escape(display_username)} / <code>{uid}</code> )\n"
-            f"🆔 Заявка: <code>{escape(request_id)}</code>"
-        ),
-        parse_mode="HTML",
-        **({"reply_markup": reply_markup} if reply_markup else {})
-    )
+    try:
+        await message.bot.send_message(
+            ROOT_ADMIN_ID,
+            (
+                "👤 Новый запрос на получение прав администратора\n"
+                f"<b>{escape(display_full_name)}</b> ( "
+                f"{escape(display_username)} / <code>{uid}</code> )\n"
+                f"🆔 Заявка: <code>{escape(request_id)}</code>"
+            ),
+            parse_mode="HTML",
+            **({"reply_markup": reply_markup} if reply_markup else {})
+        )
+    except Exception:  # pragma: no cover - exercised via unit tests
+        logger.exception(
+            "Failed to notify root admin %s about pending admin request %s from user %s",
+            ROOT_ADMIN_ID,
+            request_id,
+            uid,
+            extra={"user_id": uid, "request_id": request_id},
+        )
 
     if is_repeat_request:
         reply_text = "⌛ Уведомление root администратору отправлено повторно, ожидайте решения"
@@ -194,15 +203,24 @@ async def admin_request_callback(call: types.CallbackQuery):
         await call.bot.send_message(uid, msg, reply_markup=reply_markup)
     else:
         await call.bot.send_message(uid, msg)
-    await call.bot.send_message(
-        ROOT_ADMIN_ID,
-        (
-            f"🆔 Заявка <code>{escape(request_id)}</code> пользователя "
-            f"<b>{escaped_full_name}</b> ( {escaped_username} / <code>{uid}</code> ):"
-            f" {escape(result)}"
-        ),
-        parse_mode="HTML",
-    )
+    try:
+        await call.bot.send_message(
+            ROOT_ADMIN_ID,
+            (
+                f"🆔 Заявка <code>{escape(request_id)}</code> пользователя "
+                f"<b>{escaped_full_name}</b> ( {escaped_username} / <code>{uid}</code> ):"
+                f" {escape(result)}"
+            ),
+            parse_mode="HTML",
+        )
+    except Exception:  # pragma: no cover - exercised via unit tests
+        logger.exception(
+            "Failed to notify root admin %s about admin request %s result for user %s",
+            ROOT_ADMIN_ID,
+            request_id,
+            uid,
+            extra={"user_id": uid, "request_id": request_id, "moderator_id": moderator_id},
+        )
     await call.message.edit_text(
         (
             f"{escape(result)}\n"
