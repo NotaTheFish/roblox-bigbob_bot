@@ -1,4 +1,4 @@
-"""Init clean schema"""
+"""Init schema without dropping alembic_version"""
 
 from alembic import op
 
@@ -9,20 +9,13 @@ depends_on = None
 
 
 def upgrade():
-    # Drop public schema only if exists
+    # ✅ Удаляем только таблицы public, но не трогаем alembic_version
     op.execute("""
-        DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'public') THEN
-                EXECUTE 'DROP SCHEMA public CASCADE';
-            END IF;
+        DO $$ DECLARE
+            r RECORD;
+        BEGIN
+            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+            END LOOP;
         END $$;
     """)
-
-    # Recreate schema
-    op.execute("CREATE SCHEMA IF NOT EXISTS public;")
-
-
-def downgrade():
-    op.execute("DROP SCHEMA public CASCADE;")
-    op.execute("CREATE SCHEMA public;")
-
