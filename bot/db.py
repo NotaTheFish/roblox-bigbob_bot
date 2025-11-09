@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
+from sqlalchemy.engine.url import make_url
 
 from bot.config import DATABASE_URL
+
+DATABASE_URL_SYNC_OVERRIDE = os.getenv("DATABASE_URL_SYNC")
 from db import (
     Base,
     Achievement,
@@ -33,10 +38,39 @@ from db import (
 )
 
 # ----------------------
+# ✅ URL helpers
+# ----------------------
+def _ensure_async_driver(url: str) -> str:
+    """Return a database URL that uses an async driver where possible."""
+
+    sa_url = make_url(url)
+
+    if sa_url.drivername == "postgresql":
+        sa_url = sa_url.set(drivername="postgresql+asyncpg")
+    elif sa_url.drivername == "sqlite":
+        sa_url = sa_url.set(drivername="sqlite+aiosqlite")
+
+    return str(sa_url)
+
+
+def _ensure_sync_driver(url: str) -> str:
+    """Return a database URL that uses a sync driver where possible."""
+
+    sa_url = make_url(url)
+
+    if sa_url.drivername == "postgresql+asyncpg":
+        sa_url = sa_url.set(drivername="postgresql")
+    elif sa_url.drivername == "sqlite+aiosqlite":
+        sa_url = sa_url.set(drivername="sqlite")
+
+    return str(sa_url)
+
+
+# ----------------------
 # ✅ ASYNC engine (используется ботом)
 # ----------------------
 async_engine = create_async_engine(
-    DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
+    _ensure_async_driver(DATABASE_URL),
     echo=False,
     future=True,
 )
@@ -52,7 +86,7 @@ async_session = async_sessionmaker(
 # ✅ SYNC engine (используется Alembic миграциями)
 # ----------------------
 sync_engine = create_engine(
-    DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://"),
+    _ensure_sync_driver(DATABASE_URL_SYNC_OVERRIDE or DATABASE_URL),
     future=True,
 )
 
