@@ -1,15 +1,15 @@
 import os
 from typing import List
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings  # <-- исправленный импорт
 
-# Загружаем переменные из .env
+# Загружаем .env
 load_dotenv()
 
 
 def _parse_int_list(value: str | None) -> List[int]:
     if not value:
         return []
-
     result = []
     for item in value.split(","):
         item = item.strip()
@@ -31,19 +31,28 @@ def get_env(name: str, default: str | None = None, *, required: bool = False) ->
     return value or ""
 
 
-# ✅ Основной токен Telegram бота
+# === SETTINGS (для Alembic и DB) =====================================
+class Settings(BaseSettings):
+    DATABASE_URL: str
+    DATABASE_URL_SYNC: str
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"  # ✅ игнорировать остальные переменные в .env
+
+
+
+settings = Settings()
+
+
+# === БОТ ==============================================================
 TOKEN = get_env("TELEGRAM_TOKEN", required=True)
 
-# ✅ Главный админ
 ROOT_ADMIN_ID = int(get_env("ROOT_ADMIN_ID", "0"))
 
-# ✅ База данных
-DATABASE_URL = get_env(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
-)
+DATABASE_URL = settings.DATABASE_URL
+DATABASE_URL_SYNC = settings.DATABASE_URL_SYNC
 
-# ✅ Webhook настройки
 DOMAIN = get_env("DOMAIN", "")
 WEBHOOK_PATH = get_env("WEBHOOK_PATH", "/webhook")
 if not WEBHOOK_PATH.startswith("/"):
@@ -55,13 +64,10 @@ WEBHOOK_URL = get_env(
     f"{DOMAIN}{WEBHOOK_PATH}/{webhook_token_suffix}" if DOMAIN else "",
 )
 
-# ✅ Хост/порт (Render)
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.getenv("PORT", "10000"))
 
-# ✅ Секрет для админ-панели
 ADMIN_LOGIN_PASSWORD = get_env("ADMIN_LOGIN_PASSWORD", required=True)
 
-# ✅ Админы
 ADMINS = _parse_int_list(os.getenv("ADMINS"))
 ADMIN_ROOT_IDS = _parse_int_list(os.getenv("ADMIN_ROOT_IDS"))
