@@ -1,7 +1,6 @@
 """Database setup for bot and Alembic migrations."""
 
 from __future__ import annotations
-
 import os
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -37,10 +36,16 @@ from db import (
 )
 
 # -----------------------------------------------------
+# ✅ Debug вывод — убедиться, что Render видит ENV
+# -----------------------------------------------------
+print("🔧 DEBUG DATABASE_URL:", DATABASE_URL)
+print("🔧 DEBUG DATABASE_URL_SYNC:", DATABASE_URL_SYNC)
+
+# -----------------------------------------------------
 # ✅ URL conversion helpers
 # -----------------------------------------------------
 def _ensure_async_driver(url: str) -> str:
-    """Return DB URL using async driver (asyncpg / aiosqlite)."""
+    """Ensure asyncpg driver is used."""
     sa_url = make_url(url)
 
     if sa_url.drivername in ("postgresql", "postgres"):
@@ -52,10 +57,10 @@ def _ensure_async_driver(url: str) -> str:
 
 
 def _ensure_sync_driver(url: str) -> str:
-    """Return DB URL using sync driver (psycopg2 / sqlite)."""
+    """Ensure psycopg2 driver for sync engine."""
     sa_url = make_url(url)
 
-    if sa_url.drivername == "postgresql+asyncpg":
+    if sa_url.drivername.startswith("postgresql+asyncpg"):
         sa_url = sa_url.set(drivername="postgresql+psycopg2")
     elif sa_url.drivername == "sqlite+aiosqlite":
         sa_url = sa_url.set(drivername="sqlite")
@@ -64,9 +69,9 @@ def _ensure_sync_driver(url: str) -> str:
 
 
 # -----------------------------------------------------
-# ✅ ASYNC engine (бот: asyncpg)
+# ✅ ASYNC engine (бот использует asyncpg)
+# Render требует SSL → asyncpg принимает ssl=True
 # -----------------------------------------------------
-# Render требует SSL → asyncpg принимает **ssl=True**
 async_engine = create_async_engine(
     _ensure_async_driver(DATABASE_URL),
     connect_args={"ssl": True},
@@ -80,10 +85,11 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
 )
 
+
 # -----------------------------------------------------
-# ✅ SYNC engine (Alembic / backend: psycopg2)
+# ✅ SYNC engine (Alembic / backend)
+# psycopg2 принимает sslmode=require
 # -----------------------------------------------------
-# psycopg2 принимает **sslmode=require**
 sync_engine = create_engine(
     _ensure_sync_driver(DATABASE_URL_SYNC),
     connect_args={"sslmode": "require"},
@@ -96,7 +102,7 @@ def get_sync_session() -> sessionmaker:
 
 
 # -----------------------------------------------------
-# ✅ Инициализация базы (ботом, НЕ Alembic)
+# ✅ Init DB (используется ботом, НЕ Alembic)
 # -----------------------------------------------------
 async def init_db() -> None:
     async with async_engine.begin() as conn:
