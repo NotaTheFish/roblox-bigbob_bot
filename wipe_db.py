@@ -1,13 +1,14 @@
 # wipe_db.py
-import asyncio
 from db.models import Base
-from bot.db import engine
+from bot.db import sync_engine
 
-async def wipe():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+
+def wipe() -> None:
+    with sync_engine.begin() as conn:
+        Base.metadata.drop_all(bind=conn)
+        Base.metadata.create_all(bind=conn)
+
 
 if __name__ == "__main__":
-    asyncio.run(wipe())
+    wipe()
     print("✅ DATABASE DROPPED AND RECREATED")
