@@ -8,22 +8,16 @@ services:
     envVars:
       - key: SERVICE_ROLE
         value: backend
-
       - key: DATABASE_URL
         sync: false
-
       - key: BACKEND_HMAC_SECRET
         sync: false
-
       - key: BACKEND_IDEMPOTENCY_TTL
         value: "3600"
-
       - key: ROBLOX_API_BASE_URL
         sync: false
-
       - key: TELEGRAM_PAYMENT_SECRET
         sync: false
-
   workers:
   # === TELEGRAM BOT WORKER ===
   - type: worker
@@ -34,18 +28,13 @@ services:
     envVars:
       - key: SERVICE_ROLE
         value: worker
-
       - key: TELEGRAM_TOKEN
         sync: false
-
       - key: DATABASE_URL
         sync: false
-
       - key: ADMINS
         sync: false
-
       - key: ADMIN_ROOT_IDS
         sync: false
-
       - key: ADMIN_LOGIN_PASSWORD
         sync: false
