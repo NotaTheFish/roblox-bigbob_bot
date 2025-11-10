@@ -100,9 +100,13 @@ def _ensure_sync_driver(url: str) -> str:
 # For asyncpg we DON'T use ?sslmode in URL. Instead pass connect_args={"ssl": True}
 async_url = _ensure_async_driver(DATABASE_URL)
 
-# create_ssl_context only if needed (optional): default True will use system CA
-# If you need custom CA, create ssl.SSLContext and set cafile.
-async_connect_args = {"ssl": True}
+# create a permissive TLS context for asyncpg: encryption stays enabled but
+# certificate verification is skipped because Render's managed Postgres uses
+# self-signed certs in some environments.
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+async_connect_args = {"ssl": ssl_context}
 
 async_engine = create_async_engine(
     async_url,
