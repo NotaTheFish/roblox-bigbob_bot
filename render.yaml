@@ -12,9 +12,6 @@ services:
       - key: DATABASE_URL
         sync: false
 
-      - key: DATABASE_URL_SYNC
-        sync: false
-
       - key: BACKEND_HMAC_SECRET
         sync: false
 
@@ -42,9 +39,6 @@ services:
         sync: false
 
       - key: DATABASE_URL
-        sync: false
-
-      - key: DATABASE_URL_SYNC
         sync: false
 
       - key: ADMINS

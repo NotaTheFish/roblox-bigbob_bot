@@ -9,9 +9,8 @@ This file:
 
 from __future__ import annotations
 
-import os
 import ssl
-from typing import Optional
+from typing import Optional, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -19,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine.url import make_url
 
 # import your config env values (Settings should expose raw URLs)
-from bot.config import DATABASE_URL as RAW_DATABASE_URL, DATABASE_URL_SYNC as RAW_DATABASE_URL_SYNC
+from bot.config import DATABASE_URL as RAW_DATABASE_URL
 
 # Import your models (adjust import path if needed)
 from db import (
@@ -57,15 +56,11 @@ def _strip_quotes(s: Optional[str]) -> Optional[str]:
     return s
 
 DATABASE_URL = _strip_quotes(RAW_DATABASE_URL)
-DATABASE_URL_SYNC = _strip_quotes(RAW_DATABASE_URL_SYNC)
 
-if not DATABASE_URL_SYNC and DATABASE_URL:
-    if DATABASE_URL.startswith("postgresql+asyncpg://"):
-        DATABASE_URL_SYNC = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql+asyncpg://") :]
-    elif DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL_SYNC = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://") :]
-    else:
-        DATABASE_URL_SYNC = DATABASE_URL
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL must be configured")
+
+DATABASE_URL = cast(str, DATABASE_URL)
 
 # ----------------------
 # URL helpers
@@ -124,7 +119,13 @@ async_session = async_sessionmaker(
 # ----------------------
 # SYNC engine (Alembic / backend: psycopg2)
 # ----------------------
-sync_url = _ensure_sync_driver(DATABASE_URL_SYNC)
+def get_sync_database_url() -> str:
+    """Return sync-safe database URL derived from the configured DATABASE_URL."""
+
+    return _ensure_sync_driver(DATABASE_URL)
+
+
+sync_url = get_sync_database_url()
 
 # If the sync URL already contains ?sslmode=require, psycopg2 will honor it.
 # Otherwise we can pass connect_args={"sslmode": "require"} (optional).
@@ -157,6 +158,7 @@ __all__ = [
     "sync_engine",
     "async_session",
     "AsyncSession",
+    "get_sync_database_url",
 
     # models:
     "Achievement",
