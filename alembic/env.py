@@ -14,14 +14,15 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # ✅ Импорт metadata и helper'ов БД
-from bot.db import Base, get_sync_database_url
+from bot.db import Base
+from bot.config import settings
 
 target_metadata = Base.metadata
 
 # --- выставляем URL для Alembic ---
-SYNC_DATABASE_URL = get_sync_database_url()
+DATABASE_URL = settings.DATABASE_URL
 
-config.set_main_option("sqlalchemy.url", SYNC_DATABASE_URL)
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 
 # -----------------------------------------------------------------------
@@ -29,7 +30,7 @@ config.set_main_option("sqlalchemy.url", SYNC_DATABASE_URL)
 # -----------------------------------------------------------------------
 def run_migrations_offline() -> None:
     context.configure(
-        url=SYNC_DATABASE_URL,
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -46,7 +47,7 @@ from sqlalchemy import create_engine
 
 
 def run_migrations_online() -> None:
-    connectable = create_engine(SYNC_DATABASE_URL)
+    connectable = create_engine(DATABASE_URL)
 
     with connectable.connect() as connection:
         context.configure(
