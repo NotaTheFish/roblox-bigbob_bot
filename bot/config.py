@@ -34,28 +34,12 @@ def get_env(name: str, default: str | None = None, *, required: bool = False) ->
 # === SETTINGS (для Alembic и DB) =====================================
 class Settings(BaseSettings):
     DATABASE_URL: str
-    DATABASE_URL_SYNC: str | None = None
 
     class Config:
         env_file = ".env"
         extra = "ignore"  # ✅ игнорировать остальные переменные в .env
 
-
-
 settings = Settings()
-
-
-def _derive_sync_database_url(async_url: str) -> str:
-    async_prefix = "postgresql+asyncpg://"
-    sync_prefix = "postgresql+psycopg2://"
-    if async_url.startswith(async_prefix):
-        return sync_prefix + async_url[len(async_prefix) :]
-    return async_url
-
-
-if settings.DATABASE_URL_SYNC is None:
-    fallback_sync_url = _derive_sync_database_url(settings.DATABASE_URL)
-    settings = settings.model_copy(update={"DATABASE_URL_SYNC": fallback_sync_url})
 
 
 # === БОТ ==============================================================
@@ -64,7 +48,6 @@ TOKEN = get_env("TELEGRAM_TOKEN", required=True)
 ROOT_ADMIN_ID = int(get_env("ROOT_ADMIN_ID", "0"))
 
 DATABASE_URL = settings.DATABASE_URL
-DATABASE_URL_SYNC = settings.DATABASE_URL_SYNC
 
 DOMAIN = get_env("DOMAIN", "")
 WEBHOOK_PATH = get_env("WEBHOOK_PATH", "/webhook")
