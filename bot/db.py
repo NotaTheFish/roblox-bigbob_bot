@@ -128,10 +128,9 @@ def get_sync_database_url() -> str:
 sync_url = get_sync_database_url()
 
 # If the sync URL already contains ?sslmode=require, psycopg2 will honor it.
-# Otherwise we can pass connect_args={"sslmode": "require"} (optional).
-sync_connect_args = {}
-# enable this if you did NOT put ?sslmode=require in the URL:
-# sync_connect_args = {"sslmode": "require"}
+# Otherwise we pass connect_args={"sslmode": "require"} so TLS is used even
+# when the URL omits the parameter (Render uses self-signed certs).
+sync_connect_args = {"sslmode": "require"}
 
 sync_engine = create_engine(
     sync_url,
