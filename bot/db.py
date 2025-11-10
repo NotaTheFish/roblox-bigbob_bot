@@ -57,7 +57,15 @@ def _strip_quotes(s: Optional[str]) -> Optional[str]:
     return s
 
 DATABASE_URL = _strip_quotes(RAW_DATABASE_URL)
-DATABASE_URL_SYNC = _strip_quotes(RAW_DATABASE_URL_SYNC) or DATABASE_URL  # fallback if not provided
+DATABASE_URL_SYNC = _strip_quotes(RAW_DATABASE_URL_SYNC)
+
+if not DATABASE_URL_SYNC and DATABASE_URL:
+    if DATABASE_URL.startswith("postgresql+asyncpg://"):
+        DATABASE_URL_SYNC = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql+asyncpg://") :]
+    elif DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL_SYNC = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://") :]
+    else:
+        DATABASE_URL_SYNC = DATABASE_URL
 
 # ----------------------
 # URL helpers
@@ -66,7 +74,7 @@ def _ensure_async_driver(url: str) -> str:
     """Return DB URL using async driver (asyncpg / aiosqlite)."""
     sa_url = make_url(url)
     # canonicalize postgres names
-    if sa_url.drivername in ("postgresql", "postgres"):
+    if sa_url.drivername in ("postgresql", "postgres") or sa_url.drivername.startswith("postgresql+"):
         sa_url = sa_url.set(drivername="postgresql+asyncpg")
     elif sa_url.drivername == "sqlite":
         sa_url = sa_url.set(drivername="sqlite+aiosqlite")
@@ -76,11 +84,13 @@ def _ensure_async_driver(url: str) -> str:
 def _ensure_sync_driver(url: str) -> str:
     """Return DB URL using sync driver (psycopg2 / sqlite)."""
     sa_url = make_url(url)
-    if sa_url.drivername in ("postgresql+asyncpg", "postgresql+asyncpg://"):
+    if (
+        sa_url.drivername in ("postgresql", "postgres")
+        or sa_url.drivername.startswith("postgresql+")
+    ):
         sa_url = sa_url.set(drivername="postgresql+psycopg2")
     elif sa_url.drivername == "sqlite+aiosqlite":
         sa_url = sa_url.set(drivername="sqlite")
-    # if user provided plain 'postgres://' or 'postgresql://', keep it (psycopg2 can parse it)
     return str(sa_url)
 
 
