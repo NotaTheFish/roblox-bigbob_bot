@@ -1,7 +1,12 @@
 """Database configuration for the bot."""
 
-import os
+from __future__ import annotations
 
+import os
+import ssl
+from typing import Optional
+
+from sqlalchemy.engine.url import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from db import (
@@ -29,14 +34,37 @@ from db import (
     Withdrawal,
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not found")
+
+def _get_base_url() -> URL:
+    raw_url = os.getenv("DATABASE_URL")
+    if not raw_url:
+        raise RuntimeError("DATABASE_URL not found")
+    return make_url(raw_url)
+
+
+def to_async_url(url: Optional[URL] = None) -> str:
+    base_url = url or BASE_DATABASE_URL
+    return base_url.set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+
+
+def to_sync_url(url: Optional[URL] = None) -> str:
+    base_url = url or BASE_DATABASE_URL
+    return base_url.set(drivername="postgresql+psycopg2").render_as_string(hide_password=False)
+
+
+BASE_DATABASE_URL = _get_base_url()
+ASYNC_DATABASE_URL = to_async_url(BASE_DATABASE_URL)
+SYNC_DATABASE_URL = to_sync_url(BASE_DATABASE_URL)
+
+_ssl_context = ssl.create_default_context()
+_ssl_context.check_hostname = False
+_ssl_context.verify_mode = ssl.CERT_NONE
 
 async_engine = create_async_engine(
-    DATABASE_URL,
+    ASYNC_DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
+    connect_args={"ssl": _ssl_context},
 )
 
 async_session = async_sessionmaker(
@@ -55,6 +83,11 @@ async def init_db() -> None:
 
 __all__ = [
     "Base",
+    "BASE_DATABASE_URL",
+    "ASYNC_DATABASE_URL",
+    "SYNC_DATABASE_URL",
+    "to_async_url",
+    "to_sync_url",
     "async_engine",
     "async_session",
     "AsyncSession",
