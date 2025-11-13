@@ -14,17 +14,16 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # ✅ Импорт metadata и helper'ов БД
-from bot.db import Base, get_sync_database_url
-from sqlalchemy.engine.url import make_url
-
-sync_url = get_sync_database_url()
-sync_url_obj = make_url(sync_url)
-sync_connect_args = {"sslmode": "require"} if sync_url_obj.get_backend_name() == "postgresql" else {}
+from bot.db import Base
 
 target_metadata = Base.metadata
 
 # --- выставляем URL для Alembic ---
-config.set_main_option("sqlalchemy.url", sync_url)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL not found")
+
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 
 # -----------------------------------------------------------------------
@@ -32,7 +31,7 @@ config.set_main_option("sqlalchemy.url", sync_url)
 # -----------------------------------------------------------------------
 def run_migrations_offline() -> None:
     context.configure(
-        url=sync_url,
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -49,21 +48,18 @@ from sqlalchemy import create_engine
 
 
 def run_migrations_online() -> None:
-    connectable = create_engine(sync_url, connect_args=sync_connect_args)
+    connectable = create_engine(DATABASE_URL)
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
+            connection=connection, target_metadata=target_metadata
         )
 
         with context.begin_transaction():
             context.run_migrations()
 
 
-# -----------------------------------------------------------------------
-# ENTRY POINT
-# -----------------------------------------------------------------------
+# Alembic entrypoint
 if context.is_offline_mode():
     run_migrations_offline()
 else:
