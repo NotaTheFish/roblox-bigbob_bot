@@ -127,7 +127,11 @@ class PromoCode(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    redemptions = relationship("PromocodeRedemption", back_populates="promocode")
+    redemptions = relationship(
+        "PromocodeRedemption",
+        back_populates="promocode",
+        cascade="all, delete-orphan",
+    )
 
 
 class Achievement(Base):
@@ -303,7 +307,11 @@ class PromocodeRedemption(Base):
 
     id = Column(Integer, primary_key=True)
     request_id = Column(String(64), unique=True, nullable=False, default=_generate_request_id)
-    promocode_id = Column(Integer, ForeignKey("promocodes.id"), nullable=False)
+    promocode_id = Column(
+        Integer,
+        ForeignKey("promocodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     telegram_id = Column(BigInteger, index=True, nullable=False)
     reward_amount = Column(Integer)
