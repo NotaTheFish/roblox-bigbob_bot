@@ -7,13 +7,15 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import or_, select
+from sqlalchemy.orm import selectinload
 
 from bot.db import Admin, User, async_session
 from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
-from bot.services.user_titles import get_user_titles_by_tg_id, normalize_titles
+from bot.services.profile_renderer import ProfileView, render_profile
+from bot.services.user_titles import normalize_titles
 from bot.states.admin_states import (
     AdminUsersState,
     GiveMoneyState,
@@ -146,7 +148,11 @@ async def admin_search_user(message: types.Message):
     filters.append(User.username.ilike(like_pattern))
 
     async with async_session() as session:
-        user = await session.scalar(select(User).where(or_(*filters)))
+        user = await session.scalar(
+            select(User)
+                .options(selectinload(User.selected_achievement))
+                .where(or_(*filters))
+        )
 
     if not user:
         return await message.reply(
@@ -154,36 +160,27 @@ async def admin_search_user(message: types.Message):
             reply_markup=admin_users_menu_kb(),
         )
 
-    tg_username = f"@{user.tg_username}" if user.tg_username else "—"
-    roblox_username = user.username or "—"
-    roblox_id = user.roblox_id or "—"
-    created_at = (
-        user.created_at.strftime("%d.%m.%Y %H:%M") if user.created_at else "—"
-    )
-
-    title_info = None
-    if user.tg_id:
-        title_info = await get_user_titles_by_tg_id(user.tg_id)
-    titles_line = "—"
-    selected_title_line = "—"
-    if title_info:
-        titles_line = ", ".join(title_info.titles) if title_info.titles else "—"
-        selected_title_line = title_info.selected_title or "—"
-
-    text = (
-        f"<b>👤 Пользователь найден</b>\n"
-        f"TG: {tg_username}\n"
-        f"TG ID: <code>{user.tg_id}</code>\n"
-        f"Roblox: <code>{roblox_username}</code>\n"
-        f"Roblox ID: <code>{roblox_id}</code>\n"
-        f"Баланс: 💰 {user.balance}\n"
-        f"Титулы: {titles_line}\n"
-        f"Выбранный титул: {selected_title_line}\n"
-        f"Дата регистрации: {created_at}\n"
+    titles = normalize_titles(user.titles)
+    profile_text = render_profile(
+        ProfileView(
+            heading="<b>👤 Пользователь найден</b>",
+            tg_username=f"@{user.tg_username}" if user.tg_username else "",
+            tg_id=user.tg_id,
+            roblox_username=user.username or "",
+            roblox_id=user.roblox_id or "",
+            balance=user.balance,
+            titles=titles,
+            selected_title=user.selected_title,
+            selected_achievement=(
+                user.selected_achievement.name if user.selected_achievement else None
+            ),
+            about_text=user.about_text,
+            created_at=user.created_at,
+        )
     )
 
     await message.reply(
-        text,
+        profile_text,
         parse_mode="HTML",
         reply_markup=user_card_kb(user.tg_id, user.is_blocked),
     )

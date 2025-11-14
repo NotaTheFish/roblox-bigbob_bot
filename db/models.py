@@ -60,11 +60,17 @@ class User(Base):
     referred_at = Column(DateTime(timezone=True))
     titles = Column(JSONB, nullable=False, server_default="[]")
     selected_title = Column(String(255))
+    about_text = Column(Text)
+    selected_achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=True)
 
     achievements = relationship(
         "UserAchievement",
         back_populates="user",
         foreign_keys="UserAchievement.user_id",
+    )
+    selected_achievement = relationship(
+        "Achievement",
+        foreign_keys=[selected_achievement_id],
     )
     referrals = relationship("Referral", back_populates="referrer", foreign_keys="Referral.referrer_id")
     referred_referral = relationship(
