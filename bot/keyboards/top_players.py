@@ -17,7 +17,7 @@ def top_players_keyboard() -> InlineKeyboardMarkup:
         text="🔍 Поиск игрока по нику",
         callback_data=f"{TOP_MENU_CALLBACK_PREFIX}:search",
     )
-    builder.button(text=⬅️ Назад", callback_data=f"{TOP_MENU_CALLBACK_PREFIX}:back")
+    builder.button(text="⬅️ Назад", callback_data=f"{TOP_MENU_CALLBACK_PREFIX}:back")
     builder.adjust(1)
     return builder.as_markup()
 
