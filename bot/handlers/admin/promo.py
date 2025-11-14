@@ -309,21 +309,20 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
     async with async_session() as session:
         promo = PromoCode(
             code=data["code"],
-            promo_type=promo_type,
-            value=str(reward_value),
-            reward_amount=reward_value,
-            reward_type="balance" if promo_type == "nuts" else promo_type,
+            type=promo_type,
+            value=float(reward_value),
             max_uses=normalized_limit,
-            uses=0,
+            uses_count=0,
             expires_at=expires_at,
             active=True,
+            created_by=call.from_user.id if call.from_user else None,
         )
         session.add(promo)
         await session.commit()
 
     await state.clear()
 
-type_label = "🥜 Орешки" if promo_type == "nuts" else "💸 Скидка"
+    type_label = "🥜 Орешки" if promo_type == "nuts" else "💸 Скидка"
     value_label = (
         f"{reward_value} орешков"
         if promo_type == "nuts"
@@ -364,16 +363,16 @@ async def _build_promo_list(
     for promo in promos:
         limit = promo.max_uses
         usage_info = (
-            f"{promo.uses}/∞"
+            f"{promo.uses_count}/∞"
             if limit in (None, 0)
-            else f"{promo.uses}/{limit}"
+            else f"{promo.uses_count}/{limit}"
         )
-        if promo.promo_type == "nuts":
-            reward_info = f"🥜 {promo.reward_amount}"
-        elif promo.promo_type == "discount":
-            reward_info = f"💸 {promo.reward_amount}%"
+        if promo.type == "nuts":
+            reward_info = f"🥜 {int(promo.value)}"
+        elif promo.type == "discount":
+            reward_info = f"💸 {promo.value:g}%"
         else:
-            reward_info = promo.promo_type
+            reward_info = promo.type
         text += f"• <code>{promo.code}</code> — {reward_info} ({usage_info})\n"
         if builder is not None:
             builder.button(

@@ -250,11 +250,10 @@ def test_promo_with_valid_code(monkeypatch):
         id=1,
         code="PROMO2024",
         active=True,
-        max_uses=None,
-        uses=0,
-        promo_type="money",
-        reward_amount=100,
-        value=None,
+        max_uses=0,
+        uses_count=0,
+        type="nuts",
+        value=100.0,
         expires_at=None,
     )
     user_obj = SimpleNamespace(id=10, tg_id=7, balance=0)
@@ -286,7 +285,7 @@ def test_promo_with_valid_code(monkeypatch):
 
     asyncio.run(promo.activate_promo(message, command, state))
 
-    assert promo_obj.uses == 1
+    assert promo_obj.uses_count == 1
     assert user_obj.balance == 100
     assert sessions[0].committed is True
     assert any("Промокод активирован" in text for text, _ in message.replies)

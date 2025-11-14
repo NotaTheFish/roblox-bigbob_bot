@@ -37,7 +37,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             await message.reply("❌ Такой промокод не существует")
             return False
 
-        if promo.max_uses not in (None, 0) and (promo.uses or 0) >= promo.max_uses:
+        if promo.max_uses not in (None, 0) and (promo.uses_count or 0) >= promo.max_uses:
             await message.reply("⚠️ Этот промокод больше недоступен")
             return False
 
@@ -61,21 +61,21 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             return False
 
         reward_amount = 0
-        if promo.promo_type in {"money", "nuts"}:
-            reward_amount = promo.reward_amount or int(promo.value or 0)
+        reward_type = "balance"
+        reward_text = ""
+        promo_value = promo.value or 0
+        if promo.type == "nuts":
+            reward_amount = int(promo_value)
             user.balance += reward_amount
-            currency_emoji = "🥜" if promo.promo_type == "nuts" else "💰"
-            reward_text = f"{currency_emoji} +{reward_amount}"
-            reward_type = "balance"
-        elif promo.promo_type == "discount":
-            percent = promo.reward_amount or int(promo.value or 0)
-            reward_text = f"💸 Скидка {percent}% активирована"
+            reward_text = f"🥜 +{reward_amount}"
+        elif promo.type == "discount":
+            reward_text = f"💸 Скидка {promo_value:g}% активирована"
             reward_type = "discount"
         else:
-            reward_text = f"🎁 Roblox item ID {promo.value}"
-            reward_type = promo.promo_type
+            reward_text = f"🎁 Промокод типа {promo.type}"
+            reward_type = promo.type
 
-        promo.uses = (promo.uses or 0) + 1
+        promo.uses_count = (promo.uses_count or 0) + 1
 
         redemption = PromocodeRedemption(
             promocode_id=promo.id,
