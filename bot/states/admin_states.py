@@ -10,6 +10,10 @@ class RemoveMoneyState(StatesGroup):
     waiting_for_reason = State()
 
 
+class GiveTitleState(StatesGroup):
+    waiting_for_title = State()
+
+
 class AdminUsersState(StatesGroup):
     searching = State()
 

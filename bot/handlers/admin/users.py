@@ -13,7 +13,13 @@ from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
-from bot.states.admin_states import AdminUsersState, GiveMoneyState, RemoveMoneyState
+from bot.services.user_titles import get_user_titles_by_tg_id, normalize_titles
+from bot.states.admin_states import (
+    AdminUsersState,
+    GiveMoneyState,
+    GiveTitleState,
+    RemoveMoneyState,
+)
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -44,8 +50,9 @@ def user_card_kb(user_id, is_blocked):
         builder.button(
             text="🚫 Заблокировать", callback_data=f"block_user:{user_id}"
         )
+    builder.button(text="🎖 Выдать титул", callback_data=f"give_title:{user_id}")
     builder.button(text="⬅️ Назад", callback_data="admin_users")
-    builder.adjust(2, 1)
+    builder.adjust(2, 1, 1)
     return builder.as_markup()
 
 
@@ -154,6 +161,15 @@ async def admin_search_user(message: types.Message):
         user.created_at.strftime("%d.%m.%Y %H:%M") if user.created_at else "—"
     )
 
+    title_info = None
+    if user.tg_id:
+        title_info = await get_user_titles_by_tg_id(user.tg_id)
+    titles_line = "—"
+    selected_title_line = "—"
+    if title_info:
+        titles_line = ", ".join(title_info.titles) if title_info.titles else "—"
+        selected_title_line = title_info.selected_title or "—"
+
     text = (
         f"<b>👤 Пользователь найден</b>\n"
         f"TG: {tg_username}\n"
@@ -161,6 +177,8 @@ async def admin_search_user(message: types.Message):
         f"Roblox: <code>{roblox_username}</code>\n"
         f"Roblox ID: <code>{roblox_id}</code>\n"
         f"Баланс: 💰 {user.balance}\n"
+        f"Титулы: {titles_line}\n"
+        f"Выбранный титул: {selected_title_line}\n"
         f"Дата регистрации: {created_at}\n"
     )
 
@@ -177,6 +195,7 @@ async def admin_search_user(message: types.Message):
     | F.data.startswith("remove_money")
     | F.data.startswith("block_user")
     | F.data.startswith("unblock_user")
+    | F.data.startswith("give_title")
 )
 async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
     if not call.from_user:
@@ -204,6 +223,15 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
         )
         await state.update_data(target_user_id=user_id)
         await state.set_state(RemoveMoneyState.waiting_for_amount)
+        return
+
+    if action == "give_title":
+        await call.message.answer(
+            f"Введите текст титула для пользователя <code>{user_id}</code>:",
+            parse_mode="HTML",
+        )
+        await state.update_data(target_user_id=user_id)
+        await state.set_state(GiveTitleState.waiting_for_title)
         return
 
     # Блокировка и разблокировка
@@ -275,6 +303,61 @@ async def process_money_amount(message: types.Message, state: FSMContext):
     if "target_user_id" in data:
         data.pop("target_user_id")
         await state.set_data(data)
+
+    await state.clear()
+
+
+@router.message(StateFilter(GiveTitleState.waiting_for_title))
+async def process_give_title(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    if not await is_admin(message.from_user.id):
+        return await message.reply("⛔ Нет доступа")
+
+    title_text = (message.text or "").strip()
+    if not title_text:
+        return await message.reply("❌ Титул не может быть пустым")
+    if len(title_text) > 255:
+        return await message.reply("❌ Титул должен быть короче 255 символов")
+
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    if not target_user_id:
+        await state.clear()
+        return await message.reply("Ошибка: пользователь не выбран")
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == target_user_id))
+        if not user:
+            await state.clear()
+            return await message.reply("⛔ Пользователь не найден")
+
+        titles = normalize_titles(user.titles)
+        titles = [t for t in titles if t != title_text]
+        titles.append(title_text)
+        user.titles = titles
+        if not user.selected_title:
+            user.selected_title = title_text
+        await session.commit()
+
+    await message.reply(
+        (
+            f"✅ Титул <b>{title_text}</b> добавлен пользователю "
+            f"<code>{target_user_id}</code>"
+        ),
+        parse_mode="HTML",
+    )
+
+    try:
+        await message.bot.send_message(
+            target_user_id,
+            f"🏅 Вам присвоен новый титул: <b>{title_text}</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.warning("Не удалось уведомить пользователя %s о новом титуле", target_user_id)
 
     await state.clear()
 
