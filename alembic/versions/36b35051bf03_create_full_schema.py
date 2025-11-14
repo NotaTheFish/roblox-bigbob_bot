@@ -1,8 +1,8 @@
-"""create initial schema
+"""create_full_schema
 
-Revision ID: a1bb258f4246
+Revision ID: 36b35051bf03
 Revises: 
-Create Date: 2025-11-09 17:04:24.050606
+Create Date: 2025-11-14 13:46:28.373827
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1bb258f4246'
+revision: str = '36b35051bf03'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -36,7 +36,7 @@ def upgrade() -> None:
     sa.Column('full_name', sa.String(length=255), nullable=True),
     sa.Column('status', sa.String(length=32), nullable=False),
     sa.Column('request_id', sa.String(length=64), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('request_id')
     )
@@ -54,7 +54,7 @@ def upgrade() -> None:
     sa.Column('rewards', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('source', sa.String(length=255), nullable=True),
     sa.Column('request_id', sa.String(length=64), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('request_id')
     )
@@ -65,7 +65,7 @@ def upgrade() -> None:
     sa.Column('progress', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('version', sa.Integer(), nullable=False),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_game_progress_roblox_user_id'), 'game_progress', ['roblox_user_id'], unique=False)
@@ -75,7 +75,7 @@ def upgrade() -> None:
     sa.Column('endpoint', sa.String(length=255), nullable=False),
     sa.Column('status_code', sa.Integer(), nullable=True),
     sa.Column('response_body', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
@@ -93,7 +93,7 @@ def upgrade() -> None:
     sa.Column('uses', sa.Integer(), nullable=False),
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
@@ -104,7 +104,7 @@ def upgrade() -> None:
     sa.Column('action', sa.String(length=255), nullable=False),
     sa.Column('payload', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('response', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_roblox_sync_events_roblox_user_id'), 'roblox_sync_events', ['roblox_user_id'], unique=False)
@@ -118,7 +118,7 @@ def upgrade() -> None:
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('url', sa.String(), nullable=True),
     sa.Column('closed_message', sa.String(), server_default='Сервер закрыт', nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('telegram_chat_id')
@@ -130,12 +130,13 @@ def upgrade() -> None:
     sa.Column('tg_username', sa.String(length=255), nullable=True),
     sa.Column('username', sa.String(length=255), nullable=True),
     sa.Column('roblox_id', sa.String(length=255), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('verified', sa.Boolean(), nullable=False),
     sa.Column('code', sa.String(length=64), nullable=True),
     sa.Column('is_blocked', sa.Boolean(), nullable=False),
     sa.Column('balance', sa.Integer(), nullable=False),
     sa.Column('cash', sa.Integer(), nullable=False),
+    sa.Column('discount', sa.Float(), server_default='0', nullable=False),
     sa.Column('items', sa.Text(), nullable=True),
     sa.Column('level', sa.Integer(), nullable=False),
     sa.Column('referral_code', sa.String(length=64), nullable=True),
@@ -153,7 +154,7 @@ def upgrade() -> None:
     sa.Column('event_type', sa.String(length=64), nullable=False),
     sa.Column('message', sa.Text(), nullable=True),
     sa.Column('data', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['server_id'], ['servers.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -175,7 +176,7 @@ def upgrade() -> None:
     sa.Column('stock_limit', sa.Integer(), nullable=True),
     sa.Column('referral_bonus', sa.Integer(), nullable=False),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['server_id'], ['servers.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -190,7 +191,7 @@ def upgrade() -> None:
     sa.Column('reward_amount', sa.Integer(), nullable=True),
     sa.Column('reward_type', sa.String(length=32), nullable=True),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('redeemed_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('redeemed_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['promocode_id'], ['promocodes.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -206,7 +207,7 @@ def upgrade() -> None:
     sa.Column('referred_telegram_id', sa.BigInteger(), nullable=False),
     sa.Column('referral_code', sa.String(length=64), nullable=False),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['referred_id'], ['users.id'], ),
     sa.ForeignKeyConstraint(['referrer_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -221,7 +222,7 @@ def upgrade() -> None:
     sa.Column('tg_id', sa.BigInteger(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('achievement_id', sa.Integer(), nullable=False),
-    sa.Column('earned_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('earned_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['achievement_id'], ['achievements.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -238,7 +239,7 @@ def upgrade() -> None:
     sa.Column('method', sa.String(length=64), nullable=True),
     sa.Column('destination', sa.String(length=255), nullable=True),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('processed_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -259,7 +260,7 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=32), nullable=False),
     sa.Column('notes', sa.Text(), nullable=True),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['product_id'], ['products.id'], ),
@@ -282,7 +283,7 @@ def upgrade() -> None:
     sa.Column('currency', sa.String(length=16), nullable=False),
     sa.Column('status', sa.String(length=32), nullable=False),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['purchase_id'], ['purchases.id'], ),
@@ -302,7 +303,7 @@ def upgrade() -> None:
     sa.Column('currency', sa.String(length=16), nullable=False),
     sa.Column('raw_payload', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('status', sa.String(length=32), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('processed_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['payment_id'], ['payments.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -320,7 +321,7 @@ def upgrade() -> None:
     sa.Column('amount', sa.Integer(), nullable=False),
     sa.Column('status', sa.String(length=32), nullable=False),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('granted_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['payment_id'], ['payments.id'], ),
     sa.ForeignKeyConstraint(['purchase_id'], ['purchases.id'], ),
@@ -338,7 +339,7 @@ def upgrade() -> None:
     sa.Column('currency', sa.String(length=16), nullable=False),
     sa.Column('status', sa.String(length=32), nullable=False),
     sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('payment_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['payment_id'], ['payments.id'], ),
