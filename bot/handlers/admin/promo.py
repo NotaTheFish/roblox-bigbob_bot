@@ -18,6 +18,18 @@ from bot.states.promo_states import PromoCreateState
 
 router = Router(name="admin_promo")
 
+REQUIRED_FIELD_TITLES = {
+    "reward_type": "тип награды",
+    "reward_value": "значение награды",
+    "usage_limit": "лимит активаций",
+    "expiry_days": "срок действия",
+    "code_text": "текст промокода",
+}
+
+
+def _format_missing_fields(missing: list[str]) -> str:
+    return ", ".join(REQUIRED_FIELD_TITLES.get(field, field) for field in missing)
+
 
 # ✅ Проверка администратора
 async def is_admin(uid: int) -> bool:
@@ -92,7 +104,7 @@ async def promo_set_code(message: types.Message, state: FSMContext):
         await message.answer("Введите текст промокода.")
         return
 
-    await state.update_data(code=code.upper())
+    await state.update_data(code_text=code.upper())
     await message.answer("Код сохранён. Нажмите «Далее», чтобы создать промокод.")
 
 
@@ -101,18 +113,18 @@ async def promo_ask_reward_value(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_reward_type:
+    if await state.get_state() != PromoCreateState.waiting_for_reward_type.state:
         await call.answer("Этот шаг уже завершён.")
         return
 
     data = await state.get_data()
-    if not data.get("promo_type"):
+    if not data.get("reward_type"):
         await call.answer("Сначала выберите тип награды.", show_alert=True)
         return
 
     await state.set_state(PromoCreateState.waiting_for_reward_value)
-    promo_type = data["promo_type"]
-    if promo_type == "nuts":
+    reward_type = data["reward_type"]
+    if reward_type == "nuts":
         prompt = "🥜 Введите количество орешков (положительное число), затем нажмите «Далее»."
     else:
         prompt = "💸 Введите размер скидки в процентах (1–100), затем нажмите «Далее»."
@@ -132,12 +144,12 @@ async def promo_select_reward_type(call: types.CallbackQuery, state: FSMContext)
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_reward_type:
+    if await state.get_state() != PromoCreateState.waiting_for_reward_type.state:
         await call.answer("Этот шаг уже завершён.")
         return
 
-    promo_type = "nuts" if call.data.endswith("nuts") else "discount"
-    await state.update_data(promo_type=promo_type)
+    reward_type = "nuts" if call.data.endswith("nuts") else "discount"
+    await state.update_data(reward_type=reward_type)
     await call.answer("Тип награды выбран. Нажмите «Далее».")
 
 
@@ -148,23 +160,30 @@ async def promo_set_reward_value(message: types.Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    promo_type = data.get("promo_type")
-    if not promo_type:
+    reward_type = data.get("reward_type")
+    if not reward_type:
         await message.answer("Сначала выберите тип награды.")
         return
 
     raw_value = (message.text or "").strip()
-    try:
-        reward_value = int(raw_value)
-    except ValueError:
-        await message.answer("Введите целое число.")
-        return
+    if reward_type == "nuts":
+        try:
+            reward_value = int(raw_value)
+        except ValueError:
+            await message.answer("Введите целое положительное число.")
+            return
 
-    if promo_type == "nuts":
         if reward_value <= 0:
             await message.answer("Количество орешков должно быть больше нуля.")
             return
     else:
+        normalized_raw = raw_value.replace(",", ".")
+        try:
+            reward_value = float(normalized_raw)
+        except ValueError:
+            await message.answer("Введите число в формате 1-100.")
+            return
+
         if reward_value < 1 or reward_value > 100:
             await message.answer("Скидка должна быть в диапазоне от 1 до 100%.")
             return
@@ -178,7 +197,7 @@ async def promo_next_to_limit(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_reward_value:
+    if await state.get_state() != PromoCreateState.waiting_for_reward_value.state:
         await call.answer("Шаг уже завершён.")
         return
 
@@ -211,7 +230,7 @@ async def promo_set_limit(message: types.Message, state: FSMContext):
         await message.answer("Лимит не может быть отрицательным.")
         return
 
-    await state.update_data(max_uses=limit)
+    await state.update_data(usage_limit=limit)
     await message.answer("Лимит сохранён. Нажмите «Далее», чтобы продолжить.")
 
 
@@ -220,12 +239,12 @@ async def promo_next_to_expire(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_usage_limit:
+    if await state.get_state() != PromoCreateState.waiting_for_usage_limit.state:
         await call.answer("Шаг уже завершён.")
         return
 
     data = await state.get_data()
-    if "max_uses" not in data:
+    if "usage_limit" not in data:
         await call.answer("Сначала укажите лимит использований.", show_alert=True)
         return
 
@@ -253,7 +272,7 @@ async def promo_set_expire_days(message: types.Message, state: FSMContext):
         await message.answer("Срок действия не может быть отрицательным.")
         return
 
-    await state.update_data(expire_days=days)
+    await state.update_data(expiry_days=days)
     await message.answer("Срок действия сохранён. Нажмите «Далее», чтобы ввести текст промокода.")
 
 
@@ -262,12 +281,12 @@ async def promo_next_to_code(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_expire_days:
+    if await state.get_state() != PromoCreateState.waiting_for_expire_days.state:
         await call.answer("Шаг уже завершён.")
         return
 
     data = await state.get_data()
-    if "expire_days" not in data:
+    if "expiry_days" not in data:
         await call.answer("Сначала укажите срок действия.", show_alert=True)
         return
 
@@ -284,21 +303,26 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_code:
+    if await state.get_state() != PromoCreateState.waiting_for_code.state:
         await call.answer("Шаг уже завершён.")
         return
 
     data = await state.get_data()
-    required_fields = {"promo_type", "reward_value", "max_uses", "expire_days", "code"}
+    required_fields = tuple(REQUIRED_FIELD_TITLES.keys())
     missing = [field for field in required_fields if field not in data]
     if missing:
-        await call.answer("Не все данные заполнены. Завершите предыдущие шаги.", show_alert=True)
+        warning = (
+            "Не все данные заполнены ("
+            + _format_missing_fields(missing)
+            + "). Завершите предыдущие шаги."
+        )
+        await call.answer(warning, show_alert=True)
         return
 
-    promo_type = data["promo_type"]
-    reward_value = int(data["reward_value"])
-    limit = int(data["max_uses"])
-    expire_days = int(data["expire_days"])
+    reward_type = data["reward_type"]
+    reward_value = data["reward_value"]
+    limit = int(data["usage_limit"])
+    expire_days = int(data["expiry_days"])
     normalized_limit = limit if limit > 0 else 0
     expires_at = (
         datetime.utcnow() + timedelta(days=expire_days)
@@ -308,8 +332,8 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
 
     async with async_session() as session:
         promo = PromoCode(
-            code=data["code"],
-            type=promo_type,
+            code=data["code_text"],
+            type=reward_type or "nuts",
             value=float(reward_value),
             max_uses=normalized_limit,
             uses_count=0,
@@ -322,11 +346,11 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    type_label = "🥜 Орешки" if promo_type == "nuts" else "💸 Скидка"
+    type_label = "🥜 Орешки" if reward_type == "nuts" else "💸 Скидка"
     value_label = (
-        f"{reward_value} орешков"
-        if promo_type == "nuts"
-        else f"{reward_value}%"
+        f"{int(reward_value)} орешков"
+        if reward_type == "nuts"
+        else f"{reward_value:g}%"
     )
     limit_label = "∞" if normalized_limit == 0 else str(normalized_limit)
     expiry_label = (
@@ -336,7 +360,7 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
     )
 
     await call.message.answer(
-        f"✅ Промокод <code>{data['code']}</code> создан!\n"
+        f"✅ Промокод <code>{data['code_text']}</code> создан!\n"
         f"Тип: {type_label} ({value_label})\n"
         f"Лимит активаций: {limit_label}\n"
         f"Срок действия: {expiry_label}\n"

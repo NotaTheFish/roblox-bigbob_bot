@@ -20,7 +20,10 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     # === Add new columns ===
-    op.add_column('promocodes', sa.Column('type', sa.String(length=32), nullable=True, server_default='nuts'))
+    op.add_column(
+        'promocodes',
+        sa.Column('type', sa.String(length=32), nullable=True, server_default='nuts'),
+    )
     op.add_column('promocodes', sa.Column('uses_count', sa.Integer(), nullable=False))
     op.add_column('promocodes', sa.Column('created_by', sa.BigInteger(), nullable=True))
 
