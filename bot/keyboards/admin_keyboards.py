@@ -33,9 +33,9 @@ def promo_management_menu_kb() -> InlineKeyboardMarkup:
 
 def promo_reward_type_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="💰 Валюта", callback_data="promo:create:type:money")
-    builder.button(text="🎁 Roblox предмет", callback_data="promo:create:type:item")
-    builder.button(text="➡️ Далее", callback_data="promo:create:next:reward_type")
+    builder.button(text="🥜 Орешки", callback_data="promo:create:type:nuts")
+    builder.button(text="💸 Скидка", callback_data="promo:create:type:discount")
+    builder.button(text="➡️ Далее", callback_data="promo:create:next:type")
     builder.button(text="✖️ Отмена", callback_data="promo:cancel")
     builder.adjust(2, 2)
     return builder.as_markup()

@@ -59,10 +59,11 @@ async def promo_create_start(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    await state.set_state(PromoCreateState.waiting_for_code)
+    await state.clear()
+    await state.set_state(PromoCreateState.waiting_for_reward_type)
     await call.message.answer(
-        "📝 Введите название промокода, затем нажмите «Далее».",
-        reply_markup=promo_step_navigation_kb("promo:create:next:code"),
+        "🥇 Выберите тип награды для промокода (Орешки 🥜 или Скидка 💸), затем нажмите «Далее».",
+        reply_markup=promo_reward_type_kb(),
     )
     await call.answer()
 
@@ -88,38 +89,44 @@ async def promo_set_code(message: types.Message, state: FSMContext):
 
     code = (message.text or "").strip()
     if not code:
-        await message.answer("Введите название промокода.")
+        await message.answer("Введите текст промокода.")
         return
 
     await state.update_data(code=code.upper())
-    await message.answer("Код сохранён. Нажмите «Далее», чтобы продолжить.")
+    await message.answer("Код сохранён. Нажмите «Далее», чтобы создать промокод.")
 
 
-@router.callback_query(F.data == "promo:create:next:code")
-async def promo_ask_reward_type(call: types.CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "promo:create:next:type")
+async def promo_ask_reward_value(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
-    if await state.get_state() != PromoCreateState.waiting_for_code:
+    if await state.get_state() != PromoCreateState.waiting_for_reward_type:
         await call.answer("Этот шаг уже завершён.")
         return
 
     data = await state.get_data()
-    if not data.get("code"):
-        await call.answer("Сначала отправьте название промокода.", show_alert=True)
+    if not data.get("promo_type"):
+        await call.answer("Сначала выберите тип награды.", show_alert=True)
         return
 
-    await state.set_state(PromoCreateState.waiting_for_reward_type)
+    await state.set_state(PromoCreateState.waiting_for_reward_value)
+    promo_type = data["promo_type"]
+    if promo_type == "nuts":
+        prompt = "🥜 Введите количество орешков (положительное число), затем нажмите «Далее»."
+    else:
+        prompt = "💸 Введите размер скидки в процентах (1–100), затем нажмите «Далее»."
+
     await call.message.answer(
-        "Выберите тип награды и нажмите «Далее».",
-        reply_markup=promo_reward_type_kb(),
+        prompt,
+        reply_markup=promo_step_navigation_kb("promo:create:next:value"),
     )
     await call.answer()
 
 
 # ✅ Выбор типа награды
 @router.callback_query(
-    F.data.in_({"promo:create:type:money", "promo:create:type:item"})
+    F.data.in_({"promo:create:type:nuts", "promo:create:type:discount"})
 )
 async def promo_select_reward_type(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
@@ -129,59 +136,41 @@ async def promo_select_reward_type(call: types.CallbackQuery, state: FSMContext)
         await call.answer("Этот шаг уже завершён.")
         return
 
-    promo_type = "money" if call.data.endswith("money") else "item"
+    promo_type = "nuts" if call.data.endswith("nuts") else "discount"
     await state.update_data(promo_type=promo_type)
     await call.answer("Тип награды выбран. Нажмите «Далее».")
-
-
-@router.callback_query(F.data == "promo:create:next:reward_type")
-async def promo_reward_type_next(call: types.CallbackQuery, state: FSMContext):
-    if not await _ensure_admin_callback(call):
-        return
-
-    if await state.get_state() != PromoCreateState.waiting_for_reward_type:
-        await call.answer("Шаг уже завершён.")
-        return
-
-    data = await state.get_data()
-    promo_type = data.get("promo_type")
-    if not promo_type:
-        await call.answer("Сначала выберите тип награды.", show_alert=True)
-        return
-
-    await state.set_state(PromoCreateState.waiting_for_reward_value)
-    if promo_type == "money":
-        prompt = "💰 Введите сумму валюты для награды, затем нажмите «Далее»."
-    else:
-        prompt = "🎁 Введите ID Roblox-предмета, затем нажмите «Далее»."
-
-    await call.message.answer(
-        prompt,
-        reply_markup=promo_step_navigation_kb("promo:create:next:value"),
-    )
-    await call.answer()
 
 
 # ✅ Ввод значения награды
 @router.message(StateFilter(PromoCreateState.waiting_for_reward_value))
 async def promo_set_reward_value(message: types.Message, state: FSMContext):
+    if not await _is_valid_admin_message(message):
+        return
+
     data = await state.get_data()
-    promo_type = data.get("promo_type", "money")
+    promo_type = data.get("promo_type")
+    if not promo_type:
+        await message.answer("Сначала выберите тип награды.")
+        return
 
-    if promo_type == "money":
-        try:
-            reward_amount = int(message.text)
-        except ValueError:
-            return await message.answer("Введите ЧИСЛО")
-        value = str(reward_amount)
+    raw_value = (message.text or "").strip()
+    try:
+        reward_value = int(raw_value)
+    except ValueError:
+        await message.answer("Введите целое число.")
+        return
+
+    if promo_type == "nuts":
+        if reward_value <= 0:
+            await message.answer("Количество орешков должно быть больше нуля.")
+            return
     else:
-        value = message.text.strip()
-        if not value:
-            return await message.answer("Введите значение награды")
-        reward_amount = 0
+        if reward_value < 1 or reward_value > 100:
+            await message.answer("Скидка должна быть в диапазоне от 1 до 100%.")
+            return
 
-    await state.update_data(value=value, reward_amount=reward_amount)
-    await message.answer("Нажмите «Далее», чтобы перейти к лимиту использований.")
+    await state.update_data(reward_value=reward_value)
+    await message.answer("Значение сохранено. Нажмите «Далее», чтобы перейти к лимиту использований.")
 
 
 @router.callback_query(F.data == "promo:create:next:value")
@@ -194,13 +183,13 @@ async def promo_next_to_limit(call: types.CallbackQuery, state: FSMContext):
         return
 
     data = await state.get_data()
-    if not data.get("value"):
+    if "reward_value" not in data:
         await call.answer("Сначала отправьте значение награды.", show_alert=True)
         return
 
     await state.set_state(PromoCreateState.waiting_for_usage_limit)
     await call.message.answer(
-        "📊 Введите лимит использований (число, 0 — без ограничения) и нажмите «Далее».",
+        "📊 Введите лимит активаций (целое число, 0 — без ограничения), затем нажмите «Далее».",
         reply_markup=promo_step_navigation_kb("promo:create:next:limit"),
     )
     await call.answer()
@@ -209,12 +198,20 @@ async def promo_next_to_limit(call: types.CallbackQuery, state: FSMContext):
 # ✅ Ввод лимита
 @router.message(StateFilter(PromoCreateState.waiting_for_usage_limit))
 async def promo_set_limit(message: types.Message, state: FSMContext):
+    if not await _is_valid_admin_message(message):
+        return
+
     try:
         limit = int(message.text)
     except ValueError:
-        return await message.answer("Введите ЧИСЛО")
+        await message.answer("Введите целое число.")
+        return
 
-    await state.update_data(max_uses=None if limit <= 0 else limit)
+    if limit < 0:
+        await message.answer("Лимит не может быть отрицательным.")
+        return
+
+    await state.update_data(max_uses=limit)
     await message.answer("Лимит сохранён. Нажмите «Далее», чтобы продолжить.")
 
 
@@ -234,29 +231,34 @@ async def promo_next_to_expire(call: types.CallbackQuery, state: FSMContext):
 
     await state.set_state(PromoCreateState.waiting_for_expire_days)
     await call.message.answer(
-        "⏳ На сколько дней действует промокод? (0 — без ограничения) и нажмите «Далее».",
-        reply_markup=promo_step_navigation_kb("promo:create:next:finish"),
+        "⏳ На сколько дней действует промокод? (0 — без ограничения), затем нажмите «Далее».",
+        reply_markup=promo_step_navigation_kb("promo:create:next:expiry"),
     )
     await call.answer()
 
 
-# ✅ Завершение создания
+# ✅ Срок действия промокода
 @router.message(StateFilter(PromoCreateState.waiting_for_expire_days))
-async def promo_finish(message: types.Message, state: FSMContext):
+async def promo_set_expire_days(message: types.Message, state: FSMContext):
     if not await _is_valid_admin_message(message):
         return
 
     try:
         days = int(message.text)
     except ValueError:
-        return await message.answer("Введите число дней")
+        await message.answer("Введите число дней")
+        return
+
+    if days < 0:
+        await message.answer("Срок действия не может быть отрицательным.")
+        return
 
     await state.update_data(expire_days=days)
-    await message.answer("Срок действия сохранён. Нажмите «Далее», чтобы завершить.")
+    await message.answer("Срок действия сохранён. Нажмите «Далее», чтобы ввести текст промокода.")
 
 
-@router.callback_query(F.data == "promo:create:next:finish")
-async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "promo:create:next:expiry")
+async def promo_next_to_code(call: types.CallbackQuery, state: FSMContext):
     if not await _ensure_admin_callback(call):
         return
 
@@ -266,20 +268,52 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     if "expire_days" not in data:
-        await call.answer("Сначала отправьте срок действия.", show_alert=True)
+        await call.answer("Сначала укажите срок действия.", show_alert=True)
         return
 
-    days = data["expire_days"]
-    expires_at = datetime.utcnow() + timedelta(days=days) if days > 0 else None
+    await state.set_state(PromoCreateState.waiting_for_code)
+    await call.message.answer(
+        "📝 Введите текст промокода (например, SPRING2024), затем нажмите «Далее».",
+        reply_markup=promo_step_navigation_kb("promo:create:next:finalize"),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "promo:create:next:finalize")
+async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
+    if not await _ensure_admin_callback(call):
+        return
+
+    if await state.get_state() != PromoCreateState.waiting_for_code:
+        await call.answer("Шаг уже завершён.")
+        return
+
+    data = await state.get_data()
+    required_fields = {"promo_type", "reward_value", "max_uses", "expire_days", "code"}
+    missing = [field for field in required_fields if field not in data]
+    if missing:
+        await call.answer("Не все данные заполнены. Завершите предыдущие шаги.", show_alert=True)
+        return
+
+    promo_type = data["promo_type"]
+    reward_value = int(data["reward_value"])
+    limit = int(data["max_uses"])
+    expire_days = int(data["expire_days"])
+    normalized_limit = limit if limit > 0 else 0
+    expires_at = (
+        datetime.utcnow() + timedelta(days=expire_days)
+        if expire_days > 0
+        else None
+    )
 
     async with async_session() as session:
         promo = PromoCode(
             code=data["code"],
-            promo_type=data["promo_type"],
-            value=data["value"],
-            reward_amount=data.get("reward_amount", 0),
-            reward_type="balance" if data["promo_type"] == "money" else "item",
-            max_uses=data.get("max_uses"),
+            promo_type=promo_type,
+            value=str(reward_value),
+            reward_amount=reward_value,
+            reward_type="balance" if promo_type == "nuts" else promo_type,
+            max_uses=normalized_limit,
             uses=0,
             expires_at=expires_at,
             active=True,
@@ -288,8 +322,25 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
         await session.commit()
 
     await state.clear()
+
+type_label = "🥜 Орешки" if promo_type == "nuts" else "💸 Скидка"
+    value_label = (
+        f"{reward_value} орешков"
+        if promo_type == "nuts"
+        else f"{reward_value}%"
+    )
+    limit_label = "∞" if normalized_limit == 0 else str(normalized_limit)
+    expiry_label = (
+        "без ограничения"
+        if expire_days == 0
+        else f"{expire_days} дн."
+    )
+
     await call.message.answer(
         f"✅ Промокод <code>{data['code']}</code> создан!\n"
+        f"Тип: {type_label} ({value_label})\n"
+        f"Лимит активаций: {limit_label}\n"
+        f"Срок действия: {expiry_label}\n"
         "💬 Подскажите игрокам: «Введите код прямо в чат».",
         parse_mode="HTML",
         reply_markup=promo_management_menu_kb(),
@@ -311,11 +362,19 @@ async def _build_promo_list(
     builder = InlineKeyboardBuilder() if with_delete_buttons else None
 
     for promo in promos:
+        limit = promo.max_uses
         usage_info = (
-            f"{promo.uses}/{promo.max_uses}"
-            if promo.max_uses is not None else f"{promo.uses}/∞"
+            f"{promo.uses}/∞"
+            if limit in (None, 0)
+            else f"{promo.uses}/{limit}"
         )
-        text += f"• <code>{promo.code}</code> — {promo.promo_type} ({usage_info})\n"
+        if promo.promo_type == "nuts":
+            reward_info = f"🥜 {promo.reward_amount}"
+        elif promo.promo_type == "discount":
+            reward_info = f"💸 {promo.reward_amount}%"
+        else:
+            reward_info = promo.promo_type
+        text += f"• <code>{promo.code}</code> — {reward_info} ({usage_info})\n"
         if builder is not None:
             builder.button(
                 text=f"❌ {promo.code}", callback_data=f"promo_del:{promo.id}"
