@@ -38,6 +38,20 @@ def user_shop_kb(items: list[Product]):
     return builder.as_markup()
 
 
+def _calculate_price_with_discount(product: Product, user: User) -> tuple[int, int, float]:
+    """Return final price, discount amount, and discount percent."""
+
+    base_price = product.price or 0
+    discount_percent = float(user.discount or 0)
+    if discount_percent <= 0:
+        return base_price, 0, 0.0
+
+    discount_percent = max(0.0, min(discount_percent, 100.0))
+    discount_amount = int(base_price * discount_percent / 100)
+    final_price = max(base_price - discount_amount, 0)
+    return final_price, discount_amount, discount_percent
+
+
 async def user_shop(message: types.Message, item_type: Optional[str] = None):
     async with async_session() as session:
         stmt = select(Product).where(Product.status == "active")
@@ -109,7 +123,10 @@ async def user_buy_confirm(call: types.CallbackQuery):
         if limit_error:
             return await call.answer(limit_error, show_alert=True)
 
-        if user.balance < product.price:
+        price_to_pay, discount_amount, discount_percent = _calculate_price_with_discount(
+            product, user
+        )
+        if user.balance < price_to_pay:
             return await call.answer("💸 Недостаточно валюты!", show_alert=True)
 
     builder = InlineKeyboardBuilder()
@@ -120,9 +137,15 @@ async def user_buy_confirm(call: types.CallbackQuery):
     builder.adjust(2)
     reply_markup = builder.as_markup() if builder.export() else None
 
+    price_line = f"Цена: <b>{price_to_pay}💰</b>"
+    if discount_amount > 0:
+        price_line += (
+            f"\n💸 Скидка {discount_percent:g}%: −{discount_amount}💰 от {product.price}💰"
+        )
+
     await call.message.answer(
         f"Вы покупаете: <b>{product.name}</b>\n"
-        f"Цена: <b>{product.price}💰</b>\n\nПодтвердить?",
+        f"{price_line}\n\nПодтвердить?",
         parse_mode="HTML",
         **({"reply_markup": reply_markup} if reply_markup else {}),
     )
@@ -156,10 +179,13 @@ async def user_buy_finish(call: types.CallbackQuery):
         if limit_error:
             return await call.answer(limit_error, show_alert=True)
 
-        if user.balance < product.price:
+        price_to_pay, discount_amount, discount_percent = _calculate_price_with_discount(
+            product, user
+        )
+        if user.balance < price_to_pay:
             return await call.answer("❌ Не хватает валюты!", show_alert=True)
 
-        user.balance -= product.price
+        user.balance -= price_to_pay
         purchase = Purchase(
             user_id=user.id,
             telegram_id=user.tg_id,
@@ -167,11 +193,14 @@ async def user_buy_finish(call: types.CallbackQuery):
             product_id=product.id,
             quantity=1,
             unit_price=product.price,
-            total_price=product.price,
+            total_price=price_to_pay,
             status="pending",
         )
         session.add(purchase)
         await session.flush()
+
+        if discount_amount > 0:
+            user.discount = 0
 
         # Обработка разных типов товаров
         if product.item_type == "money":
@@ -245,8 +274,14 @@ async def user_buy_finish(call: types.CallbackQuery):
                 },
             )
 
+    discount_message = (
+        f"\n💸 Применена скидка {discount_percent:g}% (−{discount_amount}💰)"
+        if discount_amount > 0
+        else ""
+    )
+
     await call.message.answer(
-        f"✅ Покупка успешна!\n{reward_text}{referral_message}",
+        f"✅ Покупка успешна!\n{reward_text}{discount_message}{referral_message}",
         parse_mode="HTML",
     )
     await call.answer()

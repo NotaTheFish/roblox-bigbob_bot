@@ -69,8 +69,15 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             user.balance += reward_amount
             reward_text = f"🥜 +{reward_amount}"
         elif promo.type == "discount":
-            reward_text = f"💸 Скидка {promo_value:g}% активирована"
             reward_type = "discount"
+            previous_discount = user.discount or 0
+            user.discount = promo_value
+            if previous_discount and previous_discount != promo_value:
+                reward_text = (
+                    f"💸 Скидка {promo_value:g}% активирована (было {previous_discount:g}%)"
+                )
+            else:
+                reward_text = f"💸 Скидка {promo_value:g}% активирована"
         else:
             reward_text = f"🎁 Промокод типа {promo.type}"
             reward_type = promo.type

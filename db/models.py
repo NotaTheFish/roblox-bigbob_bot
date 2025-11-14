@@ -53,6 +53,7 @@ class User(Base):
     is_blocked = Column(Boolean, default=False, nullable=False)
     balance = Column(Integer, default=0, nullable=False)
     cash = Column(Integer, default=0, nullable=False)
+    discount = Column(Float, default=0, nullable=False, server_default="0")
     items = Column(Text)
     level = Column(Integer, default=1, nullable=False)
     referral_code = Column(String(64), unique=True, index=True)
