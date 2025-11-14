@@ -7,6 +7,7 @@ import logging
 import re
 
 from aiogram import F, Router, types
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
@@ -149,7 +150,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
     return True
 
 
-@router.message(F.text.regexp(PROMOCODE_PATTERN))
+@router.message(StateFilter(None, PromoInputState.waiting_for_code), F.text.regexp(PROMOCODE_PATTERN))
 async def promo_from_message(message: types.Message, state: FSMContext):
     """Automatically redeem promo codes typed directly in chat."""
 
