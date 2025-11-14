@@ -18,6 +18,7 @@ from bot.services.user_search import (
     find_user_by_query,
     render_search_profile,
 )
+from bot.services.user_titles import normalize_titles
 from bot.states.admin_states import (
     AdminUsersState,
     GiveMoneyState,
