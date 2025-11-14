@@ -73,6 +73,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
 
             reward_amount = promo.reward_amount or 0
             reward_type = (promo.reward_type or "balance").lower()
+            promo_type_label = str(promo.promo_type or reward_type or "balance")
             reward_text = "🎁 Промокод активирован."
             
             if reward_type == "nuts":
@@ -95,7 +96,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 else:
                     reward_text = f"💸 Скидка {discount_value:g}% активирована."
             else:
-                reward_text = f"🎁 Промокод типа {reward_type} активирован."
+                reward_text = f"🎁 Промокод типа {promo_type_label} активирован."
 
             promo.uses = uses_count + 1
 
@@ -106,7 +107,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 reward_amount=reward_amount,
                 reward_type=reward_type,
                 metadata_json={
-                    "promo_value": promo.value,
+                    "promo_type": promo_type_label,
                     "promo_type": promo.promo_type,
                 },
             )

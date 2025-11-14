@@ -18,7 +18,7 @@ os.environ.setdefault("ADMIN_LOGIN_PASSWORD", "DEFAULT")
 
 from bot.db import AdminRequest
 from bot.handlers.admin import login
-from bot.handlers.user import promo
+from bot.handlers.user import promo, promocode_use
 from bot.states.user_states import PromoInputState
 from bot.states.admin_states import AdminLoginState
 
@@ -32,8 +32,15 @@ class DummyBot:
 
 
 class DummyMessage:
-    def __init__(self, user_id: int = 1, username: str | None = "user", text: str | None = None):
-        self.from_user = SimpleNamespace(id=user_id, username=username)
+    def __init__(
+        self,
+        user_id: int = 1,
+        username: str | None = "user",
+        text: str | None = None,
+        full_name: str | None = None,
+    ):
+        display_name = full_name if full_name is not None else (username or "Test User")
+        self.from_user = SimpleNamespace(id=user_id, username=username, full_name=display_name)
         self.bot = DummyBot()
         self.replies: list[tuple[str, dict]] = []
         self.text = text
@@ -95,6 +102,21 @@ class DummySession:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+    class _BeginContext:
+        def __init__(self, session: "DummySession") -> None:
+            self._session = session
+
+        async def __aenter__(self):
+            return self._session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            if exc_type is None:
+                self._session.committed = True
+            return False
+
+    def begin(self):
+        return DummySession._BeginContext(self)
 
 
 def make_session_factory(sessions: list[DummySession]):
@@ -244,7 +266,7 @@ def test_promo_with_valid_code(monkeypatch):
     command = CommandObject(command="promo", args="promo2024")
     state = DummyFSMContext()
 
-    monkeypatch.setattr(promo, "ROOT_ADMIN_ID", 555)
+    monkeypatch.setattr(promocode_use, "ROOT_ADMIN_ID", 555)
 
     promo_obj = SimpleNamespace(
         id=1,
@@ -280,17 +302,18 @@ def test_promo_with_valid_code(monkeypatch):
         session = factory()
         return AsyncSessionWrapper(session)
 
-    monkeypatch.setattr(promo, "async_session", async_session_stub)
+    monkeypatch.setattr(promocode_use, "async_session", async_session_stub)
 
     check_achievements_mock = AsyncMock()
-    monkeypatch.setattr(promo, "check_achievements", check_achievements_mock)
+    monkeypatch.setattr(promocode_use, "check_achievements", check_achievements_mock)
 
     asyncio.run(promo.activate_promo(message, command, state))
 
     assert promo_obj.uses == 1
     assert user_obj.balance == 100
     assert sessions[0].committed is True
-    assert any("Промокод активирован" in text for text, _ in message.replies)
+    expected_phrase = f"Промокод {command.args.upper()} активирован"
+    assert any(expected_phrase in text for text, _ in message.replies)
     assert message.bot.sent_messages
     check_achievements_mock.assert_awaited_once_with(user_obj)
 
@@ -324,6 +347,7 @@ def test_admin_request_callback_approves(monkeypatch):
         telegram_id=42,
         status="pending",
         username="tester",
+        full_name="Tester User",
         request_id="req-123",
     )
 
@@ -373,6 +397,7 @@ def test_admin_request_callback_rejects(monkeypatch):
         telegram_id=77,
         status="pending",
         username="another",
+        full_name="Another User",
         request_id="req-999",
     )
 

@@ -110,7 +110,12 @@ class PromoCode(Base):
     id = Column(Integer, primary_key=True)
     code = Column(String(64), unique=True, nullable=False, index=True)
     description = Column(Text)
-    promo_type = Column(String(32), default="money", nullable=False)
+    promo_type = Column(
+        String(32),
+        default="money",
+        server_default="money",
+        nullable=False,
+    )
     value = Column(String(255))
     reward_amount = Column(Integer, default=0, nullable=False)
     reward_type = Column(String(32), default="balance", nullable=False)

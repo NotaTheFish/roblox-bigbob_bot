@@ -40,7 +40,7 @@ async def test_user_buy_finish_logs_root_notification_failure(
         referral_bonus=0,
         server_id=1,
     )
-    user = SimpleNamespace(id=3, tg_id=55, balance=200)
+    user = SimpleNamespace(id=3, tg_id=55, balance=200, discount=0)
 
     session = FakeAsyncSession(
         scalar_results=[product, user, None],
