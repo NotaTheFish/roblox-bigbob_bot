@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -325,7 +325,7 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
     expire_days = int(data["expiry_days"])
     normalized_limit = limit if limit > 0 else 0
     expires_at = (
-        datetime.utcnow() + timedelta(days=expire_days)
+        datetime.now(tz=timezone.utc) + timedelta(days=expire_days)
         if expire_days > 0
         else None
     )

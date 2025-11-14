@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import re
 
@@ -51,9 +51,16 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 await message.reply("⚠️ Этот промокод больше недоступен")
                 return False
 
-            if promo.expires_at and datetime.utcnow() > promo.expires_at:
-                await message.reply("⛔ Срок действия промокода истёк")
-                return False
+            if promo.expires_at:
+                now = datetime.now(tz=timezone.utc)
+                expires_at = (
+                    promo.expires_at
+                    if promo.expires_at.tzinfo
+                    else promo.expires_at.replace(tzinfo=timezone.utc)
+                )
+                if now > expires_at:
+                    await message.reply("⛔ Срок действия промокода истёк")
+                    return False
 
             user = await session.scalar(
                 select(User).where(User.tg_id == message.from_user.id)
