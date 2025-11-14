@@ -1,8 +1,9 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.exceptions import TelegramConflictError
 from sqlalchemy import select
 
@@ -14,6 +15,12 @@ from bot.handlers.user import routers as user_routers
 from bot.utils.block_middleware import BlockMiddleware
 
 logger = logging.getLogger(__name__)
+
+redis_url = os.getenv("REDIS_URL")
+if not redis_url:
+    raise RuntimeError("REDIS_URL environment variable is not set")
+
+storage = RedisStorage.from_url(redis_url)
 
 
 async def ensure_root_admin() -> None:
@@ -27,7 +34,7 @@ async def ensure_root_admin() -> None:
 
 
 def build_dispatcher() -> Dispatcher:
-    dispatcher = Dispatcher(storage=MemoryStorage())
+    dispatcher = Dispatcher(storage=storage)
     dispatcher.update.outer_middleware(BlockMiddleware())
     for router in (*user_routers, *admin_routers):
         dispatcher.include_router(router)
