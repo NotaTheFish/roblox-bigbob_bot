@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
@@ -311,9 +311,17 @@ async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
 
     current_state = await state.get_state()
     if current_state == TopPlayersSearchState.waiting_for_query.state:
-        return await call.answer("Мы уже ждём ник", show_alert=True)
+        data = await state.get_data()
+        expires_at = data.get("top_search_expires_at")
+        now_ts = datetime.now().timestamp()
+        if not expires_at or expires_at <= now_ts:
+            await state.clear()
+        else:
+            return await call.answer("Мы уже ждём ник", show_alert=True)
 
-    await state.set_state(TopPlayersSearchState.waiting_for_query, state_ttl=TOP_SEARCH_TIMEOUT)
+    await state.set_state(TopPlayersSearchState.waiting_for_query)
+    expires_at = (datetime.now() + TOP_SEARCH_TIMEOUT).timestamp()
+    await state.update_data(top_search_expires_at=expires_at)
     await call.message.answer(
         (
             "🔍 Отправьте Roblox ник или Telegram @username игрока.\n"
@@ -341,6 +349,17 @@ async def handle_top_player_search(message: types.Message, state: FSMContext):
     query = message.text.strip()
     if not query:
         return await message.answer("Введите ник игрока или напишите «Отмена».")
+
+    data = await state.get_data()
+    expires_at = data.get("top_search_expires_at")
+    now_ts = datetime.now().timestamp()
+    if not expires_at or expires_at <= now_ts:
+        await state.clear()
+        await message.answer(
+            "⏳ Поиск истёк. Нажмите «Топ игроков» и начните поиск заново.",
+            reply_markup=profile_menu(),
+        )
+        return
 
     if query.casefold() in TOP_SEARCH_CANCEL:
         await state.clear()

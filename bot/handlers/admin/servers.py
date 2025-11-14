@@ -159,7 +159,7 @@ async def _request_server_choice(
     await state.set_state(ServerManageState.waiting_for_server)
     await state.update_data(
         operation=operation,
-        available_ids={server.id for server in servers},
+        available_ids=[server.id for server in servers],
     )
 
     await message.answer(
@@ -276,7 +276,7 @@ async def server_select_handler(message: types.Message, state: FSMContext) -> No
 
     server_id = _parse_server_id(message.text or "")
     data = await state.get_data()
-    available_ids = data.get("available_ids") or set()
+    available_ids = set(data.get("available_ids") or [])
 
     if server_id is None:
         await message.answer("Введите числовой ID сервера:")
