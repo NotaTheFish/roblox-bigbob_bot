@@ -2,7 +2,7 @@
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-BAN_APPEAL_CALLBACK = "ban_appeal"
+BAN_APPEAL_CALLBACK = "appeal_ban"
 
 
 def ban_appeal_keyboard() -> InlineKeyboardMarkup:

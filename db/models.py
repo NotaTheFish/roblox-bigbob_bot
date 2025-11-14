@@ -59,6 +59,7 @@ class User(Base):
     referral_code = Column(String(64), unique=True, index=True)
     referred_at = Column(DateTime(timezone=True))
     ban_appeal_at = Column(DateTime(timezone=True))
+    ban_appeal_submitted = Column(Boolean, default=False, nullable=False, server_default="false")
     titles = Column(JSONB, nullable=False, server_default="[]")
     selected_title = Column(String(255))
     about_text = Column(Text)

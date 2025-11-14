@@ -85,7 +85,9 @@ async def start_cmd(message: types.Message, command: CommandStart):
 
         # Проверка блокировки
         if user.is_blocked:
-            reply_markup = ban_appeal_keyboard() if user.ban_appeal_at is None else None
+            reply_markup = (
+                ban_appeal_keyboard() if not user.ban_appeal_submitted else None
+            )
             return await message.answer(
                 BAN_NOTIFICATION_TEXT,
                 reply_markup=reply_markup,

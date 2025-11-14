@@ -220,6 +220,7 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
         if action == "block_user":
             user.is_blocked = True
             user.ban_appeal_at = None
+            user.ban_appeal_submitted = False
             await session.commit()
             try:
                 await call.bot.send_message(
@@ -235,6 +236,7 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
         if action == "unblock_user":
             user.is_blocked = False
             user.ban_appeal_at = None
+            user.ban_appeal_submitted = False
             await session.commit()
             try:
                 await call.bot.send_message(

@@ -2,6 +2,7 @@
 
 from .achievements import router as achievements_router
 from .balance import router as balance_router
+from .banned import router as banned_router
 from .menu import router as menu_router
 from .promo import router as promo_router
 from .promocode_use import router as promocode_use_router
@@ -16,6 +17,7 @@ routers = [
     menu_router,
     verify_router,
     support_router,
+    banned_router,
     promo_router,
     promocode_use_router,
     shop_router,

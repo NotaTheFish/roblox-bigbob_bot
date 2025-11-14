@@ -2,13 +2,15 @@ from contextlib import suppress
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
+from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message, TelegramObject
 from sqlalchemy import select
 
 from bot.db import async_session, User
-from bot.keyboards.ban_appeal import ban_appeal_keyboard
+from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK, ban_appeal_keyboard
 from bot.texts.block import BAN_NOTIFICATION_TEXT
+from bot.states.user_states import BanAppealState
 
 
 class BlockMiddleware(BaseMiddleware):
@@ -37,7 +39,12 @@ class BlockMiddleware(BaseMiddleware):
 
         # ❌ If blocked — send message and stop here
         if user and user.is_blocked:
-            reply_markup = ban_appeal_keyboard() if user.ban_appeal_at is None else None
+            if await self._is_ban_appeal_flow(event, data):
+                return await handler(event, data)
+
+            reply_markup = (
+                ban_appeal_keyboard() if not user.ban_appeal_submitted else None
+            )
 
             if isinstance(event, CallbackQuery):
                 bot = data.get("bot") or getattr(event, "bot", None)
@@ -91,3 +98,20 @@ class BlockMiddleware(BaseMiddleware):
                 BAN_NOTIFICATION_TEXT,
                 reply_markup=reply_markup,
             )
+
+    async def _is_ban_appeal_flow(
+        self,
+        event: TelegramObject,
+        data: Dict[str, Any],
+    ) -> bool:
+        if isinstance(event, CallbackQuery):
+            return event.data == BAN_APPEAL_CALLBACK
+
+        if isinstance(event, Message):
+            state: FSMContext | None = data.get("state")
+            if not state:
+                return False
+            current_state = await state.get_state()
+            return current_state == BanAppealState.waiting_for_message.state
+
+        return False
