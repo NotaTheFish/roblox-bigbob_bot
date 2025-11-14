@@ -19,6 +19,7 @@ if str(ROOT_DIR) not in sys.path:
 os.environ.setdefault("TELEGRAM_TOKEN", "test:token")
 os.environ.setdefault("ADMIN_LOGIN_PASSWORD", "DEFAULT")
 os.environ.setdefault("ROOT_ADMIN_ID", "0")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
 
 class MockBot:
@@ -197,6 +198,23 @@ class FakeAsyncSession:
 
     def add(self, obj):
         self.added.append(obj)
+
+    class _BeginContext:
+        def __init__(self, session: "FakeAsyncSession") -> None:
+            self._session = session
+
+        async def __aenter__(self):
+            return self._session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            if exc_type:
+                self._session.rolled_back = True
+            else:
+                self._session.committed = True
+            return False
+
+    def begin(self):
+        return self._BeginContext(self)
 
     async def delete(self, obj):
         self.deleted.append(obj)

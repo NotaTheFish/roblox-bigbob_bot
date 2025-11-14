@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from bot.handlers.user import promo
+from bot.handlers.user import promocode_use
 
 from tests.conftest import FakeAsyncSession, make_async_session_stub
 from bot.states.user_states import PromoInputState
@@ -14,14 +14,14 @@ from bot.states.user_states import PromoInputState
 @pytest.mark.anyio("asyncio")
 async def test_promocode_activation_from_text(monkeypatch, message_factory, mock_state):
     redeem_mock = AsyncMock(return_value=True)
-    monkeypatch.setattr(promo, "redeem_promocode", redeem_mock)
+    monkeypatch.setattr(promocode_use, "redeem_promocode", redeem_mock)
 
     message = message_factory(text="promo2024", user_id=42, username="hero", full_name="Hero User")
 
     await mock_state.set_state(PromoInputState.waiting_for_code.state)
     await mock_state.update_data(in_profile=True)
 
-    await promo.promo_from_message(message, mock_state)
+    await promocode_use.promo_from_message(message, mock_state)
 
     redeem_mock.assert_awaited_once()
     assert redeem_mock.await_args.args[1] == "promo2024"
@@ -33,7 +33,7 @@ async def test_promocode_activation_from_text(monkeypatch, message_factory, mock
 async def test_redeem_promocode_logs_notification_failure(
     monkeypatch, message_factory, caplog
 ):
-    monkeypatch.setattr(promo, "ROOT_ADMIN_ID", 5050)
+    monkeypatch.setattr(promocode_use, "ROOT_ADMIN_ID", 5050)
 
     promo_obj = SimpleNamespace(
         id=1,
@@ -48,9 +48,9 @@ async def test_redeem_promocode_logs_notification_failure(
     user_obj = SimpleNamespace(id=9, tg_id=88, balance=0)
 
     session = FakeAsyncSession(scalar_results=[promo_obj, user_obj, None])
-    monkeypatch.setattr(promo, "async_session", make_async_session_stub(session))
+    monkeypatch.setattr(promocode_use, "async_session", make_async_session_stub(session))
 
-    monkeypatch.setattr(promo, "check_achievements", AsyncMock())
+    monkeypatch.setattr(promocode_use, "check_achievements", AsyncMock())
 
     message = message_factory(user_id=88, username="hero", full_name="Hero User")
 
@@ -60,11 +60,14 @@ async def test_redeem_promocode_logs_notification_failure(
     message.bot.send_message = failing_send_message
 
     with caplog.at_level("ERROR"):
-        result = await promo.redeem_promocode(message, "FREE")
+        result = await promocode_use.redeem_promocode(message, "FREE")
 
     assert result is True
     assert message.replies
-    assert any("Промокод активирован" in text for text, _ in message.replies)
+    assert any(
+        f"🎉 Промокод {promo_obj.code} активирован" in text
+        for text, _ in message.replies
+    )
     assert user_obj.balance == 10
 
     records = [record for record in caplog.records if record.levelname == "ERROR"]
