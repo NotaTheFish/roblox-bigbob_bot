@@ -44,7 +44,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 await message.reply("❌ Такой промокод не существует")
                 return False
 
-            uses_count = promo.uses_count or 0
+            uses_count = promo.uses or 0
             max_uses = promo.max_uses or 0
             if max_uses > 0 and uses_count >= max_uses:
                 await message.reply("⚠️ Этот промокод больше недоступен")
@@ -71,29 +71,33 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 await message.reply("⚠️ Вы уже активировали этот промокод")
                 return False
 
-            promo_value = promo.value or 0
-            reward_amount = 0
-            reward_type = "balance"
+            reward_amount = promo.reward_amount or 0
+            reward_type = (promo.reward_type or "balance").lower()
             reward_text = "🎁 Промокод активирован."
-            if promo.type == "nuts":
-                reward_amount = int(promo_value)
+            
+if reward_type == "nuts":
+                reward_amount = int(reward_amount)
                 user.balance += reward_amount
                 reward_text = f"🥜 На баланс начислено {reward_amount} орешков."
-            elif promo.type == "discount":
-                reward_type = "discount"
+            elif reward_type == "discount":
+                raw_value = promo.value or reward_amount or 0
+                try:
+                    discount_value = float(raw_value)
+                except (TypeError, ValueError):
+                    discount_value = float(reward_amount or 0)
+
                 previous_discount = user.discount or 0
-                user.discount = promo_value
-                if previous_discount and previous_discount != promo_value:
+                user.discount = discount_value
+                if previous_discount and previous_discount != discount_value:
                     reward_text = (
-                        f"💸 Скидка {promo_value:g}% активирована (было {previous_discount:g}%)."
+                        f"💸 Скидка {discount_value:g}% активирована (было {previous_discount:g}%)."
                     )
                 else:
-                    reward_text = f"💸 Скидка {promo_value:g}% активирована."
+                    reward_text = f"💸 Скидка {discount_value:g}% активирована."
             else:
-                reward_type = promo.type
-                reward_text = f"🎁 Промокод типа {promo.type} активирован."
+                reward_text = f"🎁 Промокод типа {reward_type} активирован."
 
-            promo.uses_count = uses_count + 1
+            promo.uses = uses_count + 1
 
             redemption = PromocodeRedemption(
                 promocode_id=promo.id,
@@ -101,7 +105,10 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 telegram_id=user.tg_id,
                 reward_amount=reward_amount,
                 reward_type=reward_type,
-                metadata_json={"promo_value": promo.value},
+                metadata_json={
+                    "promo_value": promo.value,
+                    "promo_type": promo.promo_type,
+                },
             )
             session.add(redemption)
             await session.flush()

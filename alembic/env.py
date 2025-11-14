@@ -45,11 +45,22 @@ def run_migrations_offline() -> None:
 # -----------------------------------------------------------------------
 # ONLINE (нормальные миграции)
 # -----------------------------------------------------------------------
+def _build_connect_args(url: str) -> dict:
+    """Return connection arguments suitable for the provided database URL."""
+
+    if url.startswith("postgresql"):
+        sslmode = os.getenv("DATABASE_SSLMODE", "require")
+        return {"sslmode": sslmode}
+
+    return {}
+
+
 def run_migrations_online() -> None:
+    sync_url = get_sync_url()
     connectable = create_engine(
-        get_sync_url(),
+        sync_url,
         poolclass=pool.NullPool,
-        connect_args={"sslmode": "require"},
+        connect_args=_build_connect_args(sync_url),
     )
 
     with connectable.connect() as connection:

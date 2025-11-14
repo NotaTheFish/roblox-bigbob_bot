@@ -1,7 +1,7 @@
 """add_user_discount
 
 Revision ID: c33e9e016497
-Revises: 36b40edbd2df
+Revises: a1bb258f4246
 Create Date: 2025-01-07 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "c33e9e016497"
-down_revision: Union[str, Sequence[str], None] = "36b40edbd2df"
+down_revision: Union[str, Sequence[str], None] = "a1bb258f4246"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

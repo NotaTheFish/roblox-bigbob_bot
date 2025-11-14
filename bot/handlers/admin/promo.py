@@ -333,13 +333,14 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
     async with async_session() as session:
         promo = PromoCode(
             code=data["code_text"],
-            type=reward_type or "nuts",
-            value=float(reward_value),
+            promo_type="money",
+            reward_type=reward_type or "nuts",
+            reward_amount=int(reward_value) if reward_type == "nuts" else 0,
+            value=str(reward_value),
             max_uses=normalized_limit,
-            uses_count=0,
+            uses=0,
             expires_at=expires_at,
             active=True,
-            created_by=call.from_user.id if call.from_user else None,
         )
         session.add(promo)
         await session.commit()
@@ -347,11 +348,10 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
     await state.clear()
 
     type_label = "🥜 Орешки" if reward_type == "nuts" else "💸 Скидка"
-    value_label = (
-        f"{int(reward_value)} орешков"
-        if reward_type == "nuts"
-        else f"{reward_value:g}%"
-    )
+    if reward_type == "nuts":
+        value_label = f"{int(reward_value)} орешков"
+    else:
+        value_label = f"{float(reward_value):g}%"
     limit_label = "∞" if normalized_limit == 0 else str(normalized_limit)
     expiry_label = (
         "без ограничения"
@@ -373,18 +373,24 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
 
 # ✅ Список промокодов
 def _format_promo_reward(promo: PromoCode) -> str:
-    if promo.type == "nuts":
-        return f"🥜 {int(promo.value)}"
-    if promo.type == "discount":
-        return f"💸 {promo.value:g}%"
-    return str(promo.type)
+    reward_type = (promo.reward_type or "balance").lower()
+    if reward_type == "nuts":
+        return f"🥜 {int(promo.reward_amount)}"
+    if reward_type == "discount":
+        try:
+            discount_value = float(promo.value or promo.reward_amount or 0)
+        except (TypeError, ValueError):
+            discount_value = float(promo.reward_amount or 0)
+        return f"💸 {discount_value:g}%"
+    return str(promo.promo_type or reward_type)
 
 
 def _format_promo_usage(promo: PromoCode) -> str:
     limit = promo.max_uses
-    if limit in (None, 0):
-        return f"{promo.uses_count}/∞"
-    return f"{promo.uses_count}/{limit}"
+    uses = promo.uses or 0
+    if not limit or limit <= 0:
+        return f"{uses}/∞"
+    return f"{uses}/{limit}"
 
 
 async def _build_promo_list(

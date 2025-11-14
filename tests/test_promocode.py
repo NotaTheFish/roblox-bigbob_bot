@@ -40,9 +40,11 @@ async def test_redeem_promocode_logs_notification_failure(
         code="FREE",
         active=True,
         max_uses=0,
-        uses_count=0,
-        type="nuts",
-        value=10.0,
+        uses=0,
+        reward_type="nuts",
+        reward_amount=10,
+        value="10",
+        promo_type="money",
         expires_at=None,
     )
     user_obj = SimpleNamespace(id=9, tg_id=88, balance=0)
