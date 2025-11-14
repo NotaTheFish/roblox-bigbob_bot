@@ -75,7 +75,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             reward_type = (promo.reward_type or "balance").lower()
             reward_text = "🎁 Промокод активирован."
             
-if reward_type == "nuts":
+            if reward_type == "nuts":
                 reward_amount = int(reward_amount)
                 user.balance += reward_amount
                 reward_text = f"🥜 На баланс начислено {reward_amount} орешков."
