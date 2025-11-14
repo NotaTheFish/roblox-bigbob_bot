@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -17,11 +19,21 @@ from bot.db import (
 )
 from bot.handlers.user.shop import user_shop
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu
+from bot.keyboards.top_players import TOP_MENU_CALLBACK_PREFIX, top_players_keyboard
 from bot.services.profile_renderer import ProfileView, render_profile
 from bot.services.servers import get_ordered_servers, get_server_by_id
 from bot.services.stats import format_top_users, get_top_users
+from bot.services.user_search import (
+    SearchRenderOptions,
+    find_user_by_query,
+    render_search_profile,
+)
 from bot.services.user_titles import normalize_titles
-from bot.states.user_states import ProfileEditState, PromoInputState
+from bot.states.user_states import (
+    ProfileEditState,
+    PromoInputState,
+    TopPlayersSearchState,
+)
 from bot.utils.referrals import ensure_referral_code
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
@@ -29,6 +41,8 @@ from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 router = Router(name="user_menu")
 
 MAX_ABOUT_LENGTH = 500
+TOP_SEARCH_TIMEOUT = timedelta(minutes=3)
+TOP_SEARCH_CANCEL = {"отмена", "cancel", "назад"}
 
 
 def _profile_edit_keyboard() -> InlineKeyboardMarkup:
@@ -76,6 +90,7 @@ async def _set_profile_mode(state: FSMContext, active: bool) -> None:
             ProfileEditState.editing_about.state,
             ProfileEditState.choosing_title.state,
             ProfileEditState.choosing_achievement.state,
+            TopPlayersSearchState.waiting_for_query.state,
         }
         if current_state in profile_states:
             await state.clear()
@@ -271,8 +286,81 @@ async def profile_topup(message: types.Message, state: FSMContext):
 @router.message(F.text == "🏆 Топ игроков")
 async def profile_top(message: types.Message, state: FSMContext):
     await _set_profile_mode(state, True)
-    top_users = await get_top_users()
+    top_users = await get_top_users(limit=15)
     await message.answer(format_top_users(top_users))
+    await message.answer(
+        "🏆 Топ игроков — выберите действие:",
+        reply_markup=top_players_keyboard(),
+    )
+
+
+@router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:top15")
+async def profile_top_fifteen(call: types.CallbackQuery):
+    if not call.message:
+        return await call.answer()
+
+    top_users = await get_top_users(limit=15)
+    await call.message.answer(format_top_users(top_users))
+    await call.answer()
+
+
+@router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:search")
+async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
+    if not call.message or not call.from_user:
+        return await call.answer()
+
+    current_state = await state.get_state()
+    if current_state == TopPlayersSearchState.waiting_for_query.state:
+        return await call.answer("Мы уже ждём ник", show_alert=True)
+
+    await state.set_state(TopPlayersSearchState.waiting_for_query, state_ttl=TOP_SEARCH_TIMEOUT)
+    await call.message.answer(
+        (
+            "🔍 Отправьте Roblox ник или Telegram @username игрока.\n"
+            "Напишите «Отмена», чтобы выйти из поиска."
+        )
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:back")
+async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
+    if not call.message:
+        return await call.answer()
+
+    if await state.get_state() == TopPlayersSearchState.waiting_for_query.state:
+        await state.clear()
+
+    await _set_profile_mode(state, True)
+    await call.message.answer("↩ Главное меню профиля", reply_markup=profile_menu())
+    await call.answer()
+
+
+@router.message(StateFilter(TopPlayersSearchState.waiting_for_query), F.text)
+async def handle_top_player_search(message: types.Message, state: FSMContext):
+    query = message.text.strip()
+    if not query:
+        return await message.answer("Введите ник игрока или напишите «Отмена».")
+
+    if query.casefold() in TOP_SEARCH_CANCEL:
+        await state.clear()
+        await message.answer("Поиск отменён", reply_markup=profile_menu())
+        return
+
+    user = await find_user_by_query(query, include_blocked=False)
+    if not user:
+        return await message.answer("❌ Игрок не найден. Попробуйте другой запрос.")
+
+    profile_text = render_search_profile(
+        user,
+        SearchRenderOptions(
+            heading="🔎 <b>Игрок найден</b>",
+            include_private_fields=False,
+        ),
+    )
+
+    await message.answer(profile_text, parse_mode="HTML")
+    await state.clear()
 
 
 @router.message(F.text == "✏️ Редактировать профиль")
@@ -287,7 +375,7 @@ async def profile_edit(message: types.Message, state: FSMContext):
     if not exists:
         return await message.answer("❗ Сначала нажмите /start")
 
-    await _prompt_edit_menu(message, state, ✏️ Что хотите изменить?")
+    await _prompt_edit_menu(message, state, "✏️ Что хотите изменить?")
 
 
 @router.callback_query(F.data == "profile_edit:about")

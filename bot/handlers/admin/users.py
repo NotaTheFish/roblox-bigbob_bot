@@ -6,16 +6,18 @@ from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 
 from bot.db import Admin, User, async_session
 from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
-from bot.services.profile_renderer import ProfileView, render_profile
-from bot.services.user_titles import normalize_titles
+from bot.services.user_search import (
+    SearchRenderOptions,
+    find_user_by_query,
+    render_search_profile,
+)
 from bot.states.admin_states import (
     AdminUsersState,
     GiveMoneyState,
@@ -138,21 +140,7 @@ async def admin_search_user(message: types.Message):
             reply_markup=admin_users_menu_kb(),
         )
 
-    filters = []
-    if query.isdigit():
-        tg_id = int(query)
-        filters.append(User.tg_id == tg_id)
-
-    like_pattern = f"%{query}%"
-    filters.append(User.tg_username.ilike(like_pattern))
-    filters.append(User.username.ilike(like_pattern))
-
-    async with async_session() as session:
-        user = await session.scalar(
-            select(User)
-                .options(selectinload(User.selected_achievement))
-                .where(or_(*filters))
-        )
+    user = await find_user_by_query(query, include_blocked=True)
 
     if not user:
         return await message.reply(
@@ -160,23 +148,12 @@ async def admin_search_user(message: types.Message):
             reply_markup=admin_users_menu_kb(),
         )
 
-    titles = normalize_titles(user.titles)
-    profile_text = render_profile(
-        ProfileView(
+    profile_text = render_search_profile(
+        user,
+        SearchRenderOptions(
             heading="<b>👤 Пользователь найден</b>",
-            tg_username=f"@{user.tg_username}" if user.tg_username else "",
-            tg_id=user.tg_id,
-            roblox_username=user.username or "",
-            roblox_id=user.roblox_id or "",
-            balance=user.balance,
-            titles=titles,
-            selected_title=user.selected_title,
-            selected_achievement=(
-                user.selected_achievement.name if user.selected_achievement else None
-            ),
-            about_text=user.about_text,
-            created_at=user.created_at,
-        )
+            include_private_fields=True,
+        ),
     )
 
     await message.reply(
