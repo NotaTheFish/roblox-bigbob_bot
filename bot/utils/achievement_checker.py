@@ -11,14 +11,15 @@ async def check_achievements(user: User) -> None:
         if not db_user:
             return
 
-        owned = set(
-            await session.scalars(
-                select(UserAchievement.achievement_id).where(
-                    UserAchievement.tg_id == db_user.tg_id
-                )
-            ).all()
+        owned_result = await session.scalars(
+            select(UserAchievement.achievement_id).where(
+                UserAchievement.tg_id == db_user.tg_id
+            )
         )
-        all_achievements = await session.scalars(select(Achievement)).all()
+        owned = set(owned_result.all())
+
+        all_achievements_result = await session.scalars(select(Achievement))
+        all_achievements = all_achievements_result.all()
 
         granted = False
         for achievement in all_achievements:
