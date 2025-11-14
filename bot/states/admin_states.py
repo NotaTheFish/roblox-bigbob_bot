@@ -5,6 +5,11 @@ class GiveMoneyState(StatesGroup):
     waiting_for_amount = State()
 
 
+class RemoveMoneyState(StatesGroup):
+    waiting_for_amount = State()
+    waiting_for_reason = State()
+
+
 class AdminUsersState(StatesGroup):
     searching = State()
 

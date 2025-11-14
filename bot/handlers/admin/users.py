@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -11,11 +13,12 @@ from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
-from bot.states.admin_states import AdminUsersState, GiveMoneyState
+from bot.states.admin_states import AdminUsersState, GiveMoneyState, RemoveMoneyState
 from bot.utils.achievement_checker import check_achievements
 
 
 router = Router(name="admin_users")
+logger = logging.getLogger(__name__)
 
 
 # -------- Проверка админа --------
@@ -29,6 +32,9 @@ def user_card_kb(user_id, is_blocked):
     builder = InlineKeyboardBuilder()
     builder.button(
         text="➕ Выдать валюту", callback_data=f"give_money:{user_id}"
+    )
+    builder.button(
+        text="➖ Удержать валюту", callback_data=f"remove_money:{user_id}"
     )
     if is_blocked:
         builder.button(
@@ -65,7 +71,7 @@ async def _send_users_list(message: types.Message):
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
 
-@router.message(F.text == "👥 Пользователи")
+@router.message(~StateFilter(GiveMoneyState.waiting_for_amount), F.text == "👥 Пользователи")
 async def admin_users_entry(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
@@ -168,6 +174,7 @@ async def admin_search_user(message: types.Message):
 # -------- Управление пользователем: блок/разблок/выдача -------
 @router.callback_query(
     F.data.startswith("give_money")
+    | F.data.startswith("remove_money")
     | F.data.startswith("block_user")
     | F.data.startswith("unblock_user")
 )
@@ -186,8 +193,17 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
         await call.message.answer(
             f"Введите сумму для пользователя <code>{user_id}</code>:", parse_mode="HTML"
         )
-        call.bot.data["give_money_target"] = user_id
+        await state.update_data(target_user_id=user_id)
         await state.set_state(GiveMoneyState.waiting_for_amount)
+        return
+
+    if action == "remove_money":
+        await call.message.answer(
+            f"Введите сумму удержания для пользователя <code>{user_id}</code>:",
+            parse_mode="HTML",
+        )
+        await state.update_data(target_user_id=user_id)
+        await state.set_state(RemoveMoneyState.waiting_for_amount)
         return
 
     # Блокировка и разблокировка
@@ -228,7 +244,8 @@ async def process_money_amount(message: types.Message, state: FSMContext):
     except ValueError:
         return await message.reply("❌ Нужно число")
 
-    user_id = message.bot.data.get("give_money_target")
+    data = await state.get_data()
+    user_id = data.get("target_user_id")
     if not user_id:
         await state.clear()
         return await message.reply("Ошибка: ID пользователя потерян")
@@ -254,5 +271,113 @@ async def process_money_amount(message: types.Message, state: FSMContext):
         )
     except Exception:
         pass
+
+    if "target_user_id" in data:
+        data.pop("target_user_id")
+        await state.set_data(data)
+
+    await state.clear()
+
+
+@router.message(StateFilter(RemoveMoneyState.waiting_for_amount))
+async def process_remove_amount(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    if not await is_admin(message.from_user.id):
+        return await message.reply("⛔ Нет доступа")
+
+    try:
+        amount = int(message.text)
+        if amount <= 0:
+            return await message.reply("❌ Введите сумму больше 0")
+    except ValueError:
+        return await message.reply("❌ Нужно число")
+
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    if not target_user_id:
+        await state.clear()
+        return await message.reply("Ошибка: ID пользователя потерян")
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == target_user_id))
+        if not user:
+            await state.clear()
+            return await message.reply("⛔ Пользователь не найден")
+
+        if user.balance - amount < 0:
+            return await message.reply(
+                "❌ Нельзя удержать больше, чем есть на балансе пользователя"
+            )
+
+    await state.update_data(remove_amount=amount)
+    await state.set_state(RemoveMoneyState.waiting_for_reason)
+    await message.reply("Введите причину удержания:")
+
+
+@router.message(StateFilter(RemoveMoneyState.waiting_for_reason))
+async def process_remove_reason(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    if not await is_admin(message.from_user.id):
+        return await message.reply("⛔ Нет доступа")
+
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    remove_amount = data.get("remove_amount")
+    if not target_user_id or not remove_amount:
+        await state.clear()
+        return await message.reply("Ошибка: данные удержания потеряны")
+
+    reason = message.text.strip()
+    if not reason:
+        return await message.reply("❌ Причина не может быть пустой")
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == target_user_id))
+        if not user:
+            await state.clear()
+            return await message.reply("⛔ Пользователь не найден")
+
+        if user.balance - remove_amount < 0:
+            await state.clear()
+            return await message.reply(
+                "❌ Баланс пользователя изменился, удержание невозможно"
+            )
+
+        user.balance -= remove_amount
+        await session.commit()
+
+    logger.info(
+        "Admin %s removed %s coins from user %s for reason: %s",
+        message.from_user.id,
+        remove_amount,
+        target_user_id,
+        reason,
+    )
+
+    try:
+        await message.bot.send_message(
+            target_user_id,
+            (
+                "⚠️ С вашего баланса удержано "
+                f"<b>{remove_amount}</b> монет.\nПричина: {reason}"
+            ),
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.warning("Не удалось отправить сообщение пользователю %s", target_user_id)
+
+    await message.reply(
+        (
+            f"✅ Удержано <b>{remove_amount}</b> монет у пользователя "
+            f"<code>{target_user_id}</code>.\nПричина: {reason}"
+        ),
+        parse_mode="HTML",
+    )
 
     await state.clear()
