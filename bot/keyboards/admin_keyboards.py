@@ -1,4 +1,5 @@
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 def admin_main_menu_kb() -> ReplyKeyboardMarkup:
@@ -20,20 +21,32 @@ def admin_users_menu_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def admin_promos_menu_kb() -> ReplyKeyboardMarkup:
-    buttons = [
-        [KeyboardButton(text="➕ Создать промокод"), KeyboardButton(text="📄 Список промокодов")],
-        [KeyboardButton(text="↩️ Назад")],
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+def promo_management_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Создать", callback_data="promo:menu:create")
+    builder.button(text="🗑 Удалить", callback_data="promo:menu:delete")
+    builder.button(text="📄 Все промокоды", callback_data="promo:menu:list")
+    builder.button(text="✖️ Отмена", callback_data="promo:cancel")
+    builder.adjust(2, 2)
+    return builder.as_markup()
 
 
-def promo_reward_type_kb() -> ReplyKeyboardMarkup:
-    buttons = [
-        [KeyboardButton(text="💰 Валюта"), KeyboardButton(text="🎁 Roblox предмет")],
-        [KeyboardButton(text="↩️ Назад")],
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+def promo_reward_type_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💰 Валюта", callback_data="promo:create:type:money")
+    builder.button(text="🎁 Roblox предмет", callback_data="promo:create:type:item")
+    builder.button(text="➡️ Далее", callback_data="promo:create:next:reward_type")
+    builder.button(text="✖️ Отмена", callback_data="promo:cancel")
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def promo_step_navigation_kb(next_callback: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➡️ Далее", callback_data=next_callback)
+    builder.button(text="✖️ Отмена", callback_data="promo:cancel")
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 def admin_shop_menu_kb() -> ReplyKeyboardMarkup:
