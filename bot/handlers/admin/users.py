@@ -13,6 +13,7 @@ from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
+from bot.keyboards.ban_appeal import ban_appeal_keyboard
 from bot.services.user_search import (
     SearchRenderOptions,
     find_user_by_query,
@@ -25,6 +26,7 @@ from bot.states.admin_states import (
     GiveTitleState,
     RemoveMoneyState,
 )
+from bot.texts.block import BAN_NOTIFICATION_TEXT, UNBLOCK_NOTIFICATION_TEXT
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -217,15 +219,30 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
 
         if action == "block_user":
             user.is_blocked = True
+            user.ban_appeal_at = None
             await session.commit()
-            await call.bot.send_message(user_id, "⛔ Ваш доступ к боту заблокирован.")
+            try:
+                await call.bot.send_message(
+                    user_id,
+                    BAN_NOTIFICATION_TEXT,
+                    reply_markup=ban_appeal_keyboard(),
+                )
+            except Exception:  # pragma: no cover - ignore delivery errors
+                logger.debug("Failed to notify user %s about block", user_id)
             await call.message.edit_text("✅ Пользователь заблокирован")
             return
 
         if action == "unblock_user":
             user.is_blocked = False
+            user.ban_appeal_at = None
             await session.commit()
-            await call.bot.send_message(user_id, "✅ Ваш доступ восстановлен.")
+            try:
+                await call.bot.send_message(
+                    user_id,
+                    UNBLOCK_NOTIFICATION_TEXT,
+                )
+            except Exception:  # pragma: no cover - ignore delivery errors
+                logger.debug("Failed to notify user %s about unblock", user_id)
             await call.message.edit_text("✅ Пользователь разблокирован")
             return
 

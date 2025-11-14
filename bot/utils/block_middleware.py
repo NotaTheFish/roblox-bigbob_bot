@@ -1,10 +1,14 @@
+from contextlib import suppress
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message, TelegramObject
 from sqlalchemy import select
 
 from bot.db import async_session, User
+from bot.keyboards.ban_appeal import ban_appeal_keyboard
+from bot.texts.block import BAN_NOTIFICATION_TEXT
 
 
 class BlockMiddleware(BaseMiddleware):
@@ -33,15 +37,57 @@ class BlockMiddleware(BaseMiddleware):
 
         # ❌ If blocked — send message and stop here
         if user and user.is_blocked:
-            try:
-                if isinstance(event, CallbackQuery):
-                    await event.answer("⛔ Вы заблокированы", show_alert=True)
-                elif isinstance(event, Message):
-                    await event.answer("⛔ Вы заблокированы и не можете пользоваться ботом.")
-            except Exception:
-                pass
+            reply_markup = ban_appeal_keyboard() if user.ban_appeal_at is None else None
+
+            if isinstance(event, CallbackQuery):
+                bot = data.get("bot") or getattr(event, "bot", None)
+                await self._handle_blocked_callback(event, reply_markup, bot)
+            elif isinstance(event, Message):
+                await self._handle_blocked_message(event, reply_markup)
 
             return  # ⬅️ ключевой момент — просто завершаем middleware
 
         # ✅ Continue processing
         return await handler(event, data)
+
+    async def _handle_blocked_callback(
+        self,
+        event: CallbackQuery,
+        reply_markup,
+        bot,
+    ) -> None:
+        if event.message:
+            try:
+                await event.message.edit_text(
+                    BAN_NOTIFICATION_TEXT,
+                    reply_markup=reply_markup,
+                )
+            except TelegramBadRequest:
+                with suppress(Exception):
+                    await event.message.answer(
+                        BAN_NOTIFICATION_TEXT,
+                        reply_markup=reply_markup,
+                    )
+            except Exception:
+                with suppress(Exception):
+                    await event.message.answer(
+                        BAN_NOTIFICATION_TEXT,
+                        reply_markup=reply_markup,
+                    )
+        elif bot and event.from_user:
+            with suppress(Exception):
+                await bot.send_message(
+                    event.from_user.id,
+                    BAN_NOTIFICATION_TEXT,
+                    reply_markup=reply_markup,
+                )
+
+        with suppress(Exception):
+            await event.answer()
+
+    async def _handle_blocked_message(self, event: Message, reply_markup) -> None:
+        with suppress(Exception):
+            await event.answer(
+                BAN_NOTIFICATION_TEXT,
+                reply_markup=reply_markup,
+            )

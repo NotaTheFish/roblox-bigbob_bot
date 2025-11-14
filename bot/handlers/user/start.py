@@ -4,8 +4,10 @@ from aiogram.filters.command import CommandStart as CommandStartFilter
 from sqlalchemy import select
 
 from bot.db import Admin, LogEntry, User, async_session
+from bot.keyboards.ban_appeal import ban_appeal_keyboard
 from bot.keyboards.verify_kb import verify_button
 from bot.keyboards.main_menu import main_menu
+from bot.texts.block import BAN_NOTIFICATION_TEXT
 from bot.utils.referrals import attach_referral, ensure_referral_code, find_referrer_by_code
 
 router = Router(name="user_start")
@@ -83,7 +85,11 @@ async def start_cmd(message: types.Message, command: CommandStart):
 
         # Проверка блокировки
         if user.is_blocked:
-            return await message.answer("🚫 Вы заблокированы администратором.")
+            reply_markup = ban_appeal_keyboard() if user.ban_appeal_at is None else None
+            return await message.answer(
+                BAN_NOTIFICATION_TEXT,
+                reply_markup=reply_markup,
+            )
 
         # Проверка Roblox верификации
         if not user.verified:

@@ -58,6 +58,7 @@ class User(Base):
     level = Column(Integer, default=1, nullable=False)
     referral_code = Column(String(64), unique=True, index=True)
     referred_at = Column(DateTime(timezone=True))
+    ban_appeal_at = Column(DateTime(timezone=True))
     titles = Column(JSONB, nullable=False, server_default="[]")
     selected_title = Column(String(255))
     about_text = Column(Text)
