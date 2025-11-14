@@ -348,6 +348,21 @@ async def promo_finalize(call: types.CallbackQuery, state: FSMContext):
 
 
 # ✅ Список промокодов
+def _format_promo_reward(promo: PromoCode) -> str:
+    if promo.type == "nuts":
+        return f"🥜 {int(promo.value)}"
+    if promo.type == "discount":
+        return f"💸 {promo.value:g}%"
+    return str(promo.type)
+
+
+def _format_promo_usage(promo: PromoCode) -> str:
+    limit = promo.max_uses
+    if limit in (None, 0):
+        return f"{promo.uses_count}/∞"
+    return f"{promo.uses_count}/{limit}"
+
+
 async def _build_promo_list(
     with_delete_buttons: bool = True,
 ) -> tuple[str | None, types.InlineKeyboardMarkup | None]:
@@ -361,18 +376,8 @@ async def _build_promo_list(
     builder = InlineKeyboardBuilder() if with_delete_buttons else None
 
     for promo in promos:
-        limit = promo.max_uses
-        usage_info = (
-            f"{promo.uses_count}/∞"
-            if limit in (None, 0)
-            else f"{promo.uses_count}/{limit}"
-        )
-        if promo.type == "nuts":
-            reward_info = f"🥜 {int(promo.value)}"
-        elif promo.type == "discount":
-            reward_info = f"💸 {promo.value:g}%"
-        else:
-            reward_info = promo.type
+        usage_info = _format_promo_usage(promo)
+        reward_info = _format_promo_reward(promo)
         text += f"• <code>{promo.code}</code> — {reward_info} ({usage_info})\n"
         if builder is not None:
             builder.button(
@@ -381,6 +386,23 @@ async def _build_promo_list(
 
     reply_markup = builder.as_markup() if builder and builder.export() else None
     return text, reply_markup
+
+
+async def _render_promo_delete_list(message: types.Message):
+    text, reply_markup = await _build_promo_list(with_delete_buttons=True)
+
+    if text:
+        await message.edit_text(
+            text + "\nНажмите на промокод ниже, чтобы удалить его.",
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+    else:
+        await message.edit_text("📦 Промокодов нет.")
+        await message.answer(
+            "Выберите следующее действие:",
+            reply_markup=promo_management_menu_kb(),
+        )
 
 
 @router.callback_query(F.data == "promo:menu:list")
@@ -431,8 +453,8 @@ async def promo_delete_menu(call: types.CallbackQuery):
 
 
 # ✅ Удаление промокода
-@router.callback_query(F.data.startswith("promo_del"))
-async def promo_delete(call: types.CallbackQuery):
+@router.callback_query(F.data.startswith("promo_del:"))
+async def promo_delete_prompt(call: types.CallbackQuery):
     if not await _ensure_admin_callback(call):
         return
 
@@ -440,23 +462,65 @@ async def promo_delete(call: types.CallbackQuery):
 
     async with async_session() as session:
         promo = await session.get(PromoCode, promo_id)
+
+    if not promo:
+        await call.answer("Промокод не найден", show_alert=True)
+        await _render_promo_delete_list(call.message)
+        return
+
+    usage_info = _format_promo_usage(promo)
+    reward_info = _format_promo_reward(promo)
+    text = (
+        "❓ Подтвердите удаление промокода:\n\n"
+        f"• Код: <code>{promo.code}</code>\n"
+        f"• Награда: {reward_info}\n"
+        f"• Использований: {usage_info}\n"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Да",
+        callback_data=f"promo_del_confirm:{promo_id}",
+    )
+    builder.button(
+        text="Нет",
+        callback_data=f"promo_del_cancel:{promo_id}",
+    )
+    builder.adjust(2)
+
+    await call.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=builder.as_markup(),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("promo_del_confirm:"))
+async def promo_delete_confirm(call: types.CallbackQuery):
+    if not await _ensure_admin_callback(call):
+        return
+
+    promo_id = int(call.data.split(":")[1])
+
+    deleted = False
+    async with async_session() as session:
+        promo = await session.get(PromoCode, promo_id)
         if promo:
             await session.delete(promo)
             await session.commit()
+            deleted = True
 
-    text, reply_markup = await _build_promo_list(with_delete_buttons=True)
+    await _render_promo_delete_list(call.message)
 
-    if text:
-        await call.message.edit_text(
-            text + "\nНажмите на промокод ниже, чтобы удалить его.",
-            parse_mode="HTML",
-            reply_markup=reply_markup,
-        )
-    else:
-        await call.message.edit_text("📦 Промокодов нет.")
-        await call.message.answer(
-            "Выберите следующее действие:",
-            reply_markup=promo_management_menu_kb(),
-        )
+    status_message = "✅ Удалено" if deleted else "Промокод не найден"
+    await call.answer(status_message)
 
-    await call.answer("✅ Удалено")
+
+@router.callback_query(F.data.startswith("promo_del_cancel:"))
+async def promo_delete_cancel(call: types.CallbackQuery):
+    if not await _ensure_admin_callback(call):
+        return
+
+    await _render_promo_delete_list(call.message)
+    await call.answer("Отменено")
