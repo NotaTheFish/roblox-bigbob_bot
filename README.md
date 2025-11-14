@@ -37,15 +37,24 @@ Production-ready Telegram bot for Roblox with Render deploy.
 
 
 
-3. Apply the database migrations (set `DATABASE_URL`, `DATABASE_URL_SYNC`, or `DB_URL`):
+3. Apply the database migrations. Set `DATABASE_URL`, `DATABASE_URL_SYNC`, or
+   `DB_URL` to your PostgreSQL connection string **including**
+   `?sslmode=require` when connecting to managed hosts such as Render/Railway,
+   then run Alembic. For example:
 
+   * **Windows PowerShell**
 
+     ```powershell
+     $env:DATABASE_URL = "postgresql+asyncpg://postgres:<PASSWORD>@<HOST>:<PORT>/railway?sslmode=require"
+     alembic upgrade head
+     ```
 
-&nbsp;  ```bash
+   * **macOS / Linux shell**
 
-&nbsp;  alembic upgrade head
-
-&nbsp;  ```
+     ```bash
+     export DATABASE_URL="postgresql+asyncpg://postgres:<PASSWORD>@<HOST>:<PORT>/railway?sslmode=require"
+     alembic upgrade head
+     ```
 
 
 
