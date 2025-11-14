@@ -37,7 +37,7 @@ Production-ready Telegram bot for Roblox with Render deploy.
 
 
 
-3. Apply the database migrations (requires `DB_URL` or `DATABASE_URL` to be set):
+3. Apply the database migrations (set `DATABASE_URL`, `DATABASE_URL_SYNC`, or `DB_URL`):
 
 
 

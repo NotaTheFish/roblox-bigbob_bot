@@ -1,5 +1,6 @@
 import sys
 import os
+from typing import Tuple
 from logging.config import fileConfig
 
 from alembic import context
@@ -21,11 +22,38 @@ from bot.db import Base
 target_metadata = Base.metadata
 
 # --- выставляем URL для Alembic ---
-database_url = os.getenv("DATABASE_URL")
-if not database_url:
-    raise RuntimeError("DATABASE_URL not found")
+def _get_database_url() -> Tuple[str, str]:
+    """Return the first available DB URL and the env var it came from."""
 
-sync_database_url = make_url(database_url).set(drivername="postgresql+psycopg2")
+    candidates = ("DATABASE_URL_SYNC", "DATABASE_URL", "DB_URL")
+    for env_name in candidates:
+        value = os.getenv(env_name)
+        if value:
+            return value, env_name
+
+    raise RuntimeError(
+        "Database URL not found. Set DATABASE_URL, DATABASE_URL_SYNC or DB_URL before "
+        "running Alembic."
+    )
+
+
+database_url, _ = _get_database_url()
+url = make_url(database_url)
+
+# Alembic / psycopg2 всегда работают синхронно. Если пользователь
+# передал async-драйвер (postgresql+asyncpg) или опустил драйвер, меняем его.
+drivername = url.drivername
+if "+" in drivername:
+    dialect, driver = drivername.split("+", 1)
+else:
+    dialect, driver = drivername, None
+
+if dialect == "postgresql":
+    if driver in (None, "asyncpg"):
+        driver = "psycopg2"
+    drivername = f"{dialect}+{driver}"
+
+sync_database_url = url.set(drivername=drivername)
 config.set_main_option("sqlalchemy.url", str(sync_database_url))
 
 
