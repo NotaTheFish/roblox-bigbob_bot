@@ -2,7 +2,9 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class TopUpState(StatesGroup):
+    choosing_method = State()
     waiting_for_package = State()
+    waiting_for_ton_package = State()
 
 
 class SupportRequestState(StatesGroup):

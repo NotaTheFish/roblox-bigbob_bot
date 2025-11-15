@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -311,6 +312,7 @@ class Invoice(Base):
     __table_args__ = (
         UniqueConstraint("request_id", name="uq_invoices_request_id"),
         UniqueConstraint("provider_invoice_id", name="uq_invoices_provider_invoice_id"),
+        UniqueConstraint("external_invoice_id", name="uq_invoices_external_invoice_id"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -319,8 +321,15 @@ class Invoice(Base):
     telegram_id = Column(BigInteger, index=True, nullable=False)
     provider = Column(String(64), nullable=False)
     provider_invoice_id = Column(String(128), unique=True, nullable=False)
+    external_invoice_id = Column(String(128), unique=True, index=True)
+    payment_method = Column(
+        String(32), nullable=False, default="stars", server_default="stars"
+    )
     amount_rub = Column(Integer, nullable=False)
     amount_nuts = Column(Integer, nullable=False)
+    currency_code = Column(String(16))
+    currency_amount = Column(Numeric(20, 9))
+    ton_rate_at_invoice = Column(Numeric(20, 9))
     status = Column(String(32), default="pending", nullable=False, server_default="pending")
     ttl_metadata = Column(JSONB, nullable=False, server_default="{}")
     rate_snapshot = Column(JSONB, nullable=False, server_default="{}")

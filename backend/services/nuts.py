@@ -87,6 +87,7 @@ async def add_nuts(
     reason: str | None = None,
     invoice_id: int | None = None,
     metadata: Mapping[str, Any] | None = None,
+    rate_snapshot: Mapping[str, Any] | None = None,
     user: User | None = None,
     user_id: int | None = None,
     telegram_id: int | None = None,
@@ -113,6 +114,7 @@ async def add_nuts(
         status="completed",
         reason=reason,
         metadata_json=_metadata_with_source(source, invoice_id, metadata),
+        rate_snapshot=dict(rate_snapshot or {}),
         completed_at=datetime.now(tz=timezone.utc),
     )
     session.add(transaction)

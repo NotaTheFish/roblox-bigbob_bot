@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -36,6 +38,21 @@ class StarsWebhook(BaseModel):
     telegram_user_id: int = Field(..., description="Telegram user identifier")
     stars_amount: int = Field(..., description="Paid amount in Stars")
     payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WalletInvoicePayload(BaseModel):
+    external_invoice_id: str = Field(..., description="Client-provided invoice id")
+    status: str = Field(..., description="Wallet invoice status")
+    invoice_id: str | None = Field(default=None, description="Wallet invoice identifier")
+    amount: str | None = Field(default=None, description="Amount in currency units")
+    currency_code: str | None = Field(default=None, description="Currency code")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    raw_payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WalletWebhook(BaseModel):
+    event_type: str = Field(..., description="Wallet event type")
+    payload: WalletInvoicePayload
 
 
 async def get_db_session() -> AsyncSession:
@@ -161,3 +178,95 @@ async def telegram_stars_webhook(
         },
     )
     return response
+
+@router.post("/wallet/webhook", response_model=Dict[str, Any])
+async def wallet_pay_webhook(
+    payload: WalletWebhook,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    await validate_hmac_signature(request)
+
+    invoice = await session.scalar(
+        select(Invoice).where(Invoice.external_invoice_id == payload.payload.external_invoice_id)
+    )
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+
+    now = datetime.now(tz=timezone.utc)
+    response: Dict[str, Any] = {
+        "external_invoice_id": payload.payload.external_invoice_id,
+        "invoice_id": invoice.id,
+    }
+
+    if _expire_if_overdue(invoice, now):
+        response["status"] = "expired"
+        return response
+
+    normalized_status = payload.payload.status.lower()
+    response["status"] = normalized_status
+
+    metadata = dict(invoice.metadata_json or {})
+    metadata["wallet_payload"] = payload.model_dump()
+    invoice.metadata_json = metadata
+
+    if normalized_status == "paid":
+        if invoice.status != "paid":
+            invoice.status = "paid"
+            invoice.paid_at = now
+            await add_nuts(
+                session,
+                user_id=invoice.user_id,
+                amount=invoice.amount_nuts,
+                source="ton",
+                invoice_id=invoice.id,
+                metadata={
+                    "external_invoice_id": invoice.external_invoice_id,
+                    "currency_amount": str(invoice.currency_amount)
+                    if invoice.currency_amount
+                    else None,
+                    "currency_code": invoice.currency_code,
+                },
+                rate_snapshot=_compose_rate_snapshot(invoice),
+            )
+            logger.info(
+                "Wallet invoice paid",
+                extra={
+                    "invoice_id": invoice.id,
+                    "external_invoice_id": invoice.external_invoice_id,
+                },
+            )
+    elif normalized_status in {"cancelled", "canceled"}:
+        if invoice.status not in {"paid", "cancelled", "expired"}:
+            invoice.status = "cancelled"
+            invoice.cancelled_at = now
+            logger.info(
+                "Wallet invoice cancelled",
+                extra={
+                    "invoice_id": invoice.id,
+                    "external_invoice_id": invoice.external_invoice_id,
+                },
+            )
+    else:
+        response["status"] = "ignored"
+
+    return response
+
+
+def _expire_if_overdue(invoice: Invoice, now: datetime) -> bool:
+    if invoice.status != "pending":
+        return False
+    if invoice.expires_at and now > invoice.expires_at:
+        invoice.status = "expired"
+        invoice.cancelled_at = now
+        return True
+    return False
+
+
+def _compose_rate_snapshot(invoice: Invoice) -> Dict[str, Any]:
+    snapshot: Dict[str, Any] = {}
+    if invoice.rate_snapshot:
+        snapshot.update(invoice.rate_snapshot)
+    if invoice.ton_rate_at_invoice is not None:
+        snapshot.setdefault("ton_rate_at_invoice", str(Decimal(invoice.ton_rate_at_invoice)))
+    return snapshot

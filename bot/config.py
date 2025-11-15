@@ -1,5 +1,7 @@
 import os
+from decimal import Decimal, InvalidOperation
 from typing import List
+
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings  # <-- исправленный импорт
 
@@ -29,6 +31,14 @@ def get_env(name: str, default: str | None = None, *, required: bool = False) ->
     if required and (value is None or value == ""):
         raise RuntimeError(f"Environment variable {name} is required but not set")
     return value or ""
+
+
+def _get_decimal_env(name: str, default: str) -> Decimal:
+    raw_value = get_env(name, default)
+    try:
+        return Decimal(raw_value)
+    except InvalidOperation as exc:  # pragma: no cover - configuration error
+        raise RuntimeError(f"Environment variable {name} must be a decimal number") from exc
 
 
 # === SETTINGS (для Alembic и DB) =====================================
@@ -67,3 +77,10 @@ ADMIN_LOGIN_PASSWORD = get_env("ADMIN_LOGIN_PASSWORD", required=True)
 
 ADMINS = _parse_int_list(os.getenv("ADMINS"))
 ADMIN_ROOT_IDS = _parse_int_list(os.getenv("ADMIN_ROOT_IDS"))
+
+WALLET_PAY_API_BASE = get_env("WALLET_PAY_API_BASE", "https://pay.wallet.tg")
+WALLET_PAY_API_KEY = get_env("WALLET_PAY_API_KEY", "")
+WALLET_PAY_SHOP_ID = get_env("WALLET_PAY_SHOP_ID", "")
+
+TON_PAYMENT_MARKUP_PERCENT = _get_decimal_env("TON_PAYMENT_MARKUP_PERCENT", "0")
+TON_INVOICE_TTL_SECONDS = int(get_env("TON_INVOICE_TTL_SECONDS", "900"))
