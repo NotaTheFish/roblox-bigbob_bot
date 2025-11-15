@@ -225,6 +225,9 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
             user.is_blocked = True
             user.ban_appeal_at = None
             user.ban_appeal_submitted = False
+            user.appeal_open = True
+            user.appeal_submitted_at = None
+            user.ban_notified_at = None
             await session.commit()
             try:
                 await call.bot.send_message(
@@ -252,6 +255,9 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
             user.is_blocked = False
             user.ban_appeal_at = None
             user.ban_appeal_submitted = False
+            user.appeal_open = False
+            user.appeal_submitted_at = None
+            user.ban_notified_at = None
             await session.commit()
             try:
                 await call.bot.send_message(
