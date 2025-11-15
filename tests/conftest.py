@@ -27,9 +27,14 @@ class MockBot:
 
     def __init__(self) -> None:
         self.sent_messages: List[tuple[tuple, dict]] = []
+        self.invoice_links: List[tuple[tuple, dict]] = []
 
     async def send_message(self, *args, **kwargs):
         self.sent_messages.append((args, kwargs))
+
+    async def create_invoice_link(self, *args, **kwargs):
+        self.invoice_links.append((args, kwargs))
+        return f"https://t.me/pay/{len(self.invoice_links)}"
 
 
 class MockMessage:
