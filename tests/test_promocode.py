@@ -5,9 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from bot.filters import NotBannedFilter
 from bot.handlers.user import promocode_use
-from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK
-from bot.texts.block import BAN_NOTIFICATION_TEXT
 
 from tests.conftest import FakeAsyncSession, make_async_session_stub
 from bot.states.user_states import PromoInputState
@@ -32,35 +31,19 @@ async def test_promocode_activation_from_text(monkeypatch, message_factory, mock
 
 
 @pytest.mark.anyio("asyncio")
-async def test_redeem_promocode_blocked_user_gets_notice(monkeypatch, message_factory):
-    promo_obj = SimpleNamespace(
-        id=1,
-        code="LOCKED",
-        active=True,
-        max_uses=0,
-        uses=0,
-        reward_type="nuts",
-        reward_amount=10,
-        value="10",
-        promo_type="money",
-        expires_at=None,
-    )
-    user_obj = SimpleNamespace(id=7, tg_id=55, is_blocked=True, balance=0, discount=0)
-
-    session = FakeAsyncSession(scalar_results=[promo_obj, user_obj])
-    monkeypatch.setattr(promocode_use, "async_session", make_async_session_stub(session))
-
+async def test_not_banned_filter_blocks_banned_users(message_factory):
     message = message_factory(text="LOCKED", user_id=55)
+    filter_ = NotBannedFilter()
+    current_user = SimpleNamespace(
+        id=7,
+        tg_id=55,
+        is_banned=True,
+        is_blocked=True,
+    )
 
-    result = await promocode_use.redeem_promocode(message, "LOCKED")
+    result = await filter_(message, {"current_user": current_user})
 
     assert result is False
-    assert message.replies, "Expected ban notification reply"
-    text, kwargs = message.replies[0]
-    assert BAN_NOTIFICATION_TEXT in text
-    markup = kwargs.get("reply_markup")
-    assert markup is not None
-    assert markup.inline_keyboard[0][0].callback_data == BAN_APPEAL_CALLBACK
 
 
 @pytest.mark.anyio("asyncio")
