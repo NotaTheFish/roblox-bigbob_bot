@@ -1,5 +1,5 @@
 """Collection of shared bot filters."""
 
-from .not_banned import NotBannedFilter
-
-__all__ = ["NotBannedFilter"]
+# The project currently relies only on middleware checks for banning logic.
+# This module is kept as an extension point for future shared filters.
+__all__: list[str] = []

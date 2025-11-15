@@ -13,13 +13,11 @@ from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
-from bot.filters import NotBannedFilter
 from bot.states.user_states import PromoInputState
 from bot.utils.achievement_checker import check_achievements
 
 
 router = Router(name="user_promocode_use")
-router.message.filter(NotBannedFilter())
 logger = logging.getLogger(__name__)
 
 PROMOCODE_PATTERN = re.compile(r"^[A-Z0-9-]{4,32}$", re.IGNORECASE)

@@ -4,13 +4,11 @@ from aiogram import Router, types
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 
-from bot.filters import NotBannedFilter
 from bot.states.user_states import PromoInputState
 from .promocode_use import redeem_promocode
 
 
 router = Router(name="user_promo")
-router.message.filter(NotBannedFilter())
 
 
 @router.message(Command("promo"))

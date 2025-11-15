@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from bot.filters import NotBannedFilter
 from bot.handlers.user import promocode_use
 
 from tests.conftest import FakeAsyncSession, make_async_session_stub
@@ -28,22 +27,6 @@ async def test_promocode_activation_from_text(monkeypatch, message_factory, mock
     assert redeem_mock.await_args.args[1] == "promo2024"
     assert await mock_state.get_state() is None
     assert (await mock_state.get_data()).get("in_profile") is True
-
-
-@pytest.mark.anyio("asyncio")
-async def test_not_banned_filter_blocks_banned_users(message_factory):
-    message = message_factory(text="LOCKED", user_id=55)
-    filter_ = NotBannedFilter()
-    current_user = SimpleNamespace(
-        id=7,
-        tg_id=55,
-        is_banned=True,
-        is_blocked=True,
-    )
-
-    result = await filter_(message, {"current_user": current_user})
-
-    assert result is False
 
 
 @pytest.mark.anyio("asyncio")
