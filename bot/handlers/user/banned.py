@@ -19,7 +19,11 @@ router = Router(name="user_banned")
 
 
 @router.callback_query(F.data == BAN_APPEAL_CALLBACK)
-async def start_ban_appeal(call: types.CallbackQuery, state: FSMContext) -> None:
+async def start_ban_appeal(
+    call: types.CallbackQuery,
+    state: FSMContext,
+    ban_appeal_was_open: bool | None = None,
+) -> None:
     if not call.from_user:
         return
 
@@ -29,9 +33,17 @@ async def start_ban_appeal(call: types.CallbackQuery, state: FSMContext) -> None
             await call.answer("Это действие доступно только заблокированным пользователям.", show_alert=True)
             return
 
-        if user.ban_appeal_submitted:
-            await call.answer("Вы уже отправили обращение. Ожидайте ответа от администрации.", show_alert=True)
+        appeal_was_open = ban_appeal_was_open
+        if appeal_was_open is None:
+            appeal_was_open = bool(user.appeal_open)
+
+        if appeal_was_open or user.ban_appeal_submitted:
+            await call.answer("Апелляция уже подана", show_alert=True)
             return
+
+        if not user.appeal_open:
+            user.appeal_open = True
+            await session.commit()
 
     await state.set_state(BanAppealState.waiting_for_message)
     if call.message:
@@ -61,7 +73,7 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
 
         if user.ban_appeal_submitted:
             await state.clear()
-            await message.answer("Вы уже отправили обращение. Ожидайте ответа.")
+            await message.answer("Апелляция уже подана")
             return
 
         log_entry = LogEntry(
@@ -83,8 +95,11 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
             await session.scalars(select(Admin.telegram_id).where(Admin.telegram_id.is_not(None)))
         ).all()
 
+        now = datetime.now(timezone.utc)
         user.ban_appeal_submitted = True
-        user.ban_appeal_at = datetime.now(timezone.utc)
+        user.ban_appeal_at = now
+        user.appeal_open = False
+        user.appeal_submitted_at = now
 
         await session.commit()
 
@@ -117,6 +132,4 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
                 continue
 
     await state.clear()
-    await message.answer(
-        "✅ Ваше обращение отправлено администраторам. Мы свяжемся с вами после проверки.",
-    )
+    await message.answer("Апелляция отправлена")

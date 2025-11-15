@@ -40,6 +40,8 @@ class BannedMiddleware(BaseMiddleware):
                 return await handler(event, data)
 
             if callback and callback.data == BAN_APPEAL_CALLBACK:
+                if "ban_appeal_was_open" not in data:
+                    data["ban_appeal_was_open"] = bool(getattr(current_user, "appeal_open", False))
                 if not current_user.appeal_open and session:
                     current_user.appeal_open = True
                     await session.commit()
