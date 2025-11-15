@@ -21,32 +21,32 @@ class StarsPackage:
 
 STARS_PACKAGES: tuple[StarsPackage, ...] = (
     StarsPackage(
+        code="pack_50",
+        title="50 орехов",
+        product_id="nuts_pack_50",
+        stars_price=50,
+        nuts_amount=50,
+    ),
+    StarsPackage(
+        code="pack_100",
+        title="100 орехов",
+        product_id="nuts_pack_100",
+        stars_price=100,
+        nuts_amount=100,
+    ),
+    StarsPackage(
+        code="pack_250",
+        title="250 орехов",
+        product_id="nuts_pack_250",
+        stars_price=250,
+        nuts_amount=250,
+    ),
+    StarsPackage(
         code="pack_500",
         title="500 орехов",
         product_id="nuts_pack_500",
-        stars_price=50,
-        nuts_amount=500,
-    ),
-    StarsPackage(
-        code="pack_1200",
-        title="1 200 орехов",
-        product_id="nuts_pack_1200",
-        stars_price=120,
-        nuts_amount=1200,
-    ),
-    StarsPackage(
-        code="pack_2500",
-        title="2 500 орехов",
-        product_id="nuts_pack_2500",
-        stars_price=250,
-        nuts_amount=2500,
-    ),
-    StarsPackage(
-        code="pack_5500",
-        title="5 500 орехов",
-        product_id="nuts_pack_5500",
         stars_price=500,
-        nuts_amount=5500,
+        nuts_amount=500,
     ),
 )
 
