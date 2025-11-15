@@ -13,8 +13,10 @@ from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
+from bot.keyboards.ban_appeal import ban_appeal_keyboard
 from bot.states.user_states import PromoInputState
 from bot.utils.achievement_checker import check_achievements
+from bot.texts.block import BAN_NOTIFICATION_TEXT
 
 
 router = Router(name="user_promocode_use")
@@ -67,6 +69,13 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             )
             if not user:
                 await message.reply("❗ Ошибка: вы не зарегистрированы")
+                return False
+
+            if user.is_blocked:
+                await message.reply(
+                    BAN_NOTIFICATION_TEXT,
+                    reply_markup=ban_appeal_keyboard(),
+                )
                 return False
 
             already_used = await session.scalar(

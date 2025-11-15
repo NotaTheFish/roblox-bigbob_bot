@@ -4,7 +4,7 @@ from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove, TelegramObject
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove, TelegramObject, Update
 from sqlalchemy import select
 
 from bot.db import async_session, User
@@ -23,13 +23,8 @@ class BlockMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
-        user_id: int | None = None
-
-        # Check event type and get user ID
-        if isinstance(event, Message) and event.from_user:
-            user_id = event.from_user.id
-        elif isinstance(event, CallbackQuery) and event.from_user:
-            user_id = event.from_user.id
+        message, callback = self._extract_event_entities(event)
+        user_id = self._extract_user_id(message, callback)
 
         if user_id is None:
             return await handler(event, data)
@@ -42,16 +37,26 @@ class BlockMiddleware(BaseMiddleware):
 
         # ❌ If blocked — send message and stop here
         if user and user.is_blocked:
-            if await self._is_ban_appeal_flow(event, data):
+            ban_event = callback or message or event
+            if await self._is_ban_appeal_flow(ban_event, data):
                 return await handler(event, data)
 
             reply_markup = ban_appeal_keyboard()
 
-            if isinstance(event, CallbackQuery):
+            if callback:
+                bot = data.get("bot") or getattr(callback, "bot", None) or getattr(event, "bot", None)
+                await self._handle_blocked_callback(callback, reply_markup, bot)
+            elif message:
+                await self._handle_blocked_message(message, reply_markup)
+            else:
                 bot = data.get("bot") or getattr(event, "bot", None)
-                await self._handle_blocked_callback(event, reply_markup, bot)
-            elif isinstance(event, Message):
-                await self._handle_blocked_message(event, reply_markup)
+                if bot and user_id:
+                    with suppress(Exception):
+                        await bot.send_message(
+                            user_id,
+                            BAN_NOTIFICATION_TEXT,
+                            reply_markup=reply_markup,
+                        )
 
             return  # ⬅️ ключевой момент — просто завершаем middleware
 
@@ -127,9 +132,37 @@ class BlockMiddleware(BaseMiddleware):
                     reply_markup=ReplyKeyboardRemove(),
                 )
 
-    async def _is_ban_appeal_flow(
+    def _extract_event_entities(
         self,
         event: TelegramObject,
+    ) -> tuple[Message | None, CallbackQuery | None]:
+        if isinstance(event, CallbackQuery):
+            return event.message, event
+        if isinstance(event, Message):
+            return event, None
+        if isinstance(event, Update):
+            if event.callback_query:
+                return event.callback_query.message, event.callback_query
+            if event.message:
+                return event.message, None
+            if event.edited_message:
+                return event.edited_message, None
+        return None, None
+
+    def _extract_user_id(
+        self,
+        message: Message | None,
+        callback: CallbackQuery | None,
+    ) -> int | None:
+        if callback and callback.from_user:
+            return callback.from_user.id
+        if message and message.from_user:
+            return message.from_user.id
+        return None
+
+    async def _is_ban_appeal_flow(
+        self,
+        event: TelegramObject | None,
         data: Dict[str, Any],
     ) -> bool:
         if isinstance(event, CallbackQuery):
@@ -141,5 +174,11 @@ class BlockMiddleware(BaseMiddleware):
                 return False
             current_state = await state.get_state()
             return current_state == BanAppealState.waiting_for_message.state
+
+        if isinstance(event, Update):
+            if event.callback_query:
+                return await self._is_ban_appeal_flow(event.callback_query, data)
+            if event.message:
+                return await self._is_ban_appeal_flow(event.message, data)
 
         return False
