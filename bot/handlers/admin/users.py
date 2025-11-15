@@ -450,7 +450,7 @@ async def process_remove_reason(message: types.Message, state: FSMContext):
             return await message.reply(
                 "❌ Баланс пользователя изменился, удержание невозможно"
             )
-await subtract_nuts(
+        await subtract_nuts(
             session,
             user=user,
             amount=remove_amount,
