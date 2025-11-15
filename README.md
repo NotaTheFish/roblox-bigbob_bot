@@ -68,6 +68,22 @@ Production-ready Telegram bot for Roblox with Render deploy.
 
 &nbsp;  ```
 
+## Updating the TON→nuts exchange rate
+
+The Alembic migration `2d6da8b27afc_seed_ton_rate_setting` seeds the `settings`
+table with a `ton_to_nuts_rate` entry (default value `210.0`) so the Telegram bot
+always has a baseline rate for TON payments. To change the rate without touching
+the database directly:
+
+1. Make sure your account is approved as an admin (the same access level needed
+   for the rest of the bot backoffice).
+2. In Telegram, send `/tonrate <value>` (for example `/tonrate 215.5`) to the
+   bot. The command accepts either `.` or `,` as the decimal separator and will
+   reject non-positive numbers.
+3. The bot confirms the previous and the new rate. Subsequent calls to
+   `/topup` → “TON” will immediately reflect the updated exchange rate because
+   the `topup_choose_ton` handler reads it from the `settings` table every time.
+
 ## API testing with Postman
 
 Import the collection under [`docs/postman/collection.json`](docs/postman/collection.json)

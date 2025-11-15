@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -214,19 +214,30 @@ async def wallet_pay_webhook(
         if invoice.status != "paid":
             invoice.status = "paid"
             invoice.paid_at = now
+            paid_ton_amount, nuts_to_add_decimal = _calculate_wallet_nuts(invoice, payload)
+            metadata.update(
+                {
+                    "wallet_paid_ton_amount": str(paid_ton_amount),
+                    "wallet_nuts_calculated": str(nuts_to_add_decimal),
+                }
+            )
+            invoice.metadata_json = metadata
+            nuts_amount = int(nuts_to_add_decimal)
+            audit_metadata = {
+                "external_invoice_id": invoice.external_invoice_id,
+                "currency_amount": str(paid_ton_amount),
+                "currency_code": invoice.currency_code,
+                "wallet_paid_ton_amount": str(paid_ton_amount),
+                "wallet_nuts_calculated": str(nuts_to_add_decimal),
+            }
+            audit_metadata = {k: v for k, v in audit_metadata.items() if v is not None}
             await add_nuts(
                 session,
                 user_id=invoice.user_id,
-                amount=invoice.amount_nuts,
+                amount=nuts_amount,
                 source="ton",
                 invoice_id=invoice.id,
-                metadata={
-                    "external_invoice_id": invoice.external_invoice_id,
-                    "currency_amount": str(invoice.currency_amount)
-                    if invoice.currency_amount
-                    else None,
-                    "currency_code": invoice.currency_code,
-                },
+                metadata=audit_metadata,
                 rate_snapshot=_compose_rate_snapshot(invoice),
             )
             logger.info(
@@ -270,3 +281,42 @@ def _compose_rate_snapshot(invoice: Invoice) -> Dict[str, Any]:
     if invoice.ton_rate_at_invoice is not None:
         snapshot.setdefault("ton_rate_at_invoice", str(Decimal(invoice.ton_rate_at_invoice)))
     return snapshot
+
+
+def _calculate_wallet_nuts(
+    invoice: Invoice, payload: WalletWebhook
+) -> tuple[Decimal, Decimal]:
+    paid_ton = _resolve_paid_ton_amount(invoice, payload)
+    if invoice.ton_rate_at_invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TON rate missing on invoice",
+        )
+    ton_rate = Decimal(str(invoice.ton_rate_at_invoice))
+    nuts_to_add = paid_ton * ton_rate
+    if nuts_to_add % Decimal("1") != 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Computed nuts amount must be a whole number",
+        )
+    return paid_ton, nuts_to_add
+
+
+def _resolve_paid_ton_amount(invoice: Invoice, payload: WalletWebhook) -> Decimal:
+    if payload.payload.amount is not None:
+        raw_amount: Any = payload.payload.amount
+    elif invoice.currency_amount is not None:
+        raw_amount = str(invoice.currency_amount)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TON amount missing from payload and invoice",
+        )
+
+    try:
+        return Decimal(str(raw_amount))
+    except (InvalidOperation, TypeError) as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid TON amount provided",
+        ) from exc
