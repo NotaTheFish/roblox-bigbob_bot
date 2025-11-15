@@ -53,6 +53,7 @@ class User(Base):
     is_blocked = Column(Boolean, default=False, nullable=False)
     balance = Column(Integer, default=0, nullable=False)
     cash = Column(Integer, default=0, nullable=False)
+    nuts_balance = Column(Integer, default=0, nullable=False, server_default="0")
     discount = Column(Float, default=0, nullable=False, server_default="0")
     items = Column(Text)
     level = Column(Integer, default=1, nullable=False)
@@ -95,6 +96,8 @@ class User(Base):
     promocode_redemptions = relationship("PromocodeRedemption", back_populates="user")
     topup_requests = relationship("TopUpRequest", back_populates="user")
     logs = relationship("LogEntry", back_populates="user")
+    nuts_transactions = relationship("NutsTransaction", back_populates="user")
+    invoices = relationship("Invoice", back_populates="user")
 
 
 class Admin(Base):
@@ -274,6 +277,61 @@ class Payment(Base):
     topup_request = relationship("TopUpRequest", back_populates="payment", uselist=False)
     webhook_events = relationship("PaymentWebhookEvent", back_populates="payment")
     referral_rewards = relationship("ReferralReward", back_populates="payment")
+
+
+class NutsTransaction(Base):
+    __tablename__ = "nuts_transactions"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_nuts_transactions_request_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    request_id = Column(String(64), unique=True, nullable=False, default=_generate_request_id)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    telegram_id = Column(BigInteger, index=True, nullable=False)
+    amount = Column(Integer, nullable=False)
+    transaction_type = Column(
+        String(32),
+        nullable=False,
+        default="credit",
+        server_default="credit",
+    )
+    status = Column(String(32), default="pending", nullable=False, server_default="pending")
+    reason = Column(String(255))
+    metadata_json = Column("metadata", JSONB)
+    rate_snapshot = Column(JSONB, nullable=False, server_default="{}")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True))
+
+    user = relationship("User", back_populates="nuts_transactions")
+
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_invoices_request_id"),
+        UniqueConstraint("provider_invoice_id", name="uq_invoices_provider_invoice_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    request_id = Column(String(64), unique=True, nullable=False, default=_generate_request_id)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    telegram_id = Column(BigInteger, index=True, nullable=False)
+    provider = Column(String(64), nullable=False)
+    provider_invoice_id = Column(String(128), unique=True, nullable=False)
+    amount_rub = Column(Integer, nullable=False)
+    amount_nuts = Column(Integer, nullable=False)
+    status = Column(String(32), default="pending", nullable=False, server_default="pending")
+    ttl_metadata = Column(JSONB, nullable=False, server_default="{}")
+    rate_snapshot = Column(JSONB, nullable=False, server_default="{}")
+    metadata_json = Column("metadata", JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    expires_at = Column(DateTime(timezone=True))
+    paid_at = Column(DateTime(timezone=True))
+    cancelled_at = Column(DateTime(timezone=True))
+
+    user = relationship("User", back_populates="invoices")
 
 
 class PaymentWebhookEvent(Base):
@@ -456,3 +514,15 @@ class IdempotencyKey(Base):
     response_body = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(255), unique=True, nullable=False)
+    value = Column(JSONB, nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
