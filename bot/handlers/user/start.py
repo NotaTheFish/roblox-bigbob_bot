@@ -92,9 +92,7 @@ async def start_cmd(message: types.Message, command: CommandStart):
                 KEYBOARD_REMOVE_NOTIFICATION_TEXT,
                 reply_markup=types.ReplyKeyboardRemove(),
             )
-            reply_markup = (
-                ban_appeal_keyboard() if not user.ban_appeal_submitted else None
-            )
+            reply_markup = ban_appeal_keyboard()
             return await message.answer(
                 BAN_NOTIFICATION_TEXT,
                 reply_markup=reply_markup,

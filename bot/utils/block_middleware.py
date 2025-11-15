@@ -45,9 +45,7 @@ class BlockMiddleware(BaseMiddleware):
             if await self._is_ban_appeal_flow(event, data):
                 return await handler(event, data)
 
-            reply_markup = (
-                ban_appeal_keyboard() if not user.ban_appeal_submitted else None
-            )
+            reply_markup = ban_appeal_keyboard()
 
             if isinstance(event, CallbackQuery):
                 bot = data.get("bot") or getattr(event, "bot", None)
