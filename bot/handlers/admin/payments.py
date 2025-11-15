@@ -14,6 +14,7 @@ from bot.db import (
     User,
     async_session,
 )
+from backend.services.nuts import add_nuts
 from bot.utils.achievement_checker import check_achievements
 from bot.utils.helpers import get_admin_telegram_ids
 
@@ -190,7 +191,14 @@ async def approve_topup(call: types.CallbackQuery) -> None:
         await session.flush()
 
         # Update balance
-        user.balance += request.amount
+        await add_nuts(
+            session,
+            user=user,
+            amount=request.amount,
+            source="admin_topup",
+            reason="Подтверждение пополнения",
+            metadata={"topup_request_id": request.id},
+        )
         request.status = "approved"
         request.payment_id = payment.id
 

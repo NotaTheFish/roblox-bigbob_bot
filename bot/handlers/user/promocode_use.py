@@ -15,6 +15,7 @@ from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
 from bot.states.user_states import PromoInputState
 from bot.utils.achievement_checker import check_achievements
+from backend.services.nuts import add_nuts
 
 
 router = Router(name="user_promocode_use")
@@ -86,7 +87,14 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             
             if reward_type == "nuts":
                 reward_amount = int(reward_amount)
-                user.balance += reward_amount
+                await add_nuts(
+                    session,
+                    user=user,
+                    amount=reward_amount,
+                    source="promocode",
+                    reason=f"Промокод {promo.code}",
+                    metadata={"promo_id": promo.id},
+                )
                 reward_text = f"🥜 На баланс начислено {reward_amount} орешков."
             elif reward_type == "discount":
                 raw_value = promo.value or reward_amount or 0

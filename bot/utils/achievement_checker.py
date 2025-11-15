@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from bot.db import Achievement, User, UserAchievement, async_session
+from backend.services.nuts import add_nuts
 
 
 async def check_achievements(user: User) -> None:
@@ -35,11 +36,18 @@ async def check_achievements(user: User) -> None:
                         achievement_id=achievement.id,
                     )
                 )
-                db_user.balance += achievement.reward
+                await add_nuts(
+                    session,
+                    user=db_user,
+                    amount=achievement.reward,
+                    source="achievement",
+                    reason=achievement.name,
+                    metadata={"achievement_id": achievement.id},
+                )
                 granted = True
 
             # Первый донат
-            elif achievement.name == "Первый донат" and db_user.balance >= 100:
+            elif achievement.name == "Первый донат" and (db_user.nuts_balance or 0) >= 100:
                 session.add(
                     UserAchievement(
                         tg_id=db_user.tg_id,
@@ -47,11 +55,18 @@ async def check_achievements(user: User) -> None:
                         achievement_id=achievement.id,
                     )
                 )
-                db_user.balance += achievement.reward
+                await add_nuts(
+                    session,
+                    user=db_user,
+                    amount=achievement.reward,
+                    source="achievement",
+                    reason=achievement.name,
+                    metadata={"achievement_id": achievement.id},
+                )
                 granted = True
 
             # Магнат
-            elif achievement.name == "Магнат" and db_user.balance >= 10000:
+            elif achievement.name == "Магнат" and (db_user.nuts_balance or 0) >= 10000:
                 session.add(
                     UserAchievement(
                         tg_id=db_user.tg_id,
@@ -59,7 +74,14 @@ async def check_achievements(user: User) -> None:
                         achievement_id=achievement.id,
                     )
                 )
-                db_user.balance += achievement.reward
+                await add_nuts(
+                    session,
+                    user=db_user,
+                    amount=achievement.reward,
+                    source="achievement",
+                    reason=achievement.name,
+                    metadata={"achievement_id": achievement.id},
+                )
                 granted = True
 
         if granted:

@@ -14,8 +14,8 @@ from tests.conftest import FakeAsyncSession, make_async_session_stub
 @pytest.mark.anyio("asyncio")
 async def test_get_top_users_returns_entries(monkeypatch):
     rows = [
-        SimpleNamespace(id=1, username="Alice", tg_username="alice", balance=300),
-        SimpleNamespace(id=2, username=None, tg_username="bob", balance=200),
+        SimpleNamespace(id=1, username="Alice", tg_username="alice", nuts_balance=300),
+        SimpleNamespace(id=2, username=None, tg_username="bob", nuts_balance=200),
     ]
 
     session = FakeAsyncSession(execute_results=[rows])

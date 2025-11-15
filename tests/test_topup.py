@@ -24,7 +24,7 @@ async def test_topup_approval_notifies_user(monkeypatch, callback_query_factory)
         request_id="req-abc",
         payment_id=None,
     )
-    user = SimpleNamespace(id=10, tg_id=77, balance=0)
+    user = SimpleNamespace(id=10, tg_id=77, nuts_balance=0)
 
     session = FakeAsyncSession(get_results=[request, user])
     monkeypatch.setattr(payments, "async_session", make_async_session_stub(session))
@@ -38,7 +38,7 @@ async def test_topup_approval_notifies_user(monkeypatch, callback_query_factory)
 
     assert request.status == "approved"
     assert request.payment_id is not None
-    assert user.balance == 150
+    assert user.nuts_balance == 150
     assert session.committed is True
     check_achievements_mock.assert_awaited_once_with(user)
     assert call.message.edits and "✅" in call.message.edits[0][0]

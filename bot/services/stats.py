@@ -56,13 +56,13 @@ _top_users_cache = _TopUsersCache()
 
 
 async def get_top_users(limit: int = 50) -> list[TopUserEntry]:
-    """Return top users sorted by balance with simple caching."""
+    """Return top users sorted by nuts balance with simple caching."""
 
     async def _load() -> list[TopUserEntry]:
         async with async_session() as session:
             result = await session.execute(
-                select(User.id, User.username, User.tg_username, User.balance)
-                .order_by(User.balance.desc())
+                select(User.id, User.username, User.tg_username, User.nuts_balance)
+                .order_by(User.nuts_balance.desc())
                 .limit(limit)
             )
             rows = result.all()
@@ -72,7 +72,7 @@ async def get_top_users(limit: int = 50) -> list[TopUserEntry]:
                 user_id=row.id,
                 username=row.username,
                 tg_username=row.tg_username,
-                balance=row.balance or 0,
+                balance=row.nuts_balance or 0,
             )
             for row in rows
         ]
@@ -89,7 +89,7 @@ def format_top_users(entries: Sequence[TopUserEntry]) -> str:
     lines = ["🏆 Топ игроков:", ""]
     for position, entry in enumerate(entries, start=1):
         name = _display_name(entry)
-        lines.append(f"{position}. {name} — {entry.balance} 💰")
+        lines.append(f"{position}. {name} — {entry.balance} 🥜")
 
     return "\n".join(lines)
 

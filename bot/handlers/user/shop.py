@@ -19,6 +19,7 @@ from bot.db import (
     User,
     async_session,
 )
+from backend.services.nuts import add_nuts, subtract_nuts
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -126,7 +127,7 @@ async def user_buy_confirm(call: types.CallbackQuery):
         price_to_pay, discount_amount, discount_percent = _calculate_price_with_discount(
             product, user
         )
-        if user.balance < price_to_pay:
+        if (user.nuts_balance or 0) < price_to_pay:
             return await call.answer("💸 Недостаточно валюты!", show_alert=True)
 
     builder = InlineKeyboardBuilder()
@@ -182,10 +183,8 @@ async def user_buy_finish(call: types.CallbackQuery):
         price_to_pay, discount_amount, discount_percent = _calculate_price_with_discount(
             product, user
         )
-        if user.balance < price_to_pay:
+        if (user.nuts_balance or 0) < price_to_pay:
             return await call.answer("❌ Не хватает валюты!", show_alert=True)
-
-        user.balance -= price_to_pay
         purchase = Purchase(
             user_id=user.id,
             telegram_id=user.tg_id,
@@ -199,6 +198,15 @@ async def user_buy_finish(call: types.CallbackQuery):
         session.add(purchase)
         await session.flush()
 
+        await subtract_nuts(
+            session,
+            user=user,
+            amount=price_to_pay,
+            source="purchase",
+            reason=f"Покупка {product.name}",
+            metadata={"product_id": product.id, "purchase_id": purchase.id},
+        )
+
         if discount_amount > 0:
             user.discount = 0
 
@@ -208,7 +216,14 @@ async def user_buy_finish(call: types.CallbackQuery):
                 reward_amount = int(product.value or 0)
             except (TypeError, ValueError):
                 reward_amount = 0
-            user.balance += reward_amount
+            await add_nuts(
+                session,
+                user=user,
+                amount=reward_amount,
+                source="purchase_reward",
+                reason=f"Покупка {product.name}",
+                metadata={"product_id": product.id, "purchase_id": purchase.id},
+            )
             purchase.status = "completed"
             purchase.notes = "balance_grant"
             reward_text = f"💰 +{reward_amount}"
@@ -244,7 +259,18 @@ async def user_buy_finish(call: types.CallbackQuery):
             session.add(reward)
             referrer = referral.referrer
             if referrer:
-                referrer.balance += product.referral_bonus
+                await add_nuts(
+                    session,
+                    user=referrer,
+                    amount=product.referral_bonus,
+                    source="referral_bonus",
+                    reason=f"Покупка {product.name}",
+                    metadata={
+                        "product_id": product.id,
+                        "purchase_id": purchase.id,
+                        "referral_id": referral.id,
+                    },
+                )
                 referral_message = (
                     f"\n👥 Ваш реферер получил {product.referral_bonus} монет за покупку."
                 )

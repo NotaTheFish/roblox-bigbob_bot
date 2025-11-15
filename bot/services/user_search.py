@@ -61,7 +61,7 @@ def render_search_profile(user: User, options: SearchRenderOptions) -> str:
             tg_id=user.tg_id if options.include_private_fields else None,
             roblox_username=user.username or "",
             roblox_id=user.roblox_id or "",
-            balance=user.balance,
+            balance=user.nuts_balance,
             titles=titles,
             selected_title=user.selected_title,
             selected_achievement=(

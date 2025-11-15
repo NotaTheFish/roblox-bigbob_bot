@@ -280,7 +280,7 @@ def test_promo_with_valid_code(monkeypatch):
         promo_type="money",
         expires_at=None,
     )
-    user_obj = SimpleNamespace(id=10, tg_id=7, balance=0)
+    user_obj = SimpleNamespace(id=10, tg_id=7, nuts_balance=0)
 
     sessions = [
         DummySession([promo_obj, user_obj, None])
@@ -310,7 +310,7 @@ def test_promo_with_valid_code(monkeypatch):
     asyncio.run(promo.activate_promo(message, command, state))
 
     assert promo_obj.uses == 1
-    assert user_obj.balance == 100
+    assert user_obj.nuts_balance == 100
     assert sessions[0].committed is True
     expected_phrase = f"Промокод {command.args.upper()} активирован"
     assert any(expected_phrase in text for text, _ in message.replies)

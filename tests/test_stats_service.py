@@ -23,9 +23,9 @@ def test_format_top_users_with_entries():
 
     expected = (
         "🏆 Топ игроков:\n\n"
-        "1. Alice — 200 💰\n"
-        "2. @bob — 150 💰\n"
-        "3. ID 3 — 50 💰"
+        "1. Alice — 200 🥜\n"
+        "2. @bob — 150 🥜\n"
+        "3. ID 3 — 50 🥜"
     )
 
     assert format_top_users(entries) == expected

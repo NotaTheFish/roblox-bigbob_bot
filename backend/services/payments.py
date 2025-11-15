@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db import LogEntry, Payment, User
 from ..logging import get_logger
 from ..models import PaymentWebhookEvent
+from .nuts import add_nuts
 
 logger = get_logger(__name__)
 
@@ -101,7 +102,14 @@ async def apply_payment_to_user(
         )
         return
 
-    user.balance = (user.balance or 0) + amount
+    await add_nuts(
+        session,
+        user=user,
+        amount=amount,
+        source="payment",
+        reason="Зачисление платежа",
+        metadata={"payment_id": payment.id, "provider": payment.provider},
+    )
     payment.status = "applied"
     payment.user_id = user.id
 
@@ -109,7 +117,11 @@ async def apply_payment_to_user(
 
     logger.info(
         "User balance updated from payment",
-        extra={"telegram_user_id": telegram_user_id, "amount": amount, "new_balance": user.balance},
+        extra={
+            "telegram_user_id": telegram_user_id,
+            "amount": amount,
+            "new_balance": user.nuts_balance,
+        },
     )
 
     session.add(

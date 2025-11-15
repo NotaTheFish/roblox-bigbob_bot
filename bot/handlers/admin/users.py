@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.db import Admin, User, async_session
+from backend.services.nuts import add_nuts, subtract_nuts
 from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
@@ -71,7 +72,7 @@ def user_card_kb(user_id, is_blocked):
 async def _send_users_list(message: types.Message):
     async with async_session() as session:
         users = (
-            await session.scalars(select(User).order_by(User.balance.desc()).limit(50))
+            await session.scalars(select(User).order_by(User.nuts_balance.desc()).limit(50))
         ).all()
 
     if not users:
@@ -80,10 +81,10 @@ async def _send_users_list(message: types.Message):
             reply_markup=admin_users_menu_kb(),
         )
 
-    text = "👥 <b>ТОП 50 пользователей по балансу</b>\n\n"
+    text = "👥 <b>ТОП 50 пользователей по орешкам</b>\n\n"
     for u in users:
         name = f"@{u.tg_username}" if u.tg_username else (u.username or f"ID {u.tg_id}")
-        text += f"• <code>{name}</code> — 💰 {u.balance}\n"
+        text += f"• <code>{name}</code> — 🥜 {u.nuts_balance}\n"
 
     text += "\n🔎 Отправьте Telegram ID, @username или Roblox ник для поиска"
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
@@ -296,7 +297,13 @@ async def process_money_amount(message: types.Message, state: FSMContext):
             await state.clear()
             return await message.reply("⛔ Пользователь не найден")
 
-        user.balance += amount
+        await add_nuts(
+            session,
+            user=user,
+            amount=amount,
+            source="admin_grant",
+            reason="Выдача валюты администратором",
+        )
         await session.commit()
 
     await check_achievements(user)
@@ -402,7 +409,7 @@ async def process_remove_amount(message: types.Message, state: FSMContext):
             await state.clear()
             return await message.reply("⛔ Пользователь не найден")
 
-        if user.balance - amount < 0:
+        if (user.nuts_balance or 0) - amount < 0:
             return await message.reply(
                 "❌ Нельзя удержать больше, чем есть на балансе пользователя"
             )
@@ -438,13 +445,18 @@ async def process_remove_reason(message: types.Message, state: FSMContext):
             await state.clear()
             return await message.reply("⛔ Пользователь не найден")
 
-        if user.balance - remove_amount < 0:
+        if (user.nuts_balance or 0) - remove_amount < 0:
             await state.clear()
             return await message.reply(
                 "❌ Баланс пользователя изменился, удержание невозможно"
             )
-
-        user.balance -= remove_amount
+await subtract_nuts(
+            session,
+            user=user,
+            amount=remove_amount,
+            source="admin_debit",
+            reason=reason,
+        )
         await session.commit()
 
     logger.info(

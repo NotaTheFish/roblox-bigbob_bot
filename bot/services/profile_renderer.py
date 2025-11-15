@@ -41,7 +41,7 @@ def render_profile(view: ProfileView) -> str:
     if view.roblox_id is not None:
         lines.append(f"Roblox ID: <code>{_format(view.roblox_id)}</code>")
     if view.balance is not None:
-        lines.append(f"Баланс: 💰 {view.balance}")
+        lines.append(f"Баланс: 🥜 {view.balance}")
 
     titles_line = ", ".join(escape(title) for title in view.titles if title) or "—"
     lines.append(f"Титулы: {titles_line}")
