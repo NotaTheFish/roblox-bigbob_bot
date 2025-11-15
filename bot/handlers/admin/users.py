@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
@@ -28,7 +29,6 @@ from bot.states.admin_states import (
 )
 from bot.texts.block import (
     BAN_NOTIFICATION_TEXT,
-    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
     UNBLOCK_NOTIFICATION_TEXT,
 )
 from bot.utils.achievement_checker import check_achievements
@@ -225,29 +225,26 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
             user.is_blocked = True
             user.ban_appeal_at = None
             user.ban_appeal_submitted = False
-            user.appeal_open = True
+            user.appeal_open = False
             user.appeal_submitted_at = None
             user.ban_notified_at = None
             await session.commit()
-            try:
-                await call.bot.send_message(
-                    user_id,
-                    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
-                    reply_markup=types.ReplyKeyboardRemove(),
-                )
-            except Exception:  # pragma: no cover - ignore delivery errors
-                logger.debug(
-                    "Failed to remove reply keyboard for user %s about block", user_id
-                )
 
+            notified = False
             try:
                 await call.bot.send_message(
                     user_id,
                     BAN_NOTIFICATION_TEXT,
                     reply_markup=ban_appeal_keyboard(),
                 )
+                notified = True
             except Exception:  # pragma: no cover - ignore delivery errors
                 logger.debug("Failed to notify user %s about block", user_id)
+
+            if notified:
+                user.ban_notified_at = datetime.now(timezone.utc)
+                await session.commit()
+
             await call.message.edit_text("✅ Пользователь заблокирован")
             return
 

@@ -81,7 +81,7 @@ async def test_redeem_promocode_logs_notification_failure(
         promo_type="money",
         expires_at=None,
     )
-    user_obj = SimpleNamespace(id=9, tg_id=88, balance=0)
+    user_obj = SimpleNamespace(id=9, tg_id=88, balance=0, is_blocked=False, discount=0)
 
     session = FakeAsyncSession(scalar_results=[promo_obj, user_obj, None])
     monkeypatch.setattr(promocode_use, "async_session", make_async_session_stub(session))

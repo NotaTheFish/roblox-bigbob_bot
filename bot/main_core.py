@@ -12,7 +12,7 @@ from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
 from bot.handlers.user import routers as user_routers
-from bot.utils.block_middleware import BlockMiddleware
+from bot.middleware import BannedMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ async def ensure_root_admin() -> None:
 
 def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher(storage=storage)
-    dispatcher.update.outer_middleware(BlockMiddleware())
+    dispatcher.update.outer_middleware(BannedMiddleware())
     for router in (*user_routers, *admin_routers):
         dispatcher.include_router(router)
     return dispatcher
