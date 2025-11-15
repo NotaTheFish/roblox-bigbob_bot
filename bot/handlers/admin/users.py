@@ -26,7 +26,11 @@ from bot.states.admin_states import (
     GiveTitleState,
     RemoveMoneyState,
 )
-from bot.texts.block import BAN_NOTIFICATION_TEXT, UNBLOCK_NOTIFICATION_TEXT
+from bot.texts.block import (
+    BAN_NOTIFICATION_TEXT,
+    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
+    UNBLOCK_NOTIFICATION_TEXT,
+)
 from bot.utils.achievement_checker import check_achievements
 
 
@@ -222,6 +226,17 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
             user.ban_appeal_at = None
             user.ban_appeal_submitted = False
             await session.commit()
+            try:
+                await call.bot.send_message(
+                    user_id,
+                    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
+                    reply_markup=types.ReplyKeyboardRemove(),
+                )
+            except Exception:  # pragma: no cover - ignore delivery errors
+                logger.debug(
+                    "Failed to remove reply keyboard for user %s about block", user_id
+                )
+
             try:
                 await call.bot.send_message(
                     user_id,

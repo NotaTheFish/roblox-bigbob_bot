@@ -4,12 +4,15 @@ from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, Message, TelegramObject
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove, TelegramObject
 from sqlalchemy import select
 
 from bot.db import async_session, User
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK, ban_appeal_keyboard
-from bot.texts.block import BAN_NOTIFICATION_TEXT
+from bot.texts.block import (
+    BAN_NOTIFICATION_TEXT,
+    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
+)
 from bot.states.user_states import BanAppealState
 
 
@@ -63,6 +66,9 @@ class BlockMiddleware(BaseMiddleware):
         reply_markup,
         bot,
     ) -> None:
+        user_id = event.from_user.id if event.from_user else None
+        await self._remove_reply_keyboard(event.message, bot, user_id)
+
         if event.message:
             try:
                 await event.message.edit_text(
@@ -93,11 +99,35 @@ class BlockMiddleware(BaseMiddleware):
             await event.answer()
 
     async def _handle_blocked_message(self, event: Message, reply_markup) -> None:
+        await self._remove_reply_keyboard(event)
+
         with suppress(Exception):
             await event.answer(
                 BAN_NOTIFICATION_TEXT,
                 reply_markup=reply_markup,
             )
+
+    async def _remove_reply_keyboard(
+        self,
+        message: Message | None,
+        bot=None,
+        user_id: int | None = None,
+    ) -> None:
+        if message:
+            with suppress(Exception):
+                await message.answer(
+                    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+                return
+
+        if bot and user_id:
+            with suppress(Exception):
+                await bot.send_message(
+                    user_id,
+                    KEYBOARD_REMOVE_NOTIFICATION_TEXT,
+                    reply_markup=ReplyKeyboardRemove(),
+                )
 
     async def _is_ban_appeal_flow(
         self,

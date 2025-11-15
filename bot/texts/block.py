@@ -5,7 +5,15 @@ BAN_NOTIFICATION_TEXT = (
     "Если считаете, что это ошибка, нажмите кнопку «Обжаловать бан» ниже."
 )
 
+KEYBOARD_REMOVE_NOTIFICATION_TEXT = (
+    "⌨️ Убираю клавиатуру, чтобы старые кнопки не мешали."
+)
+
 UNBLOCK_NOTIFICATION_TEXT = "✅ Ваш доступ к боту восстановлен."
 
 
-__all__ = ["BAN_NOTIFICATION_TEXT", "UNBLOCK_NOTIFICATION_TEXT"]
+__all__ = [
+    "BAN_NOTIFICATION_TEXT",
+    "KEYBOARD_REMOVE_NOTIFICATION_TEXT",
+    "UNBLOCK_NOTIFICATION_TEXT",
+]
