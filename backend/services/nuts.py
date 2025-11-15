@@ -84,6 +84,7 @@ async def add_nuts(
     *,
     amount: int,
     source: str,
+    transaction_type: str,
     reason: str | None = None,
     invoice_id: int | None = None,
     metadata: Mapping[str, Any] | None = None,
@@ -111,10 +112,12 @@ async def add_nuts(
         telegram_id=db_user.tg_id,
         amount=amount,
         transaction_type="credit",
+        type=transaction_type,
         status="completed",
         reason=reason,
         metadata_json=_metadata_with_source(source, invoice_id, metadata),
         rate_snapshot=dict(rate_snapshot or {}),
+        related_invoice=invoice_id,
         completed_at=datetime.now(tz=timezone.utc),
     )
     session.add(transaction)
@@ -127,6 +130,7 @@ async def subtract_nuts(
     *,
     amount: int,
     source: str,
+    transaction_type: str,
     reason: str | None = None,
     invoice_id: int | None = None,
     metadata: Mapping[str, Any] | None = None,
@@ -156,9 +160,11 @@ async def subtract_nuts(
         telegram_id=db_user.tg_id,
         amount=amount,
         transaction_type="debit",
+        type=transaction_type,
         status="completed",
         reason=reason,
         metadata_json=_metadata_with_source(source, invoice_id, metadata),
+        related_invoice=invoice_id,
         completed_at=datetime.now(tz=timezone.utc),
     )
     session.add(transaction)

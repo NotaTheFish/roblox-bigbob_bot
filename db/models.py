@@ -297,14 +297,17 @@ class NutsTransaction(Base):
         default="credit",
         server_default="credit",
     )
+    type = Column(String(64), nullable=False, default="unknown", server_default="unknown")
     status = Column(String(32), default="pending", nullable=False, server_default="pending")
     reason = Column(String(255))
     metadata_json = Column("metadata", JSONB)
     rate_snapshot = Column(JSONB, nullable=False, server_default="{}")
+    related_invoice = Column(Integer, ForeignKey("invoices.id"), index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
 
     user = relationship("User", back_populates="nuts_transactions")
+    invoice = relationship("Invoice", foreign_keys=[related_invoice])
 
 
 class Invoice(Base):

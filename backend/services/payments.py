@@ -107,6 +107,7 @@ async def apply_payment_to_user(
         user=user,
         amount=amount,
         source="payment",
+        transaction_type="payment",
         reason="Зачисление платежа",
         metadata={"payment_id": payment.id, "provider": payment.provider},
     )

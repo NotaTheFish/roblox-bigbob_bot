@@ -160,6 +160,7 @@ async def telegram_stars_webhook(
         user_id=invoice.user_id,
         amount=invoice.amount_nuts,
         source="stars",
+        transaction_type="stars",
         invoice_id=invoice.id,
         metadata={
             "package_code": package.code,
@@ -236,6 +237,7 @@ async def wallet_pay_webhook(
                 user_id=invoice.user_id,
                 amount=nuts_amount,
                 source="ton",
+                transaction_type="ton",
                 invoice_id=invoice.id,
                 metadata=audit_metadata,
                 rate_snapshot=_compose_rate_snapshot(invoice),

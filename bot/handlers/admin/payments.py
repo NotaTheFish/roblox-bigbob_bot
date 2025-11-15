@@ -244,6 +244,7 @@ async def approve_topup(call: types.CallbackQuery) -> None:
             user=user,
             amount=request.amount,
             source="admin_topup",
+            transaction_type="admin_topup",
             reason="Подтверждение пополнения",
             metadata={"topup_request_id": request.id},
         )

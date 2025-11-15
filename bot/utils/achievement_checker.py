@@ -41,6 +41,7 @@ async def check_achievements(user: User) -> None:
                     user=db_user,
                     amount=achievement.reward,
                     source="achievement",
+                    transaction_type="achievement",
                     reason=achievement.name,
                     metadata={"achievement_id": achievement.id},
                 )
@@ -60,6 +61,7 @@ async def check_achievements(user: User) -> None:
                     user=db_user,
                     amount=achievement.reward,
                     source="achievement",
+                    transaction_type="achievement",
                     reason=achievement.name,
                     metadata={"achievement_id": achievement.id},
                 )
@@ -79,6 +81,7 @@ async def check_achievements(user: User) -> None:
                     user=db_user,
                     amount=achievement.reward,
                     source="achievement",
+                    transaction_type="achievement",
                     reason=achievement.name,
                     metadata={"achievement_id": achievement.id},
                 )

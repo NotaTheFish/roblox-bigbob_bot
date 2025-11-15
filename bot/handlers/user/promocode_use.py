@@ -92,6 +92,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                     user=user,
                     amount=reward_amount,
                     source="promocode",
+                    transaction_type="promocode",
                     reason=f"Промокод {promo.code}",
                     metadata={"promo_id": promo.id},
                 )

@@ -203,6 +203,7 @@ async def user_buy_finish(call: types.CallbackQuery):
             user=user,
             amount=price_to_pay,
             source="purchase",
+            transaction_type="spend",
             reason=f"Покупка {product.name}",
             metadata={"product_id": product.id, "purchase_id": purchase.id},
         )
@@ -221,6 +222,7 @@ async def user_buy_finish(call: types.CallbackQuery):
                 user=user,
                 amount=reward_amount,
                 source="purchase_reward",
+                transaction_type="purchase_reward",
                 reason=f"Покупка {product.name}",
                 metadata={"product_id": product.id, "purchase_id": purchase.id},
             )
@@ -264,6 +266,7 @@ async def user_buy_finish(call: types.CallbackQuery):
                     user=referrer,
                     amount=product.referral_bonus,
                     source="referral_bonus",
+                    transaction_type="referral_bonus",
                     reason=f"Покупка {product.name}",
                     metadata={
                         "product_id": product.id,

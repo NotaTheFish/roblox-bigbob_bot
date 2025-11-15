@@ -302,6 +302,7 @@ async def process_money_amount(message: types.Message, state: FSMContext):
             user=user,
             amount=amount,
             source="admin_grant",
+            transaction_type="admin_grant",
             reason="Выдача валюты администратором",
         )
         await session.commit()
@@ -455,6 +456,7 @@ async def process_remove_reason(message: types.Message, state: FSMContext):
             user=user,
             amount=remove_amount,
             source="admin_debit",
+            transaction_type="admin_debit",
             reason=reason,
         )
         await session.commit()
