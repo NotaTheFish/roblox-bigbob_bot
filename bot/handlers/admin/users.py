@@ -18,6 +18,12 @@ from bot.keyboards.admin_keyboards import (
     admin_users_menu_kb,
 )
 from bot.keyboards.ban_appeal import ban_appeal_keyboard
+from bot.services.user_blocking import (
+    AdminBlockConfirmationRequiredError,
+    AdminBlockPermissionError,
+    block_user as block_user_record,
+    unblock_user as unblock_user_record,
+)
 from bot.services.user_search import (
     SearchRenderOptions,
     find_user_by_query,
@@ -101,6 +107,111 @@ def _remove_title_confirm_kb():
     builder.button(text="✖️ Отмена", callback_data="remove_title_cancel")
     builder.adjust(2, 1)
     return builder.as_markup()
+
+
+def _admin_block_confirmation_kb(user_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Подтвердить блокировку",
+        callback_data=f"confirm_block_admin:{user_id}",
+    )
+    builder.button(text="✖️ Отмена", callback_data="cancel_block_admin")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def _prompt_admin_block_confirmation(call: types.CallbackQuery, user_id: int) -> None:
+    text = (
+        "⚠️ <b>Подтверждение блокировки администратора</b>\n"
+        f"Пользователь <code>{user_id}</code> является администратором.\n"
+        "Подтвердите блокировку перед продолжением."
+    )
+
+    if call.message:
+        await call.message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=_admin_block_confirmation_kb(user_id),
+        )
+    elif call.from_user:
+        await call.bot.send_message(
+            call.from_user.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=_admin_block_confirmation_kb(user_id),
+        )
+
+    await call.answer("Требуется подтверждение", show_alert=True)
+
+
+async def _process_block_user(
+    call: types.CallbackQuery, user_id: int, *, confirmed: bool
+) -> None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == user_id))
+        if not user:
+            return await call.answer("Пользователь не найден", show_alert=True)
+
+        operator_admin = await session.scalar(
+            select(Admin).where(Admin.telegram_id == call.from_user.id)
+        )
+
+        try:
+            await block_user_record(
+                session,
+                user=user,
+                operator_admin=operator_admin,
+                confirmed=confirmed,
+            )
+        except AdminBlockPermissionError:
+            return await call.answer(
+                "❌ У вас нет прав банить администраторов", show_alert=True
+            )
+        except AdminBlockConfirmationRequiredError:
+            await _prompt_admin_block_confirmation(call, user_id)
+            return
+
+        notified = False
+        try:
+            await call.bot.send_message(
+                user_id,
+                BAN_NOTIFICATION_TEXT,
+                reply_markup=ban_appeal_keyboard(),
+            )
+            notified = True
+        except Exception:  # pragma: no cover - ignore delivery errors
+            logger.debug("Failed to notify user %s about block", user_id)
+
+        if notified:
+            user.ban_notified_at = datetime.now(timezone.utc)
+            await session.commit()
+
+    if call.message:
+        await call.message.edit_text("✅ Пользователь заблокирован")
+    else:
+        await call.answer("✅ Пользователь заблокирован", show_alert=True)
+
+
+async def _process_unblock_user(call: types.CallbackQuery, user_id: int) -> None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == user_id))
+        if not user:
+            return await call.answer("Пользователь не найден", show_alert=True)
+
+        await unblock_user_record(session, user=user)
+
+        try:
+            await call.bot.send_message(
+                user_id,
+                UNBLOCK_NOTIFICATION_TEXT,
+            )
+        except Exception:  # pragma: no cover - ignore delivery errors
+            logger.debug("Failed to notify user %s about unblock", user_id)
+
+    if call.message:
+        await call.message.edit_text("✅ Пользователь разблокирован")
+    else:
+        await call.answer("✅ Пользователь разблокирован", show_alert=True)
 
 
 # -------- /admin_users — список --------
@@ -262,56 +373,44 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
         await state.set_state(GiveTitleState.waiting_for_title)
         return
 
-    # Блокировка и разблокировка
-    async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == user_id))
-        if not user:
-            return await call.answer("Пользователь не найден", show_alert=True)
+    if action == "block_user":
+        await _process_block_user(call, user_id, confirmed=False)
+        return
 
-        if action == "block_user":
-            user.is_blocked = True
-            user.ban_appeal_at = None
-            user.ban_appeal_submitted = False
-            user.appeal_open = False
-            user.appeal_submitted_at = None
-            user.ban_notified_at = None
-            await session.commit()
+    if action == "unblock_user":
+        await _process_unblock_user(call, user_id)
+        return
 
-            notified = False
-            try:
-                await call.bot.send_message(
-                    user_id,
-                    BAN_NOTIFICATION_TEXT,
-                    reply_markup=ban_appeal_keyboard(),
-                )
-                notified = True
-            except Exception:  # pragma: no cover - ignore delivery errors
-                logger.debug("Failed to notify user %s about block", user_id)
 
-            if notified:
-                user.ban_notified_at = datetime.now(timezone.utc)
-                await session.commit()
+@router.callback_query(F.data.startswith("confirm_block_admin:"))
+async def confirm_block_admin_block(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
 
-            await call.message.edit_text("✅ Пользователь заблокирован")
-            return
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
 
-        if action == "unblock_user":
-            user.is_blocked = False
-            user.ban_appeal_at = None
-            user.ban_appeal_submitted = False
-            user.appeal_open = False
-            user.appeal_submitted_at = None
-            user.ban_notified_at = None
-            await session.commit()
-            try:
-                await call.bot.send_message(
-                    user_id,
-                    UNBLOCK_NOTIFICATION_TEXT,
-                )
-            except Exception:  # pragma: no cover - ignore delivery errors
-                logger.debug("Failed to notify user %s about unblock", user_id)
-            await call.message.edit_text("✅ Пользователь разблокирован")
-            return
+    try:
+        _, user_id_raw = call.data.split(":", maxsplit=1)
+        user_id = int(user_id_raw)
+    except (ValueError, AttributeError):
+        return await call.answer("Некорректный запрос", show_alert=True)
+
+    await _process_block_user(call, user_id, confirmed=True)
+
+
+@router.callback_query(F.data == "cancel_block_admin")
+async def cancel_block_admin(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if call.message:
+        await call.message.edit_text("❌ Блокировка администратора отменена")
+
+    await call.answer()
 
 
 @router.callback_query(F.data.startswith("remove_title:"))
