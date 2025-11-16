@@ -6,7 +6,7 @@ def admin_main_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="🎟 Промокоды")],
         [KeyboardButton(text="🛠 Управление магазином"), KeyboardButton(text="📜 Логи")],
-        [KeyboardButton(text="🏆 Достижения"), KeyboardButton(text="Пополнение")],
+        [KeyboardButton(text="🏆 Достижения")],
         [KeyboardButton(text="Сервера")],
         [KeyboardButton(text="↩️ В меню")],
     ]
