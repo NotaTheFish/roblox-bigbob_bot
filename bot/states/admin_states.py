@@ -18,6 +18,12 @@ class AdminUsersState(StatesGroup):
     searching = State()
 
 
+class AdminLogsState(StatesGroup):
+    browsing = State()
+    waiting_for_query = State()
+    waiting_for_admin = State()
+
+
 class AchievementsState(StatesGroup):
     waiting_for_name = State()
     waiting_for_description = State()

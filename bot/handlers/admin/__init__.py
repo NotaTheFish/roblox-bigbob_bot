@@ -2,6 +2,7 @@
 
 from .achievements import router as achievements_router
 from .login import router as login_router
+from .logs import router as logs_router
 from .menu import router as menu_router
 from .promo import router as promo_router
 from .servers import router as servers_router
@@ -15,6 +16,7 @@ routers = [
     menu_router,
     login_router,
     users_router,
+    logs_router,
     promo_router,
     shop_router,
     settings_router,

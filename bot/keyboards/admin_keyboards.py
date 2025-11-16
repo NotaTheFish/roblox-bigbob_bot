@@ -3,6 +3,16 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.services.admin_logs import LogCategory
+
+
+LOGS_REFRESH_BUTTON = "🔄 Обновить"
+LOGS_SEARCH_BUTTON = "🔍 Поиск по пользователю"
+LOGS_ADMIN_PICK_BUTTON = "👮 Выбрать админа"
+LOGS_PREV_BUTTON = "⬅️ Предыдущая"
+LOGS_NEXT_BUTTON = "➡️ Следующая"
+LOGS_RESET_FILTER_BUTTON = "❎ Сбросить фильтр"
+
 
 ACHIEVEMENT_VISIBILITY_FILTERS = {
     "all": "Все",
@@ -28,6 +38,60 @@ def admin_main_menu_kb() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="↩️ В меню")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def admin_logs_menu_kb(*, is_root: bool = False) -> ReplyKeyboardMarkup:
+    buttons = [
+        [KeyboardButton(text=LOGS_REFRESH_BUTTON), KeyboardButton(text=LOGS_SEARCH_BUTTON)],
+        [KeyboardButton(text=LOGS_PREV_BUTTON), KeyboardButton(text=LOGS_NEXT_BUTTON)],
+        [KeyboardButton(text=LOGS_RESET_FILTER_BUTTON)],
+    ]
+    if is_root:
+        buttons.insert(1, [KeyboardButton(text=LOGS_ADMIN_PICK_BUTTON)])
+    buttons.append([KeyboardButton(text="↩️ Назад")])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+_LOG_CATEGORY_LABELS = {
+    LogCategory.TOPUPS: "💰 Пополнения",
+    LogCategory.SPENDINGS: "💸 Траты",
+    LogCategory.PURCHASES: "🛒 Покупки",
+    LogCategory.PROMOCODES: "🎟 Промокоды",
+    LogCategory.ADMIN_ACTIONS: "👮 Админ-действия",
+}
+
+
+def admin_logs_filters_inline(
+    selected: LogCategory,
+    *,
+    show_demote: bool = False,
+    demote_target: int | None = None,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for category, label in _LOG_CATEGORY_LABELS.items():
+        suffix = " ✅" if category == selected else ""
+        builder.button(
+            text=f"{label}{suffix}",
+            callback_data=f"logs:category:{category.value}",
+        )
+    builder.adjust(2, 2, 1)
+
+    if show_demote and demote_target:
+        builder.button(
+            text="⚠️ Разжаловать администратора",
+            callback_data=f"logs:demote:{demote_target}",
+        )
+        builder.adjust(1)
+
+    return builder.as_markup()
+
+
+def admin_logs_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data=f"logs:demote_confirm:{target_id}")
+    builder.button(text="✖️ Отмена", callback_data="logs:demote_cancel")
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 def admin_users_menu_kb() -> ReplyKeyboardMarkup:
