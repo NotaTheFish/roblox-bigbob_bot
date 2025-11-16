@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
+from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, AdminRequest, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.middleware.user_sync import normalize_tg_username
@@ -30,6 +31,18 @@ async def is_admin(uid: int) -> bool:
 
 
 # ---------------- Команда /admin_login ----------------
+def _format_display_username(username: str | None) -> str:
+    """Return a human-readable Telegram username for operator messages."""
+
+    if not username:
+        return "—"
+
+    prefixed = f"@{username}"
+    if username == DEFAULT_TG_USERNAME:
+        return f"{prefixed} (стандартная подпись)"
+    return prefixed
+
+
 async def _process_admin_code(message: types.Message, code: str) -> bool:
     code = (code or "").strip()
 
@@ -87,7 +100,7 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
     reply_markup = builder.as_markup()
 
     display_full_name = full_name or "Без имени"
-    display_username = f"@{username}" if username else "—"
+    display_username = _format_display_username(username)
 
     try:
         await message.bot.send_message(
@@ -168,7 +181,7 @@ async def admin_request_callback(call: types.CallbackQuery):
         full_name = (req.full_name or "").strip() or None
 
         display_full_name = full_name or "Без имени"
-        display_username = f"@{username}" if username else "—"
+        display_username = _format_display_username(username)
         escaped_full_name = escape(display_full_name)
         escaped_username = escape(display_username)
 

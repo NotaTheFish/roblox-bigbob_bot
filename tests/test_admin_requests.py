@@ -105,7 +105,7 @@ async def test_admin_login_request_sends_full_name(monkeypatch, message_factory)
         obj for obj in request_session.added if obj.__class__.__name__ == "AdminRequest"
     )
     assert admin_request.full_name == "Display Name"
-        assert admin_request.username == DEFAULT_TG_USERNAME
+    assert admin_request.username == DEFAULT_TG_USERNAME
 
     assert message.bot.sent_messages
     root_message = message.bot.sent_messages[0]

@@ -7,6 +7,14 @@ Production-ready Telegram bot for Roblox with Render deploy.
 * Aiogram + Flask + PostgreSQL (async)
 * Auto webhook
 * Render deploy
+* Consistent placeholder `@INKOGNITO_DROCHER` when a Telegram user has no public username
+
+## Operator notes
+
+Telegram occasionally hides usernames for privacy-focused users. Whenever that happens the
+bot automatically substitutes the placeholder `@INKOGNITO_DROCHER`. If you see this
+signature in admin-approval pop-ups or in the backend, it simply means the player did not
+publish a Telegram handle—no manual action is required.
 
 ## Configuration
 
