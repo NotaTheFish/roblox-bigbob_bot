@@ -13,12 +13,14 @@ class Settings:
     idempotency_ttl_seconds: int
     roblox_api_base_url: str
     telegram_payment_secret: str
+    telegram_bot_token: str
 
     def __init__(self) -> None:
         self.hmac_secret = get_env("BACKEND_HMAC_SECRET", required=True)
         self.idempotency_ttl_seconds = int(get_env("BACKEND_IDEMPOTENCY_TTL", "3600"))
         self.roblox_api_base_url = get_env("ROBLOX_API_BASE_URL", "")
         self.telegram_payment_secret = get_env("TELEGRAM_PAYMENT_SECRET", "")
+        self.telegram_bot_token = get_env("TELEGRAM_TOKEN", "")
 
 
 @lru_cache()

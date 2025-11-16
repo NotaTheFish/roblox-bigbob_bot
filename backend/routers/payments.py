@@ -12,13 +12,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.constants.stars import STARS_PACKAGES_BY_PRODUCT_ID
-from bot.db import Invoice
+from bot.db import Invoice, User
 
 from ..database import session_scope
 from ..logging import get_logger
 from ..security import ensure_idempotency, finalize_idempotency, validate_hmac_signature
 from ..services.nuts import add_nuts
 from ..services.payments import apply_payment_to_user, mark_payment_processed, record_payment
+from ..services.referrals import grant_referral_topup_bonus
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 logger = get_logger(__name__)
@@ -123,6 +124,10 @@ async def telegram_stars_webhook(
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
+    user = await session.get(User, invoice.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     package = STARS_PACKAGES_BY_PRODUCT_ID.get(payload.product_id)
     if not package:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown product id")
@@ -157,7 +162,7 @@ async def telegram_stars_webhook(
 
     await add_nuts(
         session,
-        user_id=invoice.user_id,
+        user=user,
         amount=invoice.amount_nuts,
         source="stars",
         transaction_type="stars",
@@ -167,6 +172,13 @@ async def telegram_stars_webhook(
             "product_id": payload.product_id,
             "stars_amount": payload.stars_amount,
         },
+    )
+
+    await grant_referral_topup_bonus(
+        session,
+        payer=user,
+        nuts_amount=invoice.amount_nuts,
+        invoice=invoice,
     )
 
     await finalize_idempotency(session, idempotency_entry, response, status.HTTP_200_OK)
@@ -193,6 +205,10 @@ async def wallet_pay_webhook(
     )
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+
+    user = await session.get(User, invoice.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     now = datetime.now(tz=timezone.utc)
     response: Dict[str, Any] = {
@@ -234,13 +250,20 @@ async def wallet_pay_webhook(
             audit_metadata = {k: v for k, v in audit_metadata.items() if v is not None}
             await add_nuts(
                 session,
-                user_id=invoice.user_id,
+                user=user,
                 amount=nuts_amount,
                 source="ton",
                 transaction_type="ton",
                 invoice_id=invoice.id,
                 metadata=audit_metadata,
                 rate_snapshot=_compose_rate_snapshot(invoice),
+            )
+
+            await grant_referral_topup_bonus(
+                session,
+                payer=user,
+                nuts_amount=nuts_amount,
+                invoice=invoice,
             )
             logger.info(
                 "Wallet invoice paid",

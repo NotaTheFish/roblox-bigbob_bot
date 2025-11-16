@@ -11,6 +11,7 @@ from bot.db import LogEntry, Payment, User
 from ..logging import get_logger
 from ..models import PaymentWebhookEvent
 from .nuts import add_nuts
+from .referrals import grant_referral_topup_bonus
 
 logger = get_logger(__name__)
 
@@ -110,6 +111,13 @@ async def apply_payment_to_user(
         transaction_type="payment",
         reason="Зачисление платежа",
         metadata={"payment_id": payment.id, "provider": payment.provider},
+    )
+
+    await grant_referral_topup_bonus(
+        session,
+        payer=user,
+        nuts_amount=amount,
+        payment=payment,
     )
     payment.status = "applied"
     payment.user_id = user.id
