@@ -117,10 +117,15 @@ async def _send_users_list(message: types.Message):
 
     text = "👥 <b>ТОП 50 пользователей по орешкам</b>\n\n"
     for u in users:
-        name = f"@{u.tg_username}" if u.tg_username else (u.username or f"ID {u.tg_id}")
-        text += f"• <code>{name}</code> — 🥜 {u.nuts_balance}\n"
+        username = escape(u.username or "—")
+        text += (
+            "• "
+            f"TG ID: <code>{u.tg_id}</code> | "
+            f"bot_user_id: <code>{escape(u.bot_user_id)}</code> | "
+            f"username: <code>{username}</code> — 🥜 {u.nuts_balance}\n"
+        )
 
-    text += "\n🔎 Отправьте Telegram ID, @username или Roblox ник для поиска"
+    text += "\n🔎 Отправьте TG ID, bot_user_id или username для поиска"
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
 

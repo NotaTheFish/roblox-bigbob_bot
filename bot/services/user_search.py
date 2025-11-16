@@ -20,7 +20,7 @@ class SearchRenderOptions:
 
 
 async def find_user_by_query(query: str, *, include_blocked: bool = True) -> User | None:
-    """Find a user by Telegram ID, username or Roblox nickname."""
+    """Find a user by Telegram ID, bot_user_id or username."""
 
     normalized = query.strip().lstrip("@")
     if not normalized:
@@ -29,6 +29,8 @@ async def find_user_by_query(query: str, *, include_blocked: bool = True) -> Use
     filters = []
     if normalized.isdigit():
         filters.append(User.tg_id == int(normalized))
+
+    filters.append(User.bot_user_id == normalized)
 
     like_pattern = f"%{normalized}%"
     filters.append(User.tg_username.ilike(like_pattern))
