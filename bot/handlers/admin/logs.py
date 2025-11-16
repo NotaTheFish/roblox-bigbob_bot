@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from aiogram import Bot, F, Router, types
 from aiogram.fsm.context import FSMContext
@@ -33,6 +33,7 @@ from bot.services.admin_logs import (
 )
 from bot.services.user_search import find_user_by_query
 from bot.states.admin_states import AdminLogsState
+from bot.utils.time import to_msk
 
 
 router = Router(name="admin_logs")
@@ -385,10 +386,7 @@ def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
 
 
 def _format_record_line(position: int, record: LogRecord) -> str:
-    created_at = record.created_at
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    timestamp = created_at.astimezone(timezone.utc).strftime("%d.%m %H:%M")
+    timestamp = to_msk(record.created_at).strftime("%d.%m %H:%M")
     title = html.escape(record.message or record.event_type)
 
     user_bits: list[str] = []

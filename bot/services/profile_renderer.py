@@ -6,6 +6,8 @@ from datetime import datetime
 from html import escape
 from typing import Sequence
 
+from bot.utils.time import to_msk
+
 
 @dataclass(frozen=True)
 class ProfileView:
@@ -69,7 +71,7 @@ def render_profile(view: ProfileView) -> str:
     lines.append(f"О себе: {about_value}")
 
     if view.created_at is not None:
-        created_str = view.created_at.strftime("%d.%m.%Y %H:%M")
+        created_str = to_msk(view.created_at).strftime("%d.%m.%Y %H:%M")
         lines.append(f"Дата регистрации: {created_str}")
 
     return "\n".join(lines)

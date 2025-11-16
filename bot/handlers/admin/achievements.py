@@ -21,6 +21,7 @@ from bot.keyboards.admin_keyboards import (
     admin_achievements_kb,
 )
 from bot.states.admin_states import AchievementsState
+from bot.utils.time import to_msk
 
 router = Router(name="admin_achievements")
 
@@ -182,7 +183,7 @@ async def _send_history(target: types.Message, *, as_edit: bool = False) -> None
         for entry, username, tg_username, ach_name in rows:
             user_label = username or tg_username or entry.tg_id
             lines.append(
-                f"{entry.earned_at:%d.%m %H:%M} — {html.escape(str(user_label))}"
+                f"{to_msk(entry.earned_at):%d.%m %H:%M} — {html.escape(str(user_label))}"
                 f" получил {html.escape(ach_name)} ({entry.source})"
             )
         text = "\n".join(lines)
@@ -472,7 +473,7 @@ async def ach_users_callback(call: types.CallbackQuery):
         for entry, username, tg_username in rows:
             label = username or tg_username or f"tg:{entry.tg_id}"
             text_lines.append(
-                f"{entry.earned_at:%d.%m %H:%M} — {html.escape(str(label))} ({entry.source})"
+                f"{to_msk(entry.earned_at):%d.%m %H:%M} — {html.escape(str(label))} ({entry.source})"
             )
         text = "\n".join(text_lines)
 
