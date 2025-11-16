@@ -24,7 +24,9 @@ async def my_achievements(message: types.Message):
             )
         )
 
-        achievements = await session.scalars(select(Achievement))
+        achievements = await session.scalars(
+            select(Achievement).where(Achievement.is_visible.is_(True))
+        )
 
     text = "🏆 <b>Ваши достижения:</b>\n\n"
 

@@ -158,6 +158,18 @@ class Achievement(Base):
     name = Column(String(255), unique=True, nullable=False)
     description = Column(Text)
     reward = Column(Integer, nullable=False)
+    condition_type = Column(
+        String(64),
+        nullable=False,
+        default="none",
+        server_default="none",
+    )
+    condition_value = Column(String(255))
+    condition_threshold = Column(Integer)
+    is_visible = Column(Boolean, nullable=False, default=True, server_default="true")
+    metadata_json = Column("metadata", JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user_achievements = relationship("UserAchievement", back_populates="achievement")
 
@@ -170,6 +182,9 @@ class UserAchievement(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=False)
     earned_at = Column(DateTime(timezone=True), server_default=func.now())
+    source = Column(String(32), nullable=False, default="auto", server_default="auto")
+    comment = Column(Text)
+    metadata_json = Column("metadata", JSONB)
 
     achievement = relationship("Achievement", back_populates="user_achievements")
     user = relationship("User", back_populates="achievements")

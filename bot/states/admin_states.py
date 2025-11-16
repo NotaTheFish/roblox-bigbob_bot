@@ -22,6 +22,13 @@ class AchievementsState(StatesGroup):
     waiting_for_name = State()
     waiting_for_description = State()
     waiting_for_reward = State()
+    waiting_for_condition_type = State()
+    waiting_for_condition_value = State()
+    waiting_for_condition_threshold = State()
+    waiting_for_visibility = State()
+    manual_grant_user = State()
+    manual_grant_achievement = State()
+    manual_grant_comment = State()
 
 
 class SupportReplyState(StatesGroup):

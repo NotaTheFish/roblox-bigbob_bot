@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from bot.db import Achievement, User, UserAchievement, async_session
+from bot.db import Achievement, Product, Purchase, User, UserAchievement, async_session
 from backend.services.nuts import add_nuts
 
 
@@ -27,65 +27,57 @@ async def check_achievements(user: User) -> None:
             if achievement.id in owned:
                 continue
 
-            # Начало игры
-            if achievement.name == "Начало игры":
-                session.add(
-                    UserAchievement(
-                        tg_id=db_user.tg_id,
-                        user_id=db_user.id,
-                        achievement_id=achievement.id,
-                    )
-                )
-                await add_nuts(
-                    session,
-                    user=db_user,
-                    amount=achievement.reward,
-                    source="achievement",
-                    transaction_type="achievement",
-                    reason=achievement.name,
-                    metadata={"achievement_id": achievement.id},
-                )
-                granted = True
+            if not await _check_condition(session, achievement, db_user):
+                continue
 
-            # Первый донат
-            elif achievement.name == "Первый донат" and (db_user.nuts_balance or 0) >= 100:
-                session.add(
-                    UserAchievement(
-                        tg_id=db_user.tg_id,
-                        user_id=db_user.id,
-                        achievement_id=achievement.id,
-                    )
+            session.add(
+                UserAchievement(
+                    tg_id=db_user.tg_id,
+                    user_id=db_user.id,
+                    achievement_id=achievement.id,
                 )
-                await add_nuts(
-                    session,
-                    user=db_user,
-                    amount=achievement.reward,
-                    source="achievement",
-                    transaction_type="achievement",
-                    reason=achievement.name,
-                    metadata={"achievement_id": achievement.id},
-                )
-                granted = True
-
-            # Магнат
-            elif achievement.name == "Магнат" and (db_user.nuts_balance or 0) >= 10000:
-                session.add(
-                    UserAchievement(
-                        tg_id=db_user.tg_id,
-                        user_id=db_user.id,
-                        achievement_id=achievement.id,
-                    )
-                )
-                await add_nuts(
-                    session,
-                    user=db_user,
-                    amount=achievement.reward,
-                    source="achievement",
-                    transaction_type="achievement",
-                    reason=achievement.name,
-                    metadata={"achievement_id": achievement.id},
-                )
-                granted = True
+            )
+            await add_nuts(
+                session,
+                user=db_user,
+                amount=achievement.reward,
+                source="achievement",
+                transaction_type="achievement",
+                reason=achievement.name,
+                metadata={"achievement_id": achievement.id},
+            )
+            granted = True
 
         if granted:
             await session.commit()
+
+
+async def _check_condition(
+    session, achievement: Achievement, user: User
+) -> bool:  # pragma: no cover - simple helper
+    condition_type = (achievement.condition_type or "none").lower()
+    if condition_type == "none":
+        return True
+
+    if condition_type == "balance_at_least":
+        threshold = achievement.condition_threshold or 0
+        return (user.balance or 0) >= threshold
+
+    if condition_type == "nuts_at_least":
+        threshold = achievement.condition_threshold or 0
+        return (user.nuts_balance or 0) >= threshold
+
+    if condition_type == "product_purchase" and achievement.condition_value:
+        stmt = (
+            select(Purchase.id)
+            .join(Product, Product.id == Purchase.product_id)
+            .where(
+                Purchase.user_id == user.id,
+                Product.slug == achievement.condition_value,
+                Purchase.status == "completed",
+            )
+            .limit(1)
+        )
+        return bool(await session.scalar(stmt))
+
+    return False
