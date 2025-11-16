@@ -437,6 +437,7 @@ class Referral(Base):
     referred_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     referred_telegram_id = Column(BigInteger, nullable=False, index=True)
     referral_code = Column(String(64), nullable=False, index=True)
+    confirmed = Column(Boolean, default=False, nullable=False)
     metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

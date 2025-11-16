@@ -262,9 +262,15 @@ async def profile_ref_link(message: types.Message, state: FSMContext):
     bot_info = await message.bot.get_me()
     link = f"https://t.me/{bot_info.username}?start={code}" if bot_info.username else code
 
+    conditions_text = (
+        "ℹ️ Условия: бонусы начисляются после подтверждения Roblox"
+        "-аккаунта приглашённого, а вы получаете 10% его будущих пополнений."
+    )
+
     await message.answer(
         "🔗 <b>Ваша реферальная ссылка</b>\n"
-        f"{link}\n\n"
+        f"{link}\n"
+        f"{conditions_text}\n\n"
         f"👥 Приглашено: {invited}\n"
         f"💰 Получено бонусов: {total_rewards}",
         parse_mode="HTML",

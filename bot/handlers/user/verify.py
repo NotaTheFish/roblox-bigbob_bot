@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from random import randint
 
 from aiogram import F, Router, types
@@ -6,14 +7,20 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy import select
 
-from bot.db import Admin, User, async_session
+from bot.constants.users import DEFAULT_TG_USERNAME
+from bot.db import Admin, LogEntry, Referral, User, async_session
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.verify_kb import verify_button, verify_check_button
 from bot.states.verify_state import VerifyState
+from bot.utils.referrals import (
+    DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
+    confirm_referral,
+)
 from bot.utils.roblox import get_roblox_profile
 
 
 router = Router(name="user_verify")
+logger = logging.getLogger(__name__)
 
 
 # === Start verification ===
@@ -77,14 +84,57 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
 
     if code and code in full_text:
         is_admin = False
+        referrer_notify: dict | None = None
         async with async_session() as session:
             db_user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
             if db_user:
                 db_user.verified = True
+                referral = await session.scalar(
+                    select(Referral).where(Referral.referred_id == db_user.id)
+                )
+                referrer_user: User | None = None
+                if referral and not referral.confirmed:
+                    referral = await confirm_referral(session, referral)
+                    referrer_user = referral.referrer or await session.get(User, referral.referrer_id)
+                    if referrer_user:
+                        referrer_notify = {
+                            "tg_id": referrer_user.tg_id,
+                            "referred_username": call.from_user.username
+                            or DEFAULT_TG_USERNAME,
+                        }
+                        session.add(
+                            LogEntry(
+                                user_id=referrer_user.id,
+                                telegram_id=referrer_user.tg_id,
+                                event_type="referral_confirmed",
+                                message="🎉 Новый подтверждённый реферал!",
+                                data={
+                                    "referred_id": db_user.id,
+                                    "topup_share_percent": DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
+                                },
+                            )
+                        )
                 is_admin = bool(
                     await session.scalar(select(Admin).where(Admin.telegram_id == call.from_user.id))
                 )
                 await session.commit()
+
+        if referrer_notify:
+            referred_username = referrer_notify["referred_username"]
+            text = (
+                "🎉 Новый подтверждённый реферал!\n"
+                f"@{referred_username} прошёл проверку Roblox.\n"
+                f"Вы будете получать {DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT}% его будущих пополнений."
+            )
+            try:
+                await call.bot.send_message(referrer_notify["tg_id"], text)
+            except Exception:  # pragma: no cover - network/runtime issues
+                logger.warning(
+                    "Failed to notify referrer %s about confirmed referral %s",
+                    referrer_notify["tg_id"],
+                    call.from_user.id,
+                    exc_info=True,
+                )
 
         await state.clear()
         await call.message.answer(

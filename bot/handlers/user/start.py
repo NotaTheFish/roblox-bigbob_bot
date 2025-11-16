@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import Router, types
 from aiogram.filters import CommandStart
 from aiogram.filters.command import CommandStart as CommandStartFilter
@@ -11,6 +13,7 @@ from bot.utils.referrals import attach_referral, ensure_referral_code, find_refe
 from db.constants import BOT_USER_ID_PREFIX, BOT_USER_ID_SEQUENCE
 
 router = Router(name="user_start")
+logger = logging.getLogger(__name__)
 
 
 async def _generate_bot_user_id(session) -> str:
@@ -59,20 +62,47 @@ async def start_cmd(message: types.Message, command: CommandStart):
             if referrer:
                 referral = await attach_referral(session, referrer, user)
                 if referral:
-                    session.add(LogEntry(
-                        user_id=referrer.id,
-                        telegram_id=referrer.tg_id,
-                        event_type="referral_attached",
-                        message="Новый реферал",
-                        data={"referred_id": user.id, "referral_code": referral_code},
-                    ))
-                    session.add(LogEntry(
-                        user_id=user.id,
-                        telegram_id=user.tg_id,
-                        event_type="referred_signup",
-                        message="Регистрация по реферальной ссылке",
-                        data={"referrer_id": referrer.id},
-                    ))
+                    pending_message = (
+                        "Новый реферал — бонус будет доступен после подтверждения Roblox."
+                    )
+                    session.add(
+                        LogEntry(
+                            user_id=referrer.id,
+                            telegram_id=referrer.tg_id,
+                            event_type="referral_attached",
+                            message=pending_message,
+                            data={
+                                "referred_id": user.id,
+                                "referral_code": referral_code,
+                                "pending": True,
+                            },
+                        )
+                    )
+                    session.add(
+                        LogEntry(
+                            user_id=user.id,
+                            telegram_id=user.tg_id,
+                            event_type="referred_signup",
+                            message="Регистрация по реферальной ссылке",
+                            data={"referrer_id": referrer.id},
+                        )
+                    )
+
+                    referred_username = message.from_user.username or DEFAULT_TG_USERNAME
+                    notify_text = (
+                        "Новый реферал!\n"
+                        f"@{referred_username} зарегистрировался по вашей ссылке.\n"
+                        "Бонус будет начислен после подтверждения его Roblox-аккаунта."
+                    )
+                    try:
+                        await message.bot.send_message(referrer.tg_id, notify_text)
+                    except Exception:  # pragma: no cover - network/runtime issues
+                        logger.warning(
+                            "Failed to notify referrer %s about pending referral from %s",
+                            referrer.tg_id,
+                            user.tg_id,
+                            exc_info=True,
+                        )
 
             session.add(LogEntry(
                 user_id=user.id,
