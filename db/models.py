@@ -22,7 +22,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-
 def _generate_request_id() -> str:
     """Generate a short unique identifier suitable for request tracking."""
     return uuid4().hex
@@ -44,6 +43,12 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
+    bot_user_id = Column(
+        String(32),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
     tg_id = Column("telegram_id", BigInteger, unique=True, index=True, nullable=False)
     tg_username = Column(String(255))
     username = Column(String(255))

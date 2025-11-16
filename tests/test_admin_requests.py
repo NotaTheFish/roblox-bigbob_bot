@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.handlers.admin import login
 
 from tests.conftest import FakeAsyncSession, make_async_session_stub
@@ -104,13 +105,13 @@ async def test_admin_login_request_sends_full_name(monkeypatch, message_factory)
         obj for obj in request_session.added if obj.__class__.__name__ == "AdminRequest"
     )
     assert admin_request.full_name == "Display Name"
-    assert admin_request.username is None
+        assert admin_request.username == DEFAULT_TG_USERNAME
 
     assert message.bot.sent_messages
     root_message = message.bot.sent_messages[0]
     assert root_message[0][0] == 555
     assert "<b>Display Name</b>" in root_message[0][1]
-    assert "—" in root_message[0][1]
+    assert f"@{DEFAULT_TG_USERNAME}" in root_message[0][1]
     assert root_message[1]["parse_mode"] == "HTML"
     assert message.replies
     assert "Запрос отправлен" in message.replies[-1][0]

@@ -52,12 +52,11 @@ def render_search_profile(user: User, options: SearchRenderOptions) -> str:
     """Render a user profile for search results."""
 
     titles = normalize_titles(user.titles)
-    tg_username = f"@{user.tg_username}" if user.tg_username else ""
-
     return render_profile(
         ProfileView(
             heading=options.heading,
-            tg_username=tg_username,
+            bot_user_id=user.bot_user_id,
+            tg_username=user.tg_username or "",
             tg_id=user.tg_id if options.include_private_fields else None,
             roblox_username=user.username or "",
             roblox_id=user.roblox_id or "",

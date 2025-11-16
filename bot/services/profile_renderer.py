@@ -12,6 +12,7 @@ class ProfileView:
     """Structured data for rendering a profile card."""
 
     heading: str
+    bot_user_id: str | None = None
     tg_username: str | None = None
     tg_id: int | None = None
     roblox_username: str | None = None
@@ -32,8 +33,13 @@ def render_profile(view: ProfileView) -> str:
 
     lines: list[str] = [view.heading]
 
+    if view.bot_user_id is not None:
+        lines.append(f"ID бота: <code>{_format(view.bot_user_id)}</code>")
     if view.tg_username is not None:
-        lines.append(f"TG: {_format(view.tg_username)}")
+        username_value = _format(view.tg_username)
+        if view.tg_username:
+            username_value = f"@{username_value}"
+        lines.append(f"TG: {username_value}")
     if view.tg_id is not None:
         lines.append(f"TG ID: <code>{view.tg_id}</code>")
     if view.roblox_username is not None:

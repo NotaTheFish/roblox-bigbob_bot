@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
 from bot.config import ROOT_ADMIN_ID
+from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import (
     LogEntry,
     Product,
@@ -283,8 +284,9 @@ async def user_buy_finish(call: types.CallbackQuery):
     await check_achievements(user)
 
     if product.item_type in {"privilege", "item"}:
+        buyer_username = call.from_user.username or DEFAULT_TG_USERNAME
         notify_text = (
-            f"⚠️ @{call.from_user.username or call.from_user.id} купил {product.name}\n"
+            f"⚠️ @{buyer_username} купил {product.name}\n"
             f"Тип: {product.item_type}\nЗначение: {product.value}\n"
             f"ID заявки: {purchase.request_id}"
         )

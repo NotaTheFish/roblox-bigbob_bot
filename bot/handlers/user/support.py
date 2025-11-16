@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
+from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.main_menu import support_menu
 from bot.states.user_states import SupportRequestState
@@ -44,6 +45,8 @@ async def handle_support_message(message: types.Message, state: FSMContext):
         await message.answer("Пожалуйста, отправьте текстовое сообщение для поддержки.")
         return
 
+    sender_username = message.from_user.username or DEFAULT_TG_USERNAME
+
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
         if not user:
@@ -58,7 +61,7 @@ async def handle_support_message(message: types.Message, state: FSMContext):
             message=message.text,
             data={
                 "message_id": message.message_id,
-                "username": message.from_user.username,
+                "username": sender_username,
                 "full_name": message.from_user.full_name,
             },
         )
@@ -102,8 +105,8 @@ async def handle_support_message(message: types.Message, state: FSMContext):
         f"Thread ID: {thread_id}\n"
         f"Пользователь: {user_link}\n"
     )
-    if sender.username:
-        notification_text += f"Username: @{sender.username}\n"
+    if sender_username:
+        notification_text += f"Username: @{sender_username}\n"
     escaped_message = html.escape(message.text)
     notification_text += f"\nСообщение:\n{escaped_message}"
 

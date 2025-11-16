@@ -1,14 +1,26 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart
 from aiogram.filters.command import CommandStart as CommandStartFilter
-from sqlalchemy import select
+from sqlalchemy import select, text
 
+from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.verify_kb import verify_button
 from bot.keyboards.main_menu import main_menu
 from bot.utils.referrals import attach_referral, ensure_referral_code, find_referrer_by_code
+from db.constants import BOT_USER_ID_PREFIX, BOT_USER_ID_SEQUENCE
 
 router = Router(name="user_start")
+
+
+async def _generate_bot_user_id(session) -> str:
+    """Reserve the next bot-specific user identifier."""
+
+    result = await session.execute(
+        text(f"SELECT nextval('{BOT_USER_ID_SEQUENCE}'::regclass)")
+    )
+    next_value = result.scalar_one()
+    return f"{BOT_USER_ID_PREFIX}{next_value}"
 
 
 @router.message(CommandStartFilter())
@@ -17,14 +29,16 @@ async def start_cmd(message: types.Message, command: CommandStart):
         return
 
     tg_id = message.from_user.id
-    tg_username = message.from_user.username or "Unknown"
+    tg_username = message.from_user.username or DEFAULT_TG_USERNAME
     referral_code = (command.args or "").strip()  # ✅ Aiogram v3 способ
 
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == tg_id))
 
         if not user:
+            bot_user_id = await _generate_bot_user_id(session)
             user = User(
+                bot_user_id=bot_user_id,
                 tg_id=tg_id,
                 tg_username=tg_username,
                 username=None,

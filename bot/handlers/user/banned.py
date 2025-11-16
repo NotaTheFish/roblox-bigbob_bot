@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
+from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK
 from bot.states.user_states import BanAppealState
@@ -63,6 +64,7 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
         await message.answer("Пожалуйста, отправьте текстовое сообщение.")
         return
 
+    sender_username = message.from_user.username or DEFAULT_TG_USERNAME
     log_entry_id: int | None = None
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
@@ -83,7 +85,7 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
             message=message.text,
             data={
                 "message_id": message.message_id,
-                "username": message.from_user.username,
+                "username": sender_username,
                 "full_name": message.from_user.full_name,
             },
         )
@@ -116,8 +118,8 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
             f"Telegram ID: <code>{sender.id}</code>\n"
             f"Пользователь: {user_link}\n"
         )
-        if sender.username:
-            notification_text += f"Username: @{sender.username}\n"
+        if sender_username:
+            notification_text += f"Username: @{sender_username}\n"
         notification_text += "\nСообщение:\n" + html.escape(message.text)
 
         for admin_id in recipients:

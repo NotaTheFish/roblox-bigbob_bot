@@ -121,14 +121,15 @@ async def open_profile_menu(message: types.Message, state: FSMContext):
 
     titles = normalize_titles(user.titles)
     profile_text = render_profile(
-            ProfileView(
-                heading="👤 <b>Ваш профиль</b>",
-                tg_username=f"@{user.tg_username}" if user.tg_username else "",
-                tg_id=user.tg_id,
-                roblox_username=user.username or "",
-                roblox_id=user.roblox_id or "",
-                balance=user.nuts_balance,
-                titles=titles,
+        ProfileView(
+            heading="👤 <b>Ваш профиль</b>",
+            bot_user_id=user.bot_user_id,
+            tg_username=user.tg_username or "",
+            tg_id=user.tg_id,
+            roblox_username=user.username or "",
+            roblox_id=user.roblox_id or "",
+            balance=user.nuts_balance,
+            titles=titles,
             selected_title=user.selected_title,
             selected_achievement=(
                 user.selected_achievement.name if user.selected_achievement else None
