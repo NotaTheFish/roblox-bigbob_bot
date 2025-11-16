@@ -441,10 +441,11 @@ async def _demote_admin(target_id: int, moderator_id: int, bot: Bot) -> bool:
         await session.commit()
 
     try:
+        is_admin_now = await is_admin(target_id)
         await bot.send_message(
             target_id,
             "⚠️ Вы лишены прав администратора.",
-            reply_markup=main_menu(is_admin=False),
+            reply_markup=main_menu(is_admin=is_admin_now),
         )
     except Exception:  # pragma: no cover - network errors
         logger.exception("Не удалось уведомить пользователя %s о разжаловании", target_id)

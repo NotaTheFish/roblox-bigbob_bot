@@ -64,11 +64,14 @@ async def admin_exit_to_main(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
 
-    if not await is_admin(message.from_user.id):
+    user_id = message.from_user.id
+
+    is_user_admin = await is_admin(user_id)
+    if not is_user_admin:
         return await message.answer("⛔ У вас нет доступа")
 
     await state.clear()
     await message.answer(
         "🏠 Вы вернулись в главное меню.",
-        reply_markup=main_menu(is_admin=False),
+        reply_markup=main_menu(is_admin=is_user_admin),
     )
