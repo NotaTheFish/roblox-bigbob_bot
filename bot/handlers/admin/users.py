@@ -36,6 +36,7 @@ from bot.texts.block import (
     UNBLOCK_NOTIFICATION_TEXT,
 )
 from bot.utils.achievement_checker import check_achievements
+from db.constants import BOT_USER_ID_PREFIX
 
 
 router = Router(name="admin_users")
@@ -125,7 +126,10 @@ async def _send_users_list(message: types.Message):
             f"username: <code>{username}</code> — 🥜 {u.nuts_balance}\n"
         )
 
-    text += "\n🔎 Отправьте TG ID, bot_user_id или username для поиска"
+    text += (
+        "\n🔎 Отправьте TG ID, ID бота "
+        f"(например, {BOT_USER_ID_PREFIX}12345) или username для поиска"
+    )
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
 
@@ -183,7 +187,10 @@ async def admin_search_user(message: types.Message):
     query = message.text.strip().lstrip("@")
     if not query:
         return await message.reply(
-            "Введите запрос для поиска",
+            (
+                "Введите TG ID, username или ID бота "
+                f"(например, {BOT_USER_ID_PREFIX}12345) для поиска"
+            ),
             reply_markup=admin_users_menu_kb(),
         )
 

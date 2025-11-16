@@ -35,6 +35,7 @@ from bot.states.user_states import (
     TopPlayersSearchState,
 )
 from bot.utils.referrals import ensure_referral_code
+from db.constants import BOT_USER_ID_PREFIX
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 
@@ -331,7 +332,8 @@ async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(top_search_expires_at=expires_at)
     await call.message.answer(
         (
-            "🔍 Отправьте Roblox ник или Telegram @username игрока.\n"
+            "🔍 Отправьте Roblox ник, Telegram @username "
+            f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).\n"
             "Напишите «Отмена», чтобы выйти из поиска."
         )
     )
@@ -355,7 +357,13 @@ async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
 async def handle_top_player_search(message: types.Message, state: FSMContext):
     query = message.text.strip()
     if not query:
-        return await message.answer("Введите ник игрока или напишите «Отмена».")
+        return await message.answer(
+            (
+                "Введите Roblox ник, Telegram @username "
+                f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).\n"
+                "Для выхода напишите «Отмена»."
+            )
+        )
 
     data = await state.get_data()
     expires_at = data.get("top_search_expires_at")

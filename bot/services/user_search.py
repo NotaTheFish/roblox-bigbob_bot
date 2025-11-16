@@ -7,6 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from bot.db import User, async_session
+from db.constants import BOT_USER_ID_PREFIX
 from bot.services.profile_renderer import ProfileView, render_profile
 from bot.services.user_titles import normalize_titles
 
@@ -26,28 +27,34 @@ async def find_user_by_query(query: str, *, include_blocked: bool = True) -> Use
     if not normalized:
         return None
 
-    filters = []
-    if normalized.isdigit():
-        filters.append(User.tg_id == int(normalized))
-
-    filters.append(User.bot_user_id == normalized)
-
-    like_pattern = f"%{normalized}%"
-    filters.append(User.tg_username.ilike(like_pattern))
-    filters.append(User.username.ilike(like_pattern))
-
     stmt = (
         select(User)
         .options(selectinload(User.selected_achievement))
-        .where(or_(*filters))
         .limit(1)
     )
 
     if not include_blocked:
         stmt = stmt.where(User.is_blocked.is_(False))
 
+    maybe_bot_id = normalized.upper()
+    is_bot_id_query = maybe_bot_id.startswith(BOT_USER_ID_PREFIX)
+
     async with async_session() as session:
-        return await session.scalar(stmt)
+        if is_bot_id_query:
+            bot_id_stmt = stmt.where(User.bot_user_id == maybe_bot_id)
+            user = await session.scalar(bot_id_stmt)
+            if user:
+                return user
+
+        filters = []
+        if normalized.isdigit():
+            filters.append(User.tg_id == int(normalized))
+
+        like_pattern = f"%{normalized}%"
+        filters.append(User.tg_username.ilike(like_pattern))
+        filters.append(User.username.ilike(like_pattern))
+
+        return await session.scalar(stmt.where(or_(*filters)))
 
 
 def render_search_profile(user: User, options: SearchRenderOptions) -> str:
