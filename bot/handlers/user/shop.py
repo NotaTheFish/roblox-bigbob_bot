@@ -249,7 +249,9 @@ async def user_buy_finish(call: types.CallbackQuery):
 
         referral_message = ""
         referral = await session.scalar(select(Referral).where(Referral.referred_id == user.id))
+        referrer: User | None = None
         if referral and referral.confirmed and product.referral_bonus > 0:
+            referrer = await session.get(User, referral.referrer_id)
             reward = ReferralReward(
                 referral_id=referral.id,
                 referrer_id=referral.referrer_id,
@@ -260,7 +262,6 @@ async def user_buy_finish(call: types.CallbackQuery):
                 metadata_json={"product_id": product.id},
             )
             session.add(reward)
-            referrer = referral.referrer
             if referrer:
                 await add_nuts(
                     session,
