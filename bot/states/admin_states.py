@@ -14,6 +14,11 @@ class GiveTitleState(StatesGroup):
     waiting_for_title = State()
 
 
+class RemoveTitleState(StatesGroup):
+    choosing_title = State()
+    confirming = State()
+
+
 class AdminUsersState(StatesGroup):
     searching = State()
 

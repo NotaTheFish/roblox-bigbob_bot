@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from html import escape
+from typing import Sequence
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
@@ -27,6 +29,7 @@ from bot.states.admin_states import (
     GiveMoneyState,
     GiveTitleState,
     RemoveMoneyState,
+    RemoveTitleState,
 )
 from bot.texts.block import (
     BAN_NOTIFICATION_TEXT,
@@ -63,8 +66,39 @@ def user_card_kb(user_id, is_blocked):
             text="🚫 Заблокировать", callback_data=f"block_user:{user_id}"
         )
     builder.button(text="🎖 Выдать титул", callback_data=f"give_title:{user_id}")
+    builder.button(text="🗑 Удалить титул", callback_data=f"remove_title:{user_id}")
     builder.button(text="⬅️ Назад", callback_data="admin_users")
-    builder.adjust(2, 1, 1)
+    builder.adjust(2, 1, 2, 1)
+    return builder.as_markup()
+
+
+def _shorten_title_label(text: str, limit: int = 32) -> str:
+    text = (text or "").strip()
+    if not text:
+        return "Без названия"
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1]}…"
+
+
+def _remove_title_selection_kb(titles: Sequence[str]):
+    builder = InlineKeyboardBuilder()
+    for idx, title in enumerate(titles):
+        builder.button(
+            text=_shorten_title_label(title),
+            callback_data=f"remove_title_pick:{idx}",
+        )
+    builder.button(text="✖️ Отмена", callback_data="remove_title_cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def _remove_title_confirm_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data="remove_title_confirm")
+    builder.button(text="↩️ Назад", callback_data="remove_title_back")
+    builder.button(text="✖️ Отмена", callback_data="remove_title_cancel")
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
@@ -266,6 +300,219 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
                 logger.debug("Failed to notify user %s about unblock", user_id)
             await call.message.edit_text("✅ Пользователь разблокирован")
             return
+
+
+@router.callback_query(F.data.startswith("remove_title:"))
+async def remove_title_start(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    try:
+        _action, user_id_raw = call.data.split(":", maxsplit=1)
+        user_id = int(user_id_raw)
+    except (ValueError, AttributeError):
+        return await call.answer("Некорректный запрос", show_alert=True)
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == user_id))
+
+    if not user:
+        return await call.answer("Пользователь не найден", show_alert=True)
+
+    titles = normalize_titles(user.titles)
+    if not titles:
+        return await call.answer("У пользователя нет титулов", show_alert=True)
+
+    await state.set_state(RemoveTitleState.choosing_title)
+    await state.update_data(target_user_id=user_id, title_options=titles)
+
+    prompt = (
+        "🗑 <b>Удаление титула</b>\n"
+        f"Выберите титул для удаления у пользователя <code>{user_id}</code>:"
+    )
+    if call.message:
+        await call.message.answer(
+            prompt,
+            parse_mode="HTML",
+            reply_markup=_remove_title_selection_kb(titles),
+        )
+    await call.answer()
+
+
+@router.callback_query(
+    StateFilter(RemoveTitleState.choosing_title),
+    F.data.startswith("remove_title_pick:"),
+)
+async def remove_title_pick(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    data = await state.get_data()
+    titles: list[str] = data.get("title_options", [])
+    try:
+        _, idx_raw = call.data.split(":", maxsplit=1)
+        idx = int(idx_raw)
+    except (ValueError, AttributeError):
+        return await call.answer("Некорректный выбор", show_alert=True)
+
+    if idx < 0 or idx >= len(titles):
+        return await call.answer("Некорректный выбор", show_alert=True)
+
+    selected_title = titles[idx]
+    await state.update_data(selected_title=selected_title)
+    await state.set_state(RemoveTitleState.confirming)
+
+    user_id = data.get("target_user_id")
+    if not user_id:
+        await state.clear()
+        return await call.answer("Данные недоступны", show_alert=True)
+
+    if call.message:
+        await call.message.edit_text(
+            (
+                "⚠️ Подтверждение удаления\n"
+                f"Удалить титул <b>{escape(selected_title)}</b> у пользователя "
+                f"<code>{user_id}</code>?"
+            ),
+            parse_mode="HTML",
+            reply_markup=_remove_title_confirm_kb(),
+        )
+
+    await call.answer()
+
+
+@router.callback_query(
+    StateFilter(RemoveTitleState.confirming), F.data == "remove_title_back"
+)
+async def remove_title_back(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    data = await state.get_data()
+    titles: list[str] = data.get("title_options", [])
+    user_id = data.get("target_user_id")
+    if not titles or not user_id:
+        await state.clear()
+        if call.message:
+            await call.message.edit_text("❌ Удаление титула отменено")
+        return await call.answer()
+
+    await state.update_data(selected_title=None)
+    await state.set_state(RemoveTitleState.choosing_title)
+
+    if call.message:
+        await call.message.edit_text(
+            (
+                "🗑 <b>Удаление титула</b>\n"
+                f"Выберите титул для удаления у пользователя <code>{user_id}</code>:"
+            ),
+            parse_mode="HTML",
+            reply_markup=_remove_title_selection_kb(titles),
+        )
+
+    await call.answer()
+
+
+@router.callback_query(
+    StateFilter(RemoveTitleState.choosing_title, RemoveTitleState.confirming),
+    F.data == "remove_title_cancel",
+)
+async def remove_title_cancel(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    await state.clear()
+    if call.message:
+        await call.message.edit_text("❌ Удаление титула отменено")
+    await call.answer()
+
+
+@router.callback_query(
+    StateFilter(RemoveTitleState.confirming), F.data == "remove_title_confirm"
+)
+async def remove_title_confirm(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    selected_title: str | None = data.get("selected_title")
+    if not target_user_id or not selected_title:
+        await state.clear()
+        if call.message:
+            await call.message.edit_text("❌ Данные удаления потеряны")
+        return await call.answer()
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == target_user_id))
+        if not user:
+            await state.clear()
+            if call.message:
+                await call.message.edit_text("❌ Пользователь не найден")
+            return await call.answer()
+
+        titles = normalize_titles(user.titles)
+        if selected_title not in titles:
+            await state.clear()
+            if call.message:
+                await call.message.edit_text("⚠️ Титул уже удалён")
+            return await call.answer()
+
+        titles = [t for t in titles if t != selected_title]
+        user.titles = titles
+        if user.selected_title == selected_title:
+            user.selected_title = None
+
+        await session.commit()
+
+    logger.info(
+        "Admin %s removed title '%s' from user %s",
+        call.from_user.id,
+        selected_title,
+        target_user_id,
+    )
+
+    try:
+        await call.bot.send_message(
+            target_user_id,
+            (
+                "⚠️ Ваш титул <b>{title}</b> был удалён администратором."
+            ).format(title=escape(selected_title)),
+            parse_mode="HTML",
+        )
+    except Exception:  # pragma: no cover - ignore delivery errors
+        logger.debug(
+            "Failed to notify user %s about removed title %s",
+            target_user_id,
+            selected_title,
+        )
+
+    if call.message:
+        await call.message.edit_text(
+            (
+                "✅ Титул <b>{title}</b> удалён у пользователя "
+                "<code>{user_id}</code>"
+            ).format(title=escape(selected_title), user_id=target_user_id),
+            parse_mode="HTML",
+        )
+
+    await state.clear()
+    await call.answer()
 
 
 # -------- Процесс выдачи валюты --------
