@@ -26,12 +26,12 @@ from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 router = Router(name="admin_servers")
 
-SERVER_MENU_BUTTON = "Сервера"
+SERVER_MENU_BUTTON = "🖥️ Сервера"
 SERVER_CREATE_BUTTON = "➕ Создать сервер"
 SERVER_DELETE_BUTTON = "🗑 Удалить сервер"
 SERVER_SET_LINK_BUTTON = "🔗 Назначить ссылку"
 SERVER_CLEAR_LINK_BUTTON = "🚫 Удалить ссылку"
-SERVER_BACK_BUTTON = "⬅️ Назад"
+SERVER_BACK_BUTTON = "↩️ В админ-панель"
 
 
 async def is_admin(uid: int) -> bool:

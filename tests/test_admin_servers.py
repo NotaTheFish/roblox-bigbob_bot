@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from bot.handlers.admin import servers
+from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.states.server_states import ServerManageState
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE, LogEntry, Server
 from tests.conftest import FakeAsyncSession, make_async_session_stub
@@ -294,3 +295,18 @@ async def test_server_clear_link_requests_message(
 
     log_entry = next(obj for obj in clear_session.added if isinstance(obj, LogEntry))
     assert log_entry.event_type == "server_link_removed"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_server_back_button_returns_admin_menu(message_factory, mock_state):
+    message = message_factory(text=servers.SERVER_BACK_BUTTON)
+
+    await servers.server_back_to_main(message, mock_state)
+
+    assert await mock_state.get_state() is None
+    assert message.answers
+    text, params = message.answers[-1]
+    assert "Админ-панель" in text
+    expected_kb = admin_main_menu_kb()
+    assert params.get("reply_markup") is not None
+    assert params["reply_markup"].keyboard == expected_kb.keyboard
