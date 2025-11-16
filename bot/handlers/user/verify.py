@@ -7,10 +7,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy import select
 
-from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, Referral, User, async_session
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.verify_kb import verify_button, verify_check_button
+from bot.middleware.user_sync import normalize_tg_username
 from bot.states.verify_state import VerifyState
 from bot.utils.referrals import (
     DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
@@ -99,8 +99,9 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                     if referrer_user:
                         referrer_notify = {
                             "tg_id": referrer_user.tg_id,
-                            "referred_username": call.from_user.username
-                            or DEFAULT_TG_USERNAME,
+                            "referred_username": normalize_tg_username(
+                                call.from_user.username
+                            ),
                         }
                         session.add(
                             LogEntry(

@@ -11,9 +11,9 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
-from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK
+from bot.middleware.user_sync import normalize_tg_username
 from bot.states.user_states import BanAppealState
 
 router = Router(name="user_banned")
@@ -64,7 +64,7 @@ async def process_ban_appeal(message: types.Message, state: FSMContext) -> None:
         await message.answer("Пожалуйста, отправьте текстовое сообщение.")
         return
 
-    sender_username = message.from_user.username or DEFAULT_TG_USERNAME
+    sender_username = normalize_tg_username(message.from_user.username)
     log_entry_id: int | None = None
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))

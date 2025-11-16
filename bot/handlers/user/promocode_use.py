@@ -12,8 +12,8 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
-from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
+from bot.middleware.user_sync import normalize_tg_username
 from bot.states.user_states import PromoInputState
 from bot.utils.achievement_checker import check_achievements
 from backend.services.nuts import add_nuts
@@ -148,7 +148,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
     reward_message = f"🎉 Промокод {code} активирован!\n{reward_text}"
     await message.reply(reward_message)
 
-    sender_username = message.from_user.username or DEFAULT_TG_USERNAME
+    sender_username = normalize_tg_username(message.from_user.username)
 
     try:
         await message.bot.send_message(

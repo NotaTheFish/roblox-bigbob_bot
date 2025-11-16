@@ -5,10 +5,10 @@ from aiogram.filters import CommandStart
 from aiogram.filters.command import CommandStart as CommandStartFilter
 from sqlalchemy import select, text
 
-from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.verify_kb import verify_button
 from bot.keyboards.main_menu import main_menu
+from bot.middleware.user_sync import normalize_tg_username
 from bot.utils.referrals import attach_referral, ensure_referral_code, find_referrer_by_code
 from db.constants import BOT_USER_ID_PREFIX, BOT_USER_ID_SEQUENCE
 
@@ -32,7 +32,7 @@ async def start_cmd(message: types.Message, command: CommandStart):
         return
 
     tg_id = message.from_user.id
-    tg_username = message.from_user.username or DEFAULT_TG_USERNAME
+    tg_username = normalize_tg_username(message.from_user.username)
     referral_code = (command.args or "").strip()  # ✅ Aiogram v3 способ
 
     async with async_session() as session:
@@ -88,7 +88,7 @@ async def start_cmd(message: types.Message, command: CommandStart):
                         )
                     )
 
-                    referred_username = message.from_user.username or DEFAULT_TG_USERNAME
+                    referred_username = normalize_tg_username(message.from_user.username)
                     notify_text = (
                         "Новый реферал!\n"
                         f"@{referred_username} зарегистрировался по вашей ссылке.\n"
@@ -118,12 +118,6 @@ async def start_cmd(message: types.Message, command: CommandStart):
                 "Перед началом нужно подтвердить Roblox-аккаунт.",
                 reply_markup=verify_button(),
             )
-
-        # Обновление username
-        if user.tg_username != tg_username:
-            user.tg_username = tg_username
-            await ensure_referral_code(session, user)
-            await session.commit()
 
         # Проверка Roblox верификации
         if not user.verified:

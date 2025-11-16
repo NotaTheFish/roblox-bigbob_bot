@@ -10,9 +10,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
 from bot.config import ADMIN_LOGIN_PASSWORD, ROOT_ADMIN_ID
-from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, AdminRequest, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
+from bot.middleware.user_sync import normalize_tg_username
 from bot.states.admin_states import AdminLoginState
 
 
@@ -50,7 +50,7 @@ async def _process_admin_code(message: types.Message, code: str) -> bool:
         await message.reply("✅ Вы уже админ", reply_markup=admin_main_menu_kb())
         return True
 
-    username = (message.from_user.username or DEFAULT_TG_USERNAME).strip()
+    username = normalize_tg_username(message.from_user.username)
     full_name = (message.from_user.full_name or "").strip() or None
 
     async with async_session() as session:

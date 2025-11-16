@@ -11,9 +11,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
-from bot.constants.users import DEFAULT_TG_USERNAME
 from bot.db import Admin, LogEntry, User, async_session
 from bot.keyboards.main_menu import support_menu
+from bot.middleware.user_sync import normalize_tg_username
 from bot.states.user_states import SupportRequestState
 
 
@@ -45,7 +45,7 @@ async def handle_support_message(message: types.Message, state: FSMContext):
         await message.answer("Пожалуйста, отправьте текстовое сообщение для поддержки.")
         return
 
-    sender_username = message.from_user.username or DEFAULT_TG_USERNAME
+    sender_username = normalize_tg_username(message.from_user.username)
 
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
