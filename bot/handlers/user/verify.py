@@ -6,6 +6,7 @@ from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from bot.db import Admin, LogEntry, Referral, User, async_session
 from bot.keyboards.main_menu import main_menu
@@ -90,12 +91,14 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
             if db_user:
                 db_user.verified = True
                 referral = await session.scalar(
-                    select(Referral).where(Referral.referred_id == db_user.id)
+                    select(Referral)
+                    .options(selectinload(Referral.referrer))
+                    .where(Referral.referred_id == db_user.id)
                 )
                 referrer_user: User | None = None
                 if referral and not referral.confirmed:
                     referral = await confirm_referral(session, referral)
-                    referrer_user = referral.referrer or await session.get(User, referral.referrer_id)
+                    referrer_user = referral.referrer
                     if referrer_user:
                         referrer_notify = {
                             "tg_id": referrer_user.tg_id,
