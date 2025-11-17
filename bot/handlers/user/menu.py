@@ -53,13 +53,14 @@ TOP_SEARCH_CANCEL = {"отмена", "cancel", "назад"}
 def _profile_edit_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🏷 Активный титул", callback_data="profile_edit:titles")],
+            [InlineKeyboardButton(text="⚡ Активный титул", callback_data="profile_edit:titles")],
             [
                 InlineKeyboardButton(
                     text="🏆 Выбрать достижение", callback_data="profile_edit:achievement"
                 )
             ],
-            [InlineKeyboardButton(text="📝 Изменить «О себе»", callback_data="profile_edit:about")],
+            [InlineKeyboardButton(text="📝 Изменить “О себе”", callback_data="profile_edit:about")],
+            [InlineKeyboardButton(text="✏️ Изменить ник", callback_data="profile_edit:nickname")],
         ]
     )
 
@@ -435,33 +436,35 @@ async def handle_top_player_search(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-@router.message(F.text == "✏️ Изменить ник")
-async def profile_edit_nickname(message: types.Message, state: FSMContext):
-    if not message.from_user:
-        return
+@router.callback_query(F.data == "profile_edit:nickname")
+async def profile_edit_nickname(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user or not call.message:
+        return await call.answer()
 
     await _set_profile_mode(state, True)
 
     async with async_session() as session:
-        user = await session.scalar(_user_profile_stmt(message.from_user.id))
+        user = await session.scalar(_user_profile_stmt(call.from_user.id))
 
     if not user:
-        return await message.answer("❗ Сначала нажмите /start")
+        await call.message.answer("❗ Сначала нажмите /start")
+        return await call.answer()
 
     now = datetime.now(tz=timezone.utc)
     next_change = _next_nickname_change_at(user.nickname_changed_at)
     if next_change and next_change > now:
-        await state.set_state(None)
-        return await message.answer(_nickname_cooldown_message(next_change, now))
+        await call.message.answer(_nickname_cooldown_message(next_change, now))
+        return await call.answer()
 
     await state.set_state(ProfileEditState.editing_nickname)
-    await message.answer(
+    await call.message.answer(
         (
             "✏️ Отправьте новый ник (одна строка, без переносов).\n"
             f"Длина — от {NICKNAME_MIN_LENGTH} до {NICKNAME_MAX_LENGTH} символов.\n"
             "Для отмены напишите «Отмена»."
         )
     )
+    await call.answer()
 
 
 @router.message(StateFilter(ProfileEditState.editing_nickname))
@@ -474,20 +477,20 @@ async def profile_save_nickname(message: types.Message, state: FSMContext):
     lower_text = raw_text.lower()
 
     if lower_text in {"отмена", "cancel"}:
-        await state.set_state(None)
-        await message.answer("✏️ Смена ника отменена")
-        return
+        return await _prompt_edit_menu(message, state, "✏️ Смена ника отменена")
 
     if not raw_text:
-        return await message.answer("❌ Ник не должен быть пустым")
+        return await _prompt_edit_menu(message, state, "❌ Ник не должен быть пустым")
     if "\n" in raw_text:
-        return await message.answer("❌ Ник должен быть в одну строку")
+        return await _prompt_edit_menu(message, state, "❌ Ник должен быть в одну строку")
     if not (NICKNAME_MIN_LENGTH <= len(raw_text) <= NICKNAME_MAX_LENGTH):
-        return await message.answer(
+        return await _prompt_edit_menu(
+            message,
+            state,
             (
                 "❌ Некорректная длина ника. \n"
                 f"Используйте от {NICKNAME_MIN_LENGTH} до {NICKNAME_MAX_LENGTH} символов."
-            )
+            ),
         )
 
     now = datetime.now(tz=timezone.utc)
@@ -496,24 +499,26 @@ async def profile_save_nickname(message: types.Message, state: FSMContext):
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
         if not user:
             await state.clear()
-            return await message.answer("❗ Сначала нажмите /start")
+            return await _prompt_edit_menu(message, state, "❗ Сначала нажмите /start")
 
         next_change = _next_nickname_change_at(user.nickname_changed_at)
         if next_change and next_change > now:
-            await state.set_state(None)
-            return await message.answer(_nickname_cooldown_message(next_change, now))
+            return await _prompt_edit_menu(
+                message, state, _nickname_cooldown_message(next_change, now)
+            )
 
         user.bot_nickname = raw_text
         user.nickname_changed_at = now
         await session.commit()
 
-    await state.set_state(None)
     next_available = now + NICKNAME_CHANGE_COOLDOWN
-    await message.answer(
+    await _prompt_edit_menu(
+        message,
+        state,
         (
             "✅ Ник обновлён!\n"
             f"Сменить снова можно после {to_msk(next_available):%d.%m.%Y %H:%M} МСК."
-        )
+        ),
     )
 
 

@@ -22,7 +22,7 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
 def profile_menu() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="🏆 Топ игроков"), KeyboardButton(text="💳 Пополнить баланс")],
-        [KeyboardButton(text="🎟 Промокод"), KeyboardButton(text="✏️ Изменить ник")],
+        [KeyboardButton(text="🎟 Промокод")],
         [KeyboardButton(text="✏️ Редактировать профиль"), KeyboardButton(text="🔗 Реферальная ссылка")],
         [KeyboardButton(text="⬅️ Назад")]
     ]
