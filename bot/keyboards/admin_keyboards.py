@@ -60,6 +60,14 @@ _LOG_CATEGORY_LABELS = {
     LogCategory.ADMIN_ACTIONS: "👮 Админ-действия",
 }
 
+_LOG_CATEGORY_ORDER = (
+    LogCategory.TOPUPS,
+    LogCategory.SPENDINGS,
+    LogCategory.PURCHASES,
+    LogCategory.PROMOCODES,
+    LogCategory.ADMIN_ACTIONS,
+)
+
 
 def admin_logs_filters_inline(
     selected: LogCategory,
@@ -68,7 +76,8 @@ def admin_logs_filters_inline(
     demote_target: int | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for category, label in _LOG_CATEGORY_LABELS.items():
+    for category in _LOG_CATEGORY_ORDER:
+        label = _LOG_CATEGORY_LABELS[category]
         suffix = " ✅" if category == selected else ""
         builder.button(
             text=f"{label}{suffix}",

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import logging
 import re
 
 from aiogram import F, Router, types
@@ -11,7 +10,6 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from bot.config import ROOT_ADMIN_ID
 from bot.db import LogEntry, PromoCode, PromocodeRedemption, User, async_session
 from bot.middleware.user_sync import normalize_tg_username
 from bot.states.user_states import PromoInputState
@@ -20,7 +18,6 @@ from backend.services.nuts import add_nuts
 
 
 router = Router(name="user_promocode_use")
-logger = logging.getLogger(__name__)
 
 PROMOCODE_PATTERN = re.compile(r"^[A-Z0-9-]{4,32}$", re.IGNORECASE)
 
@@ -30,6 +27,8 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
 
     if not message.from_user:
         return False
+
+    sender_username = normalize_tg_username(message.from_user.username)
 
     code = (raw_code or "").strip().upper()
 
@@ -85,6 +84,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
             reward_type = (promo.reward_type or "balance").lower()
             promo_type_label = str(promo.promo_type or reward_type or "balance")
             reward_text = "🎁 Промокод активирован."
+            reward_effect: dict[str, object] = {}
             
             if reward_type == "nuts":
                 reward_amount = int(reward_amount)
@@ -98,6 +98,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                     metadata={"promo_id": promo.id},
                 )
                 reward_text = f"🥜 На баланс начислено {reward_amount} орешков."
+                reward_effect = {"nuts": reward_amount}
             elif reward_type == "discount":
                 raw_value = promo.value or reward_amount or 0
                 try:
@@ -113,8 +114,10 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                     )
                 else:
                     reward_text = f"💸 Скидка {discount_value:g}% активирована."
+                reward_effect = {"discount_percent": discount_value}
             else:
                 reward_text = f"🎁 Промокод типа {promo_type_label} активирован."
+                reward_effect = {"value": promo.value or reward_amount}
 
             promo.uses = uses_count + 1
 
@@ -125,12 +128,26 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                 reward_amount=reward_amount,
                 reward_type=reward_type,
                 metadata_json={
-                    "promo_type": promo_type_label,
                     "promo_type": promo.promo_type,
+                    "promo_type_label": promo_type_label,
+                    "reward_type": reward_type,
+                    "reward_effect": reward_effect,
                 },
             )
             session.add(redemption)
             await session.flush()
+
+            log_data = {
+                "promo_id": promo.id,
+                "promo_code": promo.code,
+                "promo_type": promo.promo_type,
+                "promo_type_label": promo_type_label,
+                "reward_type": reward_type,
+                "reward_amount": reward_amount,
+                "reward_effect": reward_effect,
+                "reward_text": reward_text,
+                "redeemed_by_username": sender_username,
+            }
 
             session.add(
                 LogEntry(
@@ -139,7 +156,7 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
                     request_id=redemption.request_id,
                     event_type="promocode_redeemed",
                     message=f"Активация промокода {promo.code}",
-                    data={"promo_id": promo.id},
+                    data=log_data,
                 )
             )
 
@@ -147,24 +164,6 @@ async def redeem_promocode(message: types.Message, raw_code: str) -> bool:
 
     reward_message = f"🎉 Промокод {code} активирован!\n{reward_text}"
     await message.reply(reward_message)
-
-    sender_username = normalize_tg_username(message.from_user.username)
-
-    try:
-        await message.bot.send_message(
-            ROOT_ADMIN_ID,
-            f"🎟 Промокод <code>{code}</code> активировал @{sender_username}\n"
-            f"Выдано: {reward_text}",
-            parse_mode="HTML",
-        )
-    except Exception:  # pragma: no cover - exercised via unit tests
-        logger.exception(
-            "Failed to notify root admin %s about promocode redemption %s by user %s",
-            ROOT_ADMIN_ID,
-            code,
-            message.from_user.id,
-            extra={"user_id": message.from_user.id, "promo_code": code},
-        )
 
     return True
 

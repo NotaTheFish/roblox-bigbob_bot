@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from bot.handlers.admin import logs
-from bot.keyboards.admin_keyboards import LOGS_NEXT_BUTTON
+from bot.keyboards.admin_keyboards import LOGS_NEXT_BUTTON, admin_logs_filters_inline
 from bot.services.admin_logs import LogCategory, LogPage, LogQuery, LogsRepository
 from bot.states.admin_states import AdminLogsState
 from db.models import Admin, LogEntry
@@ -113,6 +113,12 @@ async def test_category_callback_switches_filter(monkeypatch, callback_query_fac
 
     assert captured and captured[-1].category == LogCategory.PROMOCODES
     assert captured[-1].page == 1
+
+
+def test_logs_filters_include_promocode_button():
+    markup = admin_logs_filters_inline(LogCategory.TOPUPS)
+    button_texts = [button.text for row in markup.inline_keyboard for button in row]
+    assert any(text.startswith("🎟 Промокоды") for text in button_texts)
 
 
 @pytest.mark.anyio("asyncio")

@@ -30,11 +30,7 @@ async def test_promocode_activation_from_text(monkeypatch, message_factory, mock
 
 
 @pytest.mark.anyio("asyncio")
-async def test_redeem_promocode_logs_notification_failure(
-    monkeypatch, message_factory, caplog
-):
-    monkeypatch.setattr(promocode_use, "ROOT_ADMIN_ID", 5050)
-
+async def test_redeem_promocode_logs_payload(monkeypatch, message_factory):
     promo_obj = SimpleNamespace(
         id=1,
         code="FREE",
@@ -51,30 +47,18 @@ async def test_redeem_promocode_logs_notification_failure(
 
     session = FakeAsyncSession(scalar_results=[promo_obj, user_obj, None])
     monkeypatch.setattr(promocode_use, "async_session", make_async_session_stub(session))
-
     monkeypatch.setattr(promocode_use, "check_achievements", AsyncMock())
 
     message = message_factory(user_id=88, username="hero", full_name="Hero User")
 
-    async def failing_send_message(*_args, **_kwargs):
-        raise RuntimeError("notify failed")
-
-    message.bot.send_message = failing_send_message
-
-    with caplog.at_level("ERROR"):
-        result = await promocode_use.redeem_promocode(message, "FREE")
+    result = await promocode_use.redeem_promocode(message, "FREE")
 
     assert result is True
     assert message.replies
-    assert any(
-        f"🎉 Промокод {promo_obj.code} активирован" in text
-        for text, _ in message.replies
-    )
+    assert not message.bot.sent_messages, "Notifications should be logged instead of sent"
     assert user_obj.nuts_balance == 10
 
-    records = [record for record in caplog.records if record.levelname == "ERROR"]
-    assert records, "Expected logged error when root admin notification fails"
-    record = records[-1]
-    assert "Failed to notify root admin" in record.getMessage()
-    assert getattr(record, "user_id", None) == 88
-    assert getattr(record, "promo_code", None) == "FREE"
+    log_entry = next(obj for obj in session.added if getattr(obj, "event_type", None) == "promocode_redeemed")
+    assert log_entry.data["promo_code"] == "FREE"
+    assert log_entry.data["reward_effect"] == {"nuts": 10}
+    assert log_entry.data["redeemed_by_username"] == "hero"
