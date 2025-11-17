@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -285,3 +287,24 @@ def admin_servers_menu_kb() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="↩️ В админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def admin_server_picker_kb(
+    button_labels: Sequence[str], *, footer_button: str | None = None
+) -> ReplyKeyboardMarkup:
+    rows: list[list[KeyboardButton]] = []
+    current_row: list[KeyboardButton] = []
+
+    for label in button_labels:
+        current_row.append(KeyboardButton(text=label))
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+
+    if current_row:
+        rows.append(current_row)
+
+    if footer_button:
+        rows.append([KeyboardButton(text=footer_button)])
+
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

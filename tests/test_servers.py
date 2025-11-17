@@ -28,21 +28,32 @@ class ServerStore:
         if server.id is None:
             server.id = self._next_id
         self._next_id = max(self._next_id, (server.id or 0) + 1)
+        if server.position is None:
+            server.position = len(self._servers) + 1
         if server not in self._servers:
             self._servers.append(server)
+        self._resequence()
         return server
 
     def remove(self, server: Server) -> None:
         self._servers = [item for item in self._servers if item is not server]
+        self._resequence()
 
     def all(self) -> List[Server]:
-        return list(sorted(self._servers, key=lambda item: item.id or 0))
+        self._resequence()
+        return list(self._servers)
 
     def get(self, server_id: int) -> Server | None:
         for server in self._servers:
             if server.id == server_id:
                 return server
         return None
+
+    def _resequence(self) -> None:
+        ordered = sorted(self._servers, key=lambda item: item.position or 0)
+        for idx, server in enumerate(ordered, start=1):
+            server.position = idx
+        self._servers = ordered
 
 
 class ServerSession(FakeAsyncSession):
@@ -88,10 +99,18 @@ def make_server_session_factory(store: ServerStore) -> Callable[[], ServerSessio
     return factory
 
 
-def make_server(*, name: str, slug: str, url: str | None = None, closed_message: str | None = None) -> Server:
+def make_server(
+    *,
+    name: str,
+    slug: str,
+    url: str | None = None,
+    closed_message: str | None = None,
+    position: int | None = None,
+) -> Server:
     server = Server(name=name, slug=slug, status="active")
     server.url = url
     server.closed_message = closed_message or SERVER_DEFAULT_CLOSED_MESSAGE
+    server.position = position
     return server
 
 
@@ -127,13 +146,14 @@ async def test_server_creation_and_deletion_updates_display(monkeypatch, message
     first_id = all_servers[0].id
     assert first_id is not None
 
-    delete_select = message_factory(text=str(first_id))
+    delete_select = message_factory(text="Сервер 1")
     await admin_servers.server_select_handler(delete_select, mock_state)
 
     remaining = store.all()
     assert len(remaining) == 1
     assert remaining[0].name == "Сервер 2"
     assert remaining[0].slug == "server-2"
+    assert remaining[0].position == 1
 
     remaining_listing = admin_servers._format_servers_list(remaining)
     assert "Сервер 1" in remaining_listing
@@ -149,8 +169,9 @@ async def test_setting_server_link_updates_user_menu(monkeypatch, message_factor
     start_message = message_factory(text=admin_servers.SERVER_SET_LINK_BUTTON)
     await admin_servers.server_set_link_start(start_message, mock_state)
 
-    server_id = store.all()[0].id
-    select_message = message_factory(text=str(server_id))
+    server = store.all()[0]
+    server_id = server.id
+    select_message = message_factory(text=f"Сервер {server.position}")
     await admin_servers.server_select_handler(select_message, mock_state)
 
     finish_message = message_factory(text="https://roblox.example/server")
@@ -193,8 +214,9 @@ async def test_clearing_server_link_sets_closed_message(monkeypatch, message_fac
     start_message = message_factory(text=admin_servers.SERVER_CLEAR_LINK_BUTTON)
     await admin_servers.server_clear_link_start(start_message, mock_state)
 
-    server_id = store.all()[0].id
-    select_message = message_factory(text=str(server_id))
+    server = store.all()[0]
+    server_id = server.id
+    select_message = message_factory(text=f"Сервер {server.position}")
     await admin_servers.server_select_handler(select_message, mock_state)
 
     finish_message = message_factory(text="Сервер временно закрыт")

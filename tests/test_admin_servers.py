@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 def _make_server(server_id: int, *, url: str | None = None) -> Server:
     server = Server(name=f"Legacy {server_id}", slug=f"legacy-{server_id}")
     server.id = server_id
+    server.position = server_id
     server.url = url
     server.closed_message = SERVER_DEFAULT_CLOSED_MESSAGE
     return server
@@ -36,8 +37,8 @@ def _auto_admin(monkeypatch):
         (None, None),
     ],
 )
-def test_parse_server_id_strips_non_digits(raw, expected):
-    assert servers._parse_server_id(raw) == expected
+def test_parse_server_position_strips_non_digits(raw, expected):
+    assert servers._parse_server_position(raw) == expected
 
 
 @pytest.mark.anyio("asyncio")
@@ -52,6 +53,7 @@ async def test_server_create_auto_fields(monkeypatch, message_factory, mock_stat
     new_server = next(obj for obj in session.added if isinstance(obj, Server))
     assert new_server.name == "Сервер 2"
     assert new_server.slug == "server-2"
+    assert new_server.position == 2
     assert new_server.url is None
     assert new_server.closed_message == SERVER_DEFAULT_CLOSED_MESSAGE
 
@@ -76,7 +78,7 @@ async def test_server_delete_preserves_names(monkeypatch, message_factory, mock_
 
     session_list = [
         FakeAsyncSession(scalars_results=[[server1, server2]]),
-        FakeAsyncSession(scalars_results=[[server1, server2]]),
+        FakeAsyncSession(get_results=[server1]),
     ]
     monkeypatch.setattr(
         servers, "async_session", make_async_session_stub(*session_list)
@@ -87,7 +89,7 @@ async def test_server_delete_preserves_names(monkeypatch, message_factory, mock_
 
     assert await mock_state.get_state() == ServerManageState.waiting_for_server.state
 
-    delete_message = message_factory(text="1")
+    delete_message = message_factory(text="Сервер 1")
     await servers.server_select_handler(delete_message, mock_state)
 
     delete_session = session_list[1]
@@ -109,7 +111,7 @@ async def test_server_delete_preserves_names(monkeypatch, message_factory, mock_
 
 @pytest.mark.anyio("asyncio")
 async def test_server_create_then_delete(monkeypatch, message_factory, mock_state):
-    create_session = FakeAsyncSession(scalars_results=[[]])
+    create_session = FakeAsyncSession(scalar_results=[0])
     delete_start_session = FakeAsyncSession()
     delete_session = FakeAsyncSession()
 
@@ -126,12 +128,12 @@ async def test_server_create_then_delete(monkeypatch, message_factory, mock_stat
     created_server.id = 1
 
     delete_start_session._scalars_results = [[created_server]]
-    delete_session._scalars_results = [[created_server]]
+    delete_session._get_results = [created_server]
 
     delete_start_message = message_factory(text=servers.SERVER_DELETE_BUTTON)
     await servers.server_delete_start(delete_start_message, mock_state)
 
-    delete_confirm_message = message_factory(text="1")
+    delete_confirm_message = message_factory(text="Сервер 1")
     await servers.server_select_handler(delete_confirm_message, mock_state)
 
     delete_log = next(obj for obj in delete_session.added if isinstance(obj, LogEntry))
@@ -155,8 +157,9 @@ async def test_server_delete_removes_related_data(monkeypatch, message_factory, 
     session_list = [
         FakeAsyncSession(scalars_results=[[server]]),
         FakeAsyncSession(
-            scalars_results=[[server], [101, 102], [201]],
-            execute_results=[[], [], [], [], [], []],
+            scalars_results=[[101, 102], [201]],
+            get_results=[server],
+            execute_results=[[], [], [], [], [], [], []],
         ),
     ]
     monkeypatch.setattr(
@@ -168,11 +171,11 @@ async def test_server_delete_removes_related_data(monkeypatch, message_factory, 
     start_message = message_factory(text=servers.SERVER_DELETE_BUTTON)
     await servers.server_delete_start(start_message, mock_state)
 
-    confirm_message = message_factory(text="1")
+    confirm_message = message_factory(text="Сервер 1")
     await servers.server_select_handler(confirm_message, mock_state)
 
     delete_session = session_list[1]
-    assert delete_session.execute_calls == 6
+    assert delete_session.execute_calls == 7
     table_names = [
         stmt.table.name for stmt in delete_session.executed_statements if stmt is not None
     ]
@@ -181,6 +184,7 @@ async def test_server_delete_removes_related_data(monkeypatch, message_factory, 
     assert "payments" in table_names
     assert "purchases" in table_names
     assert "products" in table_names
+    assert "servers" in table_names
     assert delete_session.deleted and delete_session.deleted[0] is server
     assert delete_session.committed is True
 
@@ -194,7 +198,7 @@ async def test_server_delete_removes_related_data(monkeypatch, message_factory, 
 async def test_server_delete_integrity_error(monkeypatch, message_factory, mock_state):
     server = _make_server(1)
 
-    delete_session = FakeAsyncSession(scalars_results=[[server]])
+    delete_session = FakeAsyncSession(get_results=[server])
     cleanup_mock = AsyncMock()
     commit_mock = AsyncMock(side_effect=IntegrityError("", "", Exception()))
 
@@ -214,7 +218,7 @@ async def test_server_delete_integrity_error(monkeypatch, message_factory, mock_
     start_message = message_factory(text=servers.SERVER_DELETE_BUTTON)
     await servers.server_delete_start(start_message, mock_state)
 
-    confirm_message = message_factory(text="1")
+    confirm_message = message_factory(text="Сервер 1")
     await servers.server_select_handler(confirm_message, mock_state)
 
     assert cleanup_mock.await_count == 1
@@ -233,7 +237,7 @@ async def test_server_set_link_updates(monkeypatch, message_factory, mock_state)
 
     session_list = [
         FakeAsyncSession(scalars_results=[[server]]),
-        FakeAsyncSession(scalars_results=[[server]]),
+        FakeAsyncSession(get_results=[server]),
     ]
     monkeypatch.setattr(
         servers, "async_session", make_async_session_stub(*session_list)
@@ -242,7 +246,7 @@ async def test_server_set_link_updates(monkeypatch, message_factory, mock_state)
     message = message_factory(text=servers.SERVER_SET_LINK_BUTTON)
     await servers.server_set_link_start(message, mock_state)
 
-    select_message = message_factory(text="1")
+    select_message = message_factory(text="Сервер 1")
     await servers.server_select_handler(select_message, mock_state)
 
     assert await mock_state.get_state() == ServerManageState.waiting_for_link.state
@@ -268,7 +272,7 @@ async def test_server_clear_link_requests_message(
 
     session_list = [
         FakeAsyncSession(scalars_results=[[server]]),
-        FakeAsyncSession(scalars_results=[[server]]),
+        FakeAsyncSession(get_results=[server]),
     ]
     monkeypatch.setattr(
         servers, "async_session", make_async_session_stub(*session_list)
@@ -277,7 +281,7 @@ async def test_server_clear_link_requests_message(
     message = message_factory(text=servers.SERVER_CLEAR_LINK_BUTTON)
     await servers.server_clear_link_start(message, mock_state)
 
-    select_message = message_factory(text="1")
+    select_message = message_factory(text="Сервер 1")
     await servers.server_select_handler(select_message, mock_state)
 
     assert (

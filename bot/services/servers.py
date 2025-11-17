@@ -23,8 +23,10 @@ async def get_ordered_servers() -> list[ServerInfo]:
 
     async with async_session() as session:
         servers = (
-            await session.scalars(select(Server).order_by(Server.id))
+            await session.scalars(select(Server).order_by(Server.position))
         ).all()
+
+    ordered = sorted(servers, key=lambda item: item.position or 0)
 
     return [
         ServerInfo(
@@ -33,7 +35,7 @@ async def get_ordered_servers() -> list[ServerInfo]:
             url=server.url or None,
             closed_message=server.closed_message or None,
         )
-        for server in sorted(servers, key=lambda item: item.id or 0)
+        for server in ordered
     ]
 
 

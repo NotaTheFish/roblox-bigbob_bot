@@ -6,7 +6,7 @@ from typing import Sequence
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from bot.db import (
@@ -20,7 +20,11 @@ from bot.db import (
     Server,
     async_session,
 )
-from bot.keyboards.admin_keyboards import admin_main_menu_kb, admin_servers_menu_kb
+from bot.keyboards.admin_keyboards import (
+    admin_main_menu_kb,
+    admin_server_picker_kb,
+    admin_servers_menu_kb,
+)
 from bot.states.server_states import ServerManageState
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
@@ -41,11 +45,11 @@ async def is_admin(uid: int) -> bool:
 
 def _format_servers_list(servers: Sequence[Server]) -> str:
     lines = ["Доступные серверы:"]
-    for idx, server in enumerate(servers, start=1):
+    for server in sorted(servers, key=lambda item: item.position or 0):
         url = server.url or "нет"
-        display_name = f"Сервер {idx}"
+        display_name = f"Сервер {server.position}"
         lines.append(
-            f"ID <b>{server.id}</b>: {display_name} — {server.name} — ссылка: {url}"
+            f"{display_name} — ID <b>{server.id}</b> — {server.name} — ссылка: {url}"
         )
     return "\n".join(lines)
 
@@ -89,12 +93,14 @@ async def server_create(message: types.Message, state: FSMContext) -> None:
 
     async with async_session() as session:
         servers = (
-            await session.scalars(select(Server).order_by(Server.id))
+            await session.scalars(select(Server).order_by(Server.position))
         ).all()
+        next_position = len(servers) + 1
 
         new_server = Server(
-            name=f"Сервер {len(servers) + 1}",
-            slug=f"server-{len(servers) + 1}",
+            name=f"Сервер {next_position}",
+            slug=f"server-{next_position}",
+            position=next_position,
             telegram_chat_id=None,
             url=None,
             closed_message=SERVER_DEFAULT_CLOSED_MESSAGE,
@@ -103,8 +109,6 @@ async def server_create(message: types.Message, state: FSMContext) -> None:
 
         session.add(new_server)
         await session.flush()
-
-        servers.append(new_server)
 
         session.add(
             LogEntry(
@@ -146,7 +150,7 @@ async def _request_server_choice(
 ) -> None:
     async with async_session() as session:
         servers = (
-            await session.scalars(select(Server).order_by(Server.id))
+            await session.scalars(select(Server).order_by(Server.position))
         ).all()
 
     if not servers:
@@ -159,12 +163,18 @@ async def _request_server_choice(
     await state.set_state(ServerManageState.waiting_for_server)
     await state.update_data(
         operation=operation,
-        available_ids=[server.id for server in servers],
+        position_map={str(server.position): server.id for server in servers},
+    )
+
+    keyboard = admin_server_picker_kb(
+        [f"Сервер {server.position}" for server in servers],
+        footer_button=SERVER_BACK_BUTTON,
     )
 
     await message.answer(
         f"{prompt}\n\n{_format_servers_list(servers)}",
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
 
 
@@ -180,7 +190,7 @@ async def server_delete_start(message: types.Message, state: FSMContext) -> None
         message,
         state,
         operation="delete",
-        prompt="Введите ID сервера, который нужно удалить:",
+        prompt="Выберите сервер, который нужно удалить:",
     )
 
 
@@ -196,7 +206,7 @@ async def server_set_link_start(message: types.Message, state: FSMContext) -> No
         message,
         state,
         operation="set_link",
-        prompt="Введите ID сервера, для которого нужно установить ссылку:",
+        prompt="Выберите сервер, для которого нужно установить ссылку:",
     )
 
 
@@ -212,11 +222,11 @@ async def server_clear_link_start(message: types.Message, state: FSMContext) -> 
         message,
         state,
         operation="clear_link",
-        prompt="Введите ID сервера, для которого нужно удалить ссылку:",
+        prompt="Выберите сервер, для которого нужно удалить ссылку:",
     )
 
 
-def _parse_server_id(raw: str | None) -> int | None:
+def _parse_server_position(raw: str | None) -> int | None:
     if not raw:
         return None
 
@@ -274,22 +284,29 @@ async def server_select_handler(message: types.Message, state: FSMContext) -> No
     if not await is_admin(message.from_user.id):
         return
 
-    server_id = _parse_server_id(message.text or "")
+    server_position = _parse_server_position(message.text or "")
     data = await state.get_data()
-    available_ids = set(data.get("available_ids") or [])
+    position_map: dict[str, int] = data.get("position_map") or {}
 
-    if server_id is None:
-        await message.answer("Введите числовой ID сервера:")
+    if server_position is None:
+        await message.answer("Введите номер сервера из списка:")
         return
 
-    if server_id not in available_ids:
-        await message.answer("Сервер с таким ID не найден. Укажите корректный ID:")
+    server_id = position_map.get(str(server_position))
+
+    if server_id is None:
+        await message.answer("Сервер с такой позицией не найден. Выберите корректный сервер:")
         return
 
     operation = data.get("operation")
 
     if operation == "delete":
-        await _delete_server(message, state, server_id)
+        await _delete_server(
+            message,
+            state,
+            server_id,
+            server_position=server_position,
+        )
     elif operation == "set_link":
         await state.update_data(server_id=server_id)
         await state.set_state(ServerManageState.waiting_for_link)
@@ -303,13 +320,15 @@ async def server_select_handler(message: types.Message, state: FSMContext) -> No
         await message.answer("Неизвестная операция.", reply_markup=admin_servers_menu_kb())
 
 
-async def _delete_server(message: types.Message, state: FSMContext, server_id: int) -> None:
+async def _delete_server(
+    message: types.Message,
+    state: FSMContext,
+    server_id: int,
+    *,
+    server_position: int,
+) -> None:
     async with async_session() as session:
-        servers = (
-            await session.scalars(select(Server).order_by(Server.id))
-        ).all()
-
-        target = next((server for server in servers if server.id == server_id), None)
+        target = await session.get(Server, server_id)
 
         if not target:
             await message.answer(
@@ -333,7 +352,13 @@ async def _delete_server(message: types.Message, state: FSMContext, server_id: i
                 )
             )
 
+            deleted_position = target.position or server_position
             await session.delete(target)
+            await session.execute(
+                update(Server)
+                    .where(Server.position > deleted_position)
+                    .values(position=Server.position - 1)
+            )
 
             await session.commit()
         except IntegrityError:
@@ -373,11 +398,7 @@ async def server_set_link_finish(message: types.Message, state: FSMContext) -> N
     server_id = data.get("server_id")
 
     async with async_session() as session:
-        servers = (
-            await session.scalars(select(Server).order_by(Server.id))
-        ).all()
-
-        target = next((server for server in servers if server.id == server_id), None)
+        target = await session.get(Server, server_id)
 
         if not target:
             await state.clear()
@@ -425,11 +446,7 @@ async def server_clear_link_finish(message: types.Message, state: FSMContext) ->
     server_id = data.get("server_id")
 
     async with async_session() as session:
-        servers = (
-            await session.scalars(select(Server).order_by(Server.id))
-        ).all()
-
-        target = next((server for server in servers if server.id == server_id), None)
+        target = await session.get(Server, server_id)
 
         if not target:
             await state.clear()

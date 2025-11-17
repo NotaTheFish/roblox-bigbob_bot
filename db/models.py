@@ -215,6 +215,7 @@ class Server(Base):
     __tablename__ = "servers"
 
     id = Column(Integer, primary_key=True)
+    position = Column(Integer, nullable=False, unique=True)
     name = Column(String(255), nullable=False)
     slug = Column(String(64), unique=True, nullable=False, index=True)
     telegram_chat_id = Column(BigInteger, unique=True)
