@@ -46,10 +46,7 @@ def admin_logs_menu_kb(*, is_root: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text=LOGS_REFRESH_BUTTON), KeyboardButton(text=LOGS_SEARCH_BUTTON)],
         [KeyboardButton(text=LOGS_PREV_BUTTON), KeyboardButton(text=LOGS_NEXT_BUTTON)],
-        [KeyboardButton(text=LOGS_ACHIEVEMENTS_BUTTON)],
     ]
-    if is_root:
-        buttons.insert(1, [KeyboardButton(text=LOGS_ADMIN_PICK_BUTTON)])
     buttons.append([KeyboardButton(text="↩️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
