@@ -9,10 +9,10 @@ from aiogram import BaseMiddleware
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, TelegramObject, Update
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db import User, async_session
+from bot.db import BannedRobloxAccount, User, async_session
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK, ban_appeal_keyboard
 from bot.states.user_states import BanAppealState
 from bot.texts.block import BAN_NOTIFICATION_TEXT
@@ -36,6 +36,8 @@ class BannedMiddleware(BaseMiddleware):
         session, owns_session = await self._resolve_session(data)
         try:
             current_user = await self._resolve_user(data, session, user_id)
+            if current_user and session:
+                await self._enforce_banned_account(session, current_user)
             if not current_user or not current_user.is_blocked:
                 return await handler(event, data)
 
@@ -209,5 +211,33 @@ class BannedMiddleware(BaseMiddleware):
         if message and message.from_user:
             return message.from_user.id
         return None
+
+    async def _enforce_banned_account(self, session: AsyncSession, user: User) -> bool:
+        filters = self._build_banned_filters(user)
+        if not filters:
+            return False
+
+        stmt = select(BannedRobloxAccount).where(or_(*filters))
+        banned_account = await session.scalar(stmt)
+        if not banned_account:
+            return False
+
+        if not user.is_blocked:
+            user.is_blocked = True
+            user.ban_appeal_at = None
+            user.ban_appeal_submitted = False
+            user.appeal_open = False
+            user.appeal_submitted_at = None
+            user.ban_notified_at = None
+            await session.commit()
+        return True
+
+    def _build_banned_filters(self, user: User) -> list:
+        filters = []
+        if getattr(user, "roblox_id", None):
+            filters.append(BannedRobloxAccount.roblox_id == user.roblox_id)
+        if getattr(user, "username", None):
+            filters.append(BannedRobloxAccount.username == user.username)
+        return filters
 
 __all__ = ["BannedMiddleware"]

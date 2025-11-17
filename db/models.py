@@ -104,6 +104,22 @@ class User(Base):
     logs = relationship("LogEntry", back_populates="user")
     nuts_transactions = relationship("NutsTransaction", back_populates="user")
     invoices = relationship("Invoice", back_populates="user")
+    banned_accounts = relationship(
+        "BannedRobloxAccount",
+        back_populates="source_user",
+    )
+
+
+class BannedRobloxAccount(Base):
+    __tablename__ = "banned_roblox_accounts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    roblox_id = Column(String(255), index=True)
+    username = Column(String(255), index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    source_user = relationship("User", back_populates="banned_accounts")
 
 
 class Admin(Base):

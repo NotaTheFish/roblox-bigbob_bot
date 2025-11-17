@@ -77,7 +77,7 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
 
     await asyncio.sleep(2)  # имитация загрузки
 
-    desc, status = get_roblox_profile(username)
+    desc, status, roblox_id = get_roblox_profile(username)
     if desc is None:
         return await call.message.answer("❌ Не удалось найти профиль Roblox.\nПроверьте ник и попробуйте снова.")
 
@@ -90,6 +90,8 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
             db_user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
             if db_user:
                 db_user.verified = True
+                if roblox_id:
+                    db_user.roblox_id = roblox_id
                 referral = await session.scalar(
                     select(Referral)
                     .options(selectinload(Referral.referrer))
