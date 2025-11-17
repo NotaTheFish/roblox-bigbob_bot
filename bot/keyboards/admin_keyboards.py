@@ -71,12 +71,7 @@ _LOG_CATEGORY_ORDER = (
 )
 
 
-def admin_logs_filters_inline(
-    selected: LogCategory,
-    *,
-    show_demote: bool = False,
-    demote_target: int | None = None,
-) -> InlineKeyboardMarkup:
+def admin_logs_filters_inline(selected: LogCategory) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for category in _LOG_CATEGORY_ORDER:
         label = _LOG_CATEGORY_LABELS[category]
@@ -87,20 +82,13 @@ def admin_logs_filters_inline(
         )
     builder.adjust(2, 2, 1)
 
-    if show_demote and demote_target:
-        builder.button(
-            text="⚠️ Разжаловать администратора",
-            callback_data=f"logs:demote:{demote_target}",
-        )
-        builder.adjust(1)
-
     return builder.as_markup()
 
 
-def admin_logs_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
+def admin_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Подтвердить", callback_data=f"logs:demote_confirm:{target_id}")
-    builder.button(text="✖️ Отмена", callback_data="logs:demote_cancel")
+    builder.button(text="✅ Подтвердить", callback_data=f"demote_admin_confirm:{target_id}")
+    builder.button(text="✖️ Отмена", callback_data="demote_admin_cancel")
     builder.adjust(2)
     return builder.as_markup()
 

@@ -4,12 +4,12 @@ import html
 import logging
 from datetime import datetime
 
-from aiogram import Bot, F, Router, types
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
-from bot.db import Admin, LogEntry, async_session
+from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import (
     LOGS_ACHIEVEMENTS_BUTTON,
     LOGS_ADMIN_PICK_BUTTON,
@@ -17,12 +17,10 @@ from bot.keyboards.admin_keyboards import (
     LOGS_PREV_BUTTON,
     LOGS_REFRESH_BUTTON,
     LOGS_SEARCH_BUTTON,
-    admin_logs_demote_confirm_kb,
     admin_logs_filters_inline,
     admin_logs_menu_kb,
     admin_main_menu_kb,
 )
-from bot.keyboards.main_menu import main_menu
 from bot.services.admin_logs import (
     DEFAULT_LOGS_RANGE_HOURS,
     LogCategory,
@@ -60,8 +58,6 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
         user_id=None,
         telegram_id=None,
         search_label=None,
-        search_is_admin=False,
-        demote_pending=False,
         reply_keyboard_sent=False,
     )
     await _send_logs_message(message, state)
@@ -80,7 +76,7 @@ async def next_page(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     current = int(data.get("page", 1))
-    await state.update_data(page=current + 1, demote_pending=False)
+    await state.update_data(page=current + 1)
     await _send_logs_message(message, state)
 
 
@@ -91,7 +87,7 @@ async def previous_page(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     current = max(1, int(data.get("page", 1)) - 1)
-    await state.update_data(page=current, demote_pending=False)
+    await state.update_data(page=current)
     await _send_logs_message(message, state)
 
 
@@ -135,7 +131,6 @@ async def show_achievement_logs(message: types.Message, state: FSMContext):
     await state.update_data(
         category=LogCategory.ACHIEVEMENTS.value,
         page=1,
-        demote_pending=False,
     )
     await _send_logs_message(message, state)
 
@@ -151,72 +146,9 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
     except ValueError:
         return await call.answer("Неизвестная категория", show_alert=True)
 
-    await state.update_data(category=category.value, page=1, demote_pending=False)
+    await state.update_data(category=category.value, page=1)
     await _send_logs_callback(call, state)
 
-
-@router.callback_query(F.data.startswith("logs:demote:"))
-async def demote_prompt(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    if not call.from_user or call.from_user.id != ROOT_ADMIN_ID:
-        return await call.answer("Недостаточно прав", show_alert=True)
-
-    target_raw = call.data.split(":", 2)[2]
-    try:
-        target_id = int(target_raw)
-    except ValueError:
-        return await call.answer("Некорректный идентификатор", show_alert=True)
-
-    data = await state.get_data()
-    if not data.get("search_is_admin") or data.get("telegram_id") != target_id:
-        return await call.answer("Выберите администратора перед действием", show_alert=True)
-
-    await state.update_data(demote_pending=True)
-    text, _, _ = await _prepare_logs_view(state, call.from_user.id)
-    warning_text = f"{text}\n\n⚠️ Подтвердите разжалование администратора."
-    await call.message.edit_text(
-        warning_text,
-        parse_mode="HTML",
-        reply_markup=admin_logs_demote_confirm_kb(target_id),
-    )
-    await call.answer()
-
-
-@router.callback_query(F.data == "logs:demote_cancel")
-async def demote_cancel(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    await state.update_data(demote_pending=False)
-    await _send_logs_callback(call, state)
-    await call.answer("Действие отменено")
-
-
-@router.callback_query(F.data.startswith("logs:demote_confirm:"))
-async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    if not call.from_user or call.from_user.id != ROOT_ADMIN_ID:
-        return await call.answer("Недостаточно прав", show_alert=True)
-
-    target_raw = call.data.split(":", 2)[2]
-    try:
-        target_id = int(target_raw)
-    except ValueError:
-        return await call.answer("Некорректный идентификатор", show_alert=True)
-
-    success = await _demote_admin(target_id, call.from_user.id, call.bot)
-    if not success:
-        await state.update_data(demote_pending=False, search_is_admin=False)
-        await _send_logs_callback(call, state)
-        return await call.answer("Администратор не найден или уже разжалован", show_alert=True)
-
-    await state.update_data(demote_pending=False, search_is_admin=False)
-    await _send_logs_callback(call, state)
-    await call.answer("Администратор разжалован")
 
 
 async def _handle_search_input(
@@ -247,8 +179,6 @@ async def _handle_search_input(
         user_id=user.id,
         telegram_id=user.tg_id,
         search_label=_describe_user(user),
-        search_is_admin=is_target_admin,
-        demote_pending=False,
         page=1,
     )
     await state.set_state(AdminLogsState.browsing)
@@ -305,11 +235,7 @@ async def _prepare_logs_view(
     )
     page = await fetch_logs_page(query)
     text = _format_logs_text(page, category, data)
-    markup = admin_logs_filters_inline(
-        category,
-        show_demote=_can_show_demote(viewer_id, data),
-        demote_target=data.get("telegram_id"),
-    )
+    markup = admin_logs_filters_inline(category)
     return text, markup, page
 
 
@@ -334,19 +260,6 @@ def _category_from_state(data: dict) -> LogCategory:
         return LogCategory(value)
     except ValueError:
         return LogCategory.TOPUPS
-
-
-def _can_show_demote(viewer_id: int, data: dict) -> bool:
-    if viewer_id != ROOT_ADMIN_ID:
-        return False
-    if not data.get("search_is_admin"):
-        return False
-    target_id = data.get("telegram_id")
-    if not target_id or target_id == ROOT_ADMIN_ID or target_id == viewer_id:
-        return False
-    if data.get("demote_pending"):
-        return False
-    return True
 
 
 def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
@@ -411,36 +324,6 @@ def _describe_user(user) -> str:
     if getattr(user, "tg_id", None):
         parts.append(str(user.tg_id))
     return " / ".join(parts) if parts else str(getattr(user, "id", ""))
-
-
-async def _demote_admin(target_id: int, moderator_id: int, bot: Bot) -> bool:
-    async with async_session() as session:
-        admin = await session.scalar(select(Admin).where(Admin.telegram_id == target_id))
-        if not admin or admin.is_root:
-            return False
-
-        await session.delete(admin)
-        session.add(
-            LogEntry(
-                telegram_id=target_id,
-                event_type="admin_demoted",
-                message="Администратор разжалован",
-                data={"demoted_by": moderator_id},
-            )
-        )
-        await session.commit()
-
-    try:
-        is_admin_now = await is_admin(target_id)
-        await bot.send_message(
-            target_id,
-            "⚠️ Вы лишены прав администратора.",
-            reply_markup=main_menu(is_admin=is_admin_now),
-        )
-    except Exception:  # pragma: no cover - network errors
-        logger.exception("Не удалось уведомить пользователя %s о разжаловании", target_id)
-
-    return True
 
 
 _CATEGORY_TITLES = {

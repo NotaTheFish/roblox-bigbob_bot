@@ -6,18 +6,21 @@ from datetime import datetime, timezone
 from html import escape
 from typing import Sequence
 
-from aiogram import F, Router, types
+from aiogram import Bot, F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
-from bot.db import Admin, User, async_session
+from bot.config import ROOT_ADMIN_ID
+from bot.db import Admin, LogEntry, User, async_session
 from backend.services.nuts import add_nuts, subtract_nuts
 from bot.keyboards.admin_keyboards import (
+    admin_demote_confirm_kb,
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
+from bot.keyboards.main_menu import main_menu
 from bot.keyboards.ban_appeal import ban_appeal_keyboard
 from bot.services.user_blocking import (
     AdminBlockConfirmationRequiredError,
@@ -59,8 +62,12 @@ async def is_admin(uid: int) -> bool:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
+def _is_root_admin(user: types.User | None) -> bool:
+    return bool(user and user.id == ROOT_ADMIN_ID)
+
+
 # -------- Кнопки карточки пользователя --------
-def user_card_kb(user_id, is_blocked):
+def user_card_kb(user_id, is_blocked, *, show_demote: bool = False):
     builder = InlineKeyboardBuilder()
     builder.button(
         text="➕ Выдать валюту", callback_data=f"give_money:{user_id}"
@@ -79,7 +86,15 @@ def user_card_kb(user_id, is_blocked):
     builder.button(text="🎖 Выдать титул", callback_data=f"give_title:{user_id}")
     builder.button(text="🗑 Удалить титул", callback_data=f"remove_title:{user_id}")
     builder.button(text="⬅️ Назад", callback_data="admin_users")
-    builder.adjust(2, 1, 2, 1)
+    if show_demote:
+        builder.button(
+            text="⚠️ Разжаловать администратора",
+            callback_data=f"demote_admin:{user_id}",
+        )
+    layout = [2, 1, 2, 1]
+    if show_demote:
+        layout.append(1)
+    builder.adjust(*layout)
     return builder.as_markup()
 
 
@@ -319,6 +334,50 @@ async def _process_unblock_user(
     return True
 
 
+async def _is_demotable_admin(user_id: int) -> bool:
+    async with async_session() as session:
+        admin = await session.scalar(select(Admin).where(Admin.telegram_id == user_id))
+        return bool(admin and not admin.is_root)
+
+
+async def _should_show_demote_button(operator_id: int | None, target_id: int) -> bool:
+    if operator_id != ROOT_ADMIN_ID:
+        return False
+    if target_id == ROOT_ADMIN_ID:
+        return False
+    return await _is_demotable_admin(target_id)
+
+
+async def _demote_admin(target_id: int, moderator_id: int, bot: Bot) -> bool:
+    async with async_session() as session:
+        admin = await session.scalar(select(Admin).where(Admin.telegram_id == target_id))
+        if not admin or admin.is_root:
+            return False
+
+        await session.delete(admin)
+        session.add(
+            LogEntry(
+                telegram_id=target_id,
+                event_type="admin_demoted",
+                message="Администратор разжалован",
+                data={"demoted_by": moderator_id},
+            )
+        )
+        await session.commit()
+
+    try:
+        is_admin_now = await is_admin(target_id)
+        await bot.send_message(
+            target_id,
+            "⚠️ Вы лишены прав администратора.",
+            reply_markup=main_menu(is_admin=is_admin_now),
+        )
+    except Exception:  # pragma: no cover - network errors
+        logger.exception("Не удалось уведомить пользователя %s о разжаловании", target_id)
+
+    return True
+
+
 # -------- /admin_users — список --------
 async def _send_users_list(message: types.Message):
     async with async_session() as session:
@@ -443,10 +502,16 @@ async def admin_search_user(message: types.Message):
         ),
     )
 
+    show_demote = await _should_show_demote_button(message.from_user.id, user.tg_id)
+
     await message.reply(
         profile_text,
         parse_mode="HTML",
-        reply_markup=user_card_kb(user.tg_id, user.is_blocked),
+        reply_markup=user_card_kb(
+            user.tg_id,
+            user.is_blocked,
+            show_demote=show_demote,
+        ),
     )
 
 
@@ -502,6 +567,91 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
     if action == "unblock_user":
         await _process_unblock_user(call, user_id)
         return
+
+
+@router.callback_query(F.data.startswith("demote_admin:"))
+async def demote_admin_prompt(call: types.CallbackQuery):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not _is_root_admin(call.from_user):
+        return await call.answer("Недостаточно прав", show_alert=True)
+
+    target_raw = call.data.split(":", maxsplit=1)[1]
+    try:
+        target_id = int(target_raw)
+    except ValueError:
+        return await call.answer("Некорректный идентификатор", show_alert=True)
+
+    if target_id == ROOT_ADMIN_ID:
+        return await call.answer("Нельзя разжаловать root-админа", show_alert=True)
+
+    if not await _is_demotable_admin(target_id):
+        return await call.answer("Пользователь не является администратором", show_alert=True)
+
+    text = (
+        "⚠️ <b>Разжаловать администратора</b>\n"
+        f"Подтвердите разжалование пользователя <code>{target_id}</code>."
+    )
+
+    if call.message:
+        await call.message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=admin_demote_confirm_kb(target_id),
+        )
+    else:
+        await call.bot.send_message(
+            call.from_user.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=admin_demote_confirm_kb(target_id),
+        )
+
+    await call.answer()
+
+
+@router.callback_query(F.data == "demote_admin_cancel")
+async def demote_admin_cancel(call: types.CallbackQuery):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not _is_root_admin(call.from_user):
+        return await call.answer("Недостаточно прав", show_alert=True)
+
+    if call.message:
+        await call.message.edit_text("Действие отменено")
+
+    await call.answer("Действие отменено")
+
+
+@router.callback_query(F.data.startswith("demote_admin_confirm:"))
+async def demote_admin_confirm(call: types.CallbackQuery):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not _is_root_admin(call.from_user):
+        return await call.answer("Недостаточно прав", show_alert=True)
+
+    target_raw = call.data.split(":", maxsplit=1)[1]
+    try:
+        target_id = int(target_raw)
+    except ValueError:
+        return await call.answer("Некорректный идентификатор", show_alert=True)
+
+    success = await _demote_admin(target_id, call.from_user.id, call.bot)
+
+    if call.message:
+        await call.message.edit_text(
+            "✅ Администратор разжалован"
+            if success
+            else "❌ Не удалось разжаловать администратора",
+        )
+
+    await call.answer(
+        "Администратор разжалован" if success else "Не удалось",
+        show_alert=not success,
+    )
 
 
 @router.callback_query(F.data.startswith("banlist:page:"))
