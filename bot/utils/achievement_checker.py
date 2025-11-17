@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from bot.db import Achievement, Product, Purchase, User, UserAchievement, async_session
+from bot.db import (
+    Achievement,
+    LogEntry,
+    Product,
+    Purchase,
+    User,
+    UserAchievement,
+    async_session,
+)
 from backend.services.nuts import add_nuts
 
 
@@ -45,6 +53,19 @@ async def check_achievements(user: User) -> None:
                 transaction_type="achievement",
                 reason=achievement.name,
                 metadata={"achievement_id": achievement.id},
+            )
+            session.add(
+                LogEntry(
+                    user_id=db_user.id,
+                    telegram_id=db_user.tg_id,
+                    event_type="achievement_granted",
+                    message=f"Достижение {achievement.name}",
+                    data={
+                        "achievement_id": achievement.id,
+                        "reward": achievement.reward,
+                        "source": "check_achievements",
+                    },
+                )
             )
             granted = True
 
