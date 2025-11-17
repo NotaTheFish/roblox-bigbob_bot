@@ -393,16 +393,18 @@ async def _send_users_list(message: types.Message):
 
     text = "👥 <b>ТОП 50 пользователей по орешкам</b>\n\n"
     for u in users:
-        base_name = u.bot_nickname or u.username
-        if not base_name and u.tg_username:
+        if u.bot_nickname:
+            base_name = u.bot_nickname
+        elif u.tg_username:
             base_name = f"@{u.tg_username}"
-        display_name = escape(base_name or "—")
-        text += (
-            "• "
-            f"TG ID: <code>{u.tg_id}</code> | "
-            f"bot_user_id: <code>{escape(u.bot_user_id)}</code> | "
-            f"ник: <code>{display_name}</code> — 🥜 {u.nuts_balance}\n"
-        )
+        elif u.username:
+            base_name = u.username
+        else:
+            base_name = "—"
+
+        display_name = escape(base_name)
+        bot_user_id = escape(u.bot_user_id)
+        text += f"• {display_name} | <code>{bot_user_id}</code> — 🥜 {u.nuts_balance}\n"
 
     text += (
         "\n🔎 Отправьте TG ID, ID бота "
