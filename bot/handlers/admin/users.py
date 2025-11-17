@@ -393,17 +393,20 @@ async def _send_users_list(message: types.Message):
 
     text = "👥 <b>ТОП 50 пользователей по орешкам</b>\n\n"
     for u in users:
-        username = escape(u.username or "—")
+        base_name = u.bot_nickname or u.username
+        if not base_name and u.tg_username:
+            base_name = f"@{u.tg_username}"
+        display_name = escape(base_name or "—")
         text += (
             "• "
             f"TG ID: <code>{u.tg_id}</code> | "
             f"bot_user_id: <code>{escape(u.bot_user_id)}</code> | "
-            f"username: <code>{username}</code> — 🥜 {u.nuts_balance}\n"
+            f"ник: <code>{display_name}</code> — 🥜 {u.nuts_balance}\n"
         )
 
     text += (
         "\n🔎 Отправьте TG ID, ID бота "
-        f"(например, {BOT_USER_ID_PREFIX}12345) или username для поиска"
+        f"(например, {BOT_USER_ID_PREFIX}12345), ник в боте или username для поиска"
     )
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
@@ -480,7 +483,7 @@ async def admin_search_user(message: types.Message):
     if not query:
         return await message.reply(
             (
-                "Введите TG ID, username или ID бота "
+                "Введите TG ID, ник в боте, username или ID бота "
                 f"(например, {BOT_USER_ID_PREFIX}12345) для поиска"
             ),
             reply_markup=admin_users_menu_kb(),

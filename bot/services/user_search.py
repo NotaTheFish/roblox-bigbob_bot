@@ -21,7 +21,7 @@ class SearchRenderOptions:
 
 
 async def find_user_by_query(query: str, *, include_blocked: bool = True) -> User | None:
-    """Find a user by Telegram ID, bot_user_id or username."""
+    """Find a user by bot nickname, Telegram ID, bot_user_id or username."""
 
     normalized = query.strip().lstrip("@")
     if not normalized:
@@ -53,6 +53,7 @@ async def find_user_by_query(query: str, *, include_blocked: bool = True) -> Use
         like_pattern = f"%{normalized}%"
         filters.append(User.tg_username.ilike(like_pattern))
         filters.append(User.username.ilike(like_pattern))
+        filters.append(User.bot_nickname.ilike(like_pattern))
 
         return await session.scalar(stmt.where(or_(*filters)))
 
@@ -65,6 +66,7 @@ def render_search_profile(user: User, options: SearchRenderOptions) -> str:
         ProfileView(
             heading=options.heading,
             bot_user_id=user.bot_user_id,
+            bot_nickname=user.bot_nickname or "",
             tg_username=user.tg_username or "",
             tg_id=user.tg_id if options.include_private_fields else None,
             roblox_username=user.username or "",

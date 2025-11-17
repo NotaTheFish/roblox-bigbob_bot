@@ -22,6 +22,7 @@ class TopUserEntry:
     username: str | None
     tg_username: str | None
     balance: int
+    bot_nickname: str | None = None
 
 
 class _TopUsersCache:
@@ -61,7 +62,13 @@ async def get_top_users(limit: int = 50) -> list[TopUserEntry]:
     async def _load() -> list[TopUserEntry]:
         async with async_session() as session:
             result = await session.execute(
-                select(User.id, User.username, User.tg_username, User.nuts_balance)
+                select(
+                    User.id,
+                    User.username,
+                    User.tg_username,
+                    User.nuts_balance,
+                    User.bot_nickname,
+                )
                 .order_by(User.nuts_balance.desc())
                 .limit(limit)
             )
@@ -73,6 +80,7 @@ async def get_top_users(limit: int = 50) -> list[TopUserEntry]:
                 username=row.username,
                 tg_username=row.tg_username,
                 balance=row.nuts_balance or 0,
+                bot_nickname=row.bot_nickname,
             )
             for row in rows
         ]
@@ -95,6 +103,8 @@ def format_top_users(entries: Sequence[TopUserEntry]) -> str:
 
 
 def _display_name(entry: TopUserEntry) -> str:
+    if entry.bot_nickname:
+        return entry.bot_nickname
     if entry.username:
         return entry.username
     if entry.tg_username:

@@ -14,8 +14,20 @@ from tests.conftest import FakeAsyncSession, make_async_session_stub
 @pytest.mark.anyio("asyncio")
 async def test_get_top_users_returns_entries(monkeypatch):
     rows = [
-        SimpleNamespace(id=1, username="Alice", tg_username="alice", nuts_balance=300),
-        SimpleNamespace(id=2, username=None, tg_username="bob", nuts_balance=200),
+        SimpleNamespace(
+            id=1,
+            username="Alice",
+            tg_username="alice",
+            nuts_balance=300,
+            bot_nickname=None,
+        ),
+        SimpleNamespace(
+            id=2,
+            username=None,
+            tg_username="bob",
+            nuts_balance=200,
+            bot_nickname="Bobster",
+        ),
     ]
 
     session = FakeAsyncSession(execute_results=[rows])
@@ -34,7 +46,13 @@ async def test_get_top_users_returns_entries(monkeypatch):
 @pytest.mark.anyio("asyncio")
 async def test_profile_top_sends_leaderboard(monkeypatch, message_factory, mock_state):
     sample_entries = [
-        stats.TopUserEntry(user_id=1, username="Alice", tg_username="alice", balance=300),
+        stats.TopUserEntry(
+            user_id=1,
+            username="Alice",
+            tg_username="alice",
+            balance=300,
+            bot_nickname="Queen",
+        ),
         stats.TopUserEntry(user_id=2, username=None, tg_username="bob", balance=200),
     ]
 
@@ -47,6 +65,6 @@ async def test_profile_top_sends_leaderboard(monkeypatch, message_factory, mock_
     assert message.answers
     leaderboard_text = message.answers[0][0]
     assert "🏆 Топ игроков" in leaderboard_text
-    assert "Alice" in leaderboard_text
+    assert "Queen" in leaderboard_text
     assert "@bob" in leaderboard_text
     assert (await mock_state.get_data()).get("in_profile") is True

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
@@ -35,6 +35,7 @@ from bot.states.user_states import (
     TopPlayersSearchState,
 )
 from bot.utils.referrals import ensure_referral_code
+from bot.utils.time import to_msk
 from db.constants import BOT_USER_ID_PREFIX
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
@@ -42,6 +43,9 @@ from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 router = Router(name="user_menu")
 
 MAX_ABOUT_LENGTH = 500
+NICKNAME_MIN_LENGTH = 3
+NICKNAME_MAX_LENGTH = 32
+NICKNAME_CHANGE_COOLDOWN = timedelta(days=7)
 TOP_SEARCH_TIMEOUT = timedelta(minutes=3)
 TOP_SEARCH_CANCEL = {"отмена", "cancel", "назад"}
 
@@ -89,6 +93,7 @@ async def _set_profile_mode(state: FSMContext, active: bool) -> None:
             PromoInputState.waiting_for_code.state,
             ProfileEditState.choosing_action.state,
             ProfileEditState.editing_about.state,
+            ProfileEditState.editing_nickname.state,
             ProfileEditState.choosing_title.state,
             ProfileEditState.choosing_achievement.state,
             TopPlayersSearchState.waiting_for_query.state,
@@ -104,6 +109,38 @@ async def _set_profile_mode(state: FSMContext, active: bool) -> None:
 async def _is_admin(uid: int) -> bool:
     async with async_session() as session:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
+
+
+def _next_nickname_change_at(changed_at: datetime | None) -> datetime | None:
+    if not changed_at:
+        return None
+    if changed_at.tzinfo is None:
+        changed_at = changed_at.replace(tzinfo=timezone.utc)
+    return changed_at + NICKNAME_CHANGE_COOLDOWN
+
+
+def _format_wait_time(delta: timedelta) -> str:
+    total_seconds = max(int(delta.total_seconds()), 0)
+    days, remainder = divmod(total_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes = remainder // 60
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days} д.")
+    if hours:
+        parts.append(f"{hours} ч.")
+    if minutes or not parts:
+        parts.append(f"{minutes} мин.")
+    return " ".join(parts)
+
+
+def _nickname_cooldown_message(next_change_at: datetime, now: datetime) -> str:
+    wait_text = _format_wait_time(next_change_at - now)
+    formatted_time = to_msk(next_change_at).strftime("%d.%m.%Y %H:%M")
+    return (
+        "⏳ Ник уже меняли недавно.\n"
+        f"Попробуйте через {wait_text} (после {formatted_time} МСК)."
+    )
 
 
 # --- Открыть подменю ---
@@ -125,6 +162,7 @@ async def open_profile_menu(message: types.Message, state: FSMContext):
         ProfileView(
             heading="👤 <b>Ваш профиль</b>",
             bot_user_id=user.bot_user_id,
+            bot_nickname=user.bot_nickname or "",
             tg_username=user.tg_username or "",
             tg_id=user.tg_id,
             roblox_username=user.username or "",
@@ -332,7 +370,7 @@ async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(top_search_expires_at=expires_at)
     await call.message.answer(
         (
-            "🔍 Отправьте Roblox ник, Telegram @username "
+            "🔍 Отправьте ник в боте, Roblox ник, Telegram @username "
             f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).\n"
             "Напишите «Отмена», чтобы выйти из поиска."
         )
@@ -359,7 +397,7 @@ async def handle_top_player_search(message: types.Message, state: FSMContext):
     if not query:
         return await message.answer(
             (
-                "Введите Roblox ник, Telegram @username "
+                "Введите ник в боте, Roblox ник, Telegram @username "
                 f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).\n"
                 "Для выхода напишите «Отмена»."
             )
@@ -395,6 +433,88 @@ async def handle_top_player_search(message: types.Message, state: FSMContext):
 
     await message.answer(profile_text, parse_mode="HTML")
     await state.clear()
+
+
+@router.message(F.text == "✏️ Изменить ник")
+async def profile_edit_nickname(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    await _set_profile_mode(state, True)
+
+    async with async_session() as session:
+        user = await session.scalar(_user_profile_stmt(message.from_user.id))
+
+    if not user:
+        return await message.answer("❗ Сначала нажмите /start")
+
+    now = datetime.now(tz=timezone.utc)
+    next_change = _next_nickname_change_at(user.nickname_changed_at)
+    if next_change and next_change > now:
+        await state.set_state(None)
+        return await message.answer(_nickname_cooldown_message(next_change, now))
+
+    await state.set_state(ProfileEditState.editing_nickname)
+    await message.answer(
+        (
+            "✏️ Отправьте новый ник (одна строка, без переносов).\n"
+            f"Длина — от {NICKNAME_MIN_LENGTH} до {NICKNAME_MAX_LENGTH} символов.\n"
+            "Для отмены напишите «Отмена»."
+        )
+    )
+
+
+@router.message(StateFilter(ProfileEditState.editing_nickname))
+async def profile_save_nickname(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    raw_text = (message.text or "").strip()
+    lower_text = raw_text.lower()
+
+    if lower_text in {"отмена", "cancel"}:
+        await state.set_state(None)
+        await message.answer("✏️ Смена ника отменена")
+        return
+
+    if not raw_text:
+        return await message.answer("❌ Ник не должен быть пустым")
+    if "\n" in raw_text:
+        return await message.answer("❌ Ник должен быть в одну строку")
+    if not (NICKNAME_MIN_LENGTH <= len(raw_text) <= NICKNAME_MAX_LENGTH):
+        return await message.answer(
+            (
+                "❌ Некорректная длина ника. \n"
+                f"Используйте от {NICKNAME_MIN_LENGTH} до {NICKNAME_MAX_LENGTH} символов."
+            )
+        )
+
+    now = datetime.now(tz=timezone.utc)
+
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
+        if not user:
+            await state.clear()
+            return await message.answer("❗ Сначала нажмите /start")
+
+        next_change = _next_nickname_change_at(user.nickname_changed_at)
+        if next_change and next_change > now:
+            await state.set_state(None)
+            return await message.answer(_nickname_cooldown_message(next_change, now))
+
+        user.bot_nickname = raw_text
+        user.nickname_changed_at = now
+        await session.commit()
+
+    await state.set_state(None)
+    next_available = now + NICKNAME_CHANGE_COOLDOWN
+    await message.answer(
+        (
+            "✅ Ник обновлён!\n"
+            f"Сменить снова можно после {to_msk(next_available):%d.%m.%Y %H:%M} МСК."
+        )
+    )
 
 
 @router.message(F.text == "✏️ Редактировать профиль")

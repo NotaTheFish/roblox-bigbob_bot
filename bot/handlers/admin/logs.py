@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
 from bot.config import ROOT_ADMIN_ID
-from bot.db import Admin, async_session
+from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
     LOGS_ACHIEVEMENTS_BUTTON,
     LOGS_ADMIN_PICK_BUTTON,
@@ -21,6 +21,7 @@ from bot.keyboards.admin_keyboards import (
     admin_logs_menu_kb,
     admin_main_menu_kb,
 )
+from bot.keyboards.main_menu import main_menu
 from bot.services.admin_logs import (
     DEFAULT_LOGS_RANGE_HOURS,
     LogCategory,
@@ -97,7 +98,7 @@ async def prompt_search(message: types.Message, state: FSMContext):
         return
 
     await state.set_state(AdminLogsState.waiting_for_query)
-    await message.answer("Введите username/ID/tg_username пользователя для поиска:")
+    await message.answer("Введите ник в боте/username/ID/tg_username пользователя для поиска:")
 
 
 @router.message(AdminLogsState.browsing, F.text == LOGS_ADMIN_PICK_BUTTON)
@@ -110,7 +111,7 @@ async def prompt_admin_search(message: types.Message, state: FSMContext):
         return
 
     await state.set_state(AdminLogsState.waiting_for_admin)
-    await message.answer("Введите username/ID/tg_username администратора:")
+    await message.answer("Введите ник в боте/username/ID/tg_username администратора:")
 
 
 @router.message(AdminLogsState.waiting_for_query)
@@ -148,6 +149,31 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(category=category.value, page=1)
     await _send_logs_callback(call, state)
+
+
+@router.callback_query(F.data.startswith("logs:demote_confirm:"))
+async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer()
+    if call.from_user.id != ROOT_ADMIN_ID:
+        return await call.answer("Недостаточно прав", show_alert=True)
+
+    try:
+        _, _, target_raw = (call.data or "").split(":", 2)
+        target_id = int(target_raw)
+    except (ValueError, AttributeError):
+        return await call.answer("Некорректные данные", show_alert=True)
+
+    if target_id == ROOT_ADMIN_ID:
+        return await call.answer("Нельзя разжаловать root-админа", show_alert=True)
+
+    success = await _demote_admin_via_logs(target_id, call.from_user.id, call.bot)
+    if not success:
+        return await call.answer("Не удалось разжаловать администратора", show_alert=True)
+
+    await state.update_data(search_is_admin=False)
+    await _send_logs_callback(call, state)
+    await call.answer("Администратор разжалован")
 
 
 
@@ -317,6 +343,8 @@ def _format_data_preview(data: object) -> str:
 
 def _describe_user(user) -> str:
     parts: list[str] = []
+    if getattr(user, "bot_nickname", None):
+        parts.append(str(user.bot_nickname))
     if getattr(user, "username", None):
         parts.append(str(user.username))
     if getattr(user, "tg_username", None):
@@ -324,6 +352,36 @@ def _describe_user(user) -> str:
     if getattr(user, "tg_id", None):
         parts.append(str(user.tg_id))
     return " / ".join(parts) if parts else str(getattr(user, "id", ""))
+
+
+async def _demote_admin_via_logs(target_id: int, moderator_id: int, bot) -> bool:
+    async with async_session() as session:
+        admin = await session.scalar(select(Admin).where(Admin.telegram_id == target_id))
+        if not admin or admin.is_root:
+            return False
+
+        await session.delete(admin)
+        session.add(
+            LogEntry(
+                telegram_id=target_id,
+                event_type="admin_demoted",
+                message="Администратор разжалован",
+                data={"demoted_by": moderator_id},
+            )
+        )
+        await session.commit()
+
+    try:
+        is_target_admin = await is_admin(target_id)
+        await bot.send_message(
+            target_id,
+            "⚠️ Вы лишены прав администратора.",
+            reply_markup=main_menu(is_admin=is_target_admin),
+        )
+    except Exception:  # pragma: no cover - network errors
+        logger.exception("Не удалось уведомить пользователя %s о разжаловании", target_id)
+
+    return True
 
 
 _CATEGORY_TITLES = {

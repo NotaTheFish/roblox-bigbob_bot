@@ -79,7 +79,13 @@ async def test_search_filters_logs(monkeypatch, message_factory, mock_state):
         return True
 
     async def fake_find_user(query: str):
-        return SimpleNamespace(id=99, tg_id=555, username="Tester", tg_username="tester")
+        return SimpleNamespace(
+            id=99,
+            tg_id=555,
+            username="Tester",
+            tg_username="tester",
+            bot_nickname="TesterBot",
+        )
 
     monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
     monkeypatch.setattr(logs, "is_admin", fake_is_admin)

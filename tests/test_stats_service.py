@@ -16,14 +16,20 @@ from bot.services.stats import TopUserEntry, format_top_users
 
 def test_format_top_users_with_entries():
     entries = [
-        TopUserEntry(user_id=1, username="Alice", tg_username="alice", balance=200),
+        TopUserEntry(
+            user_id=1,
+            username="Alice",
+            tg_username="alice",
+            balance=200,
+            bot_nickname="Queen",
+        ),
         TopUserEntry(user_id=2, username=None, tg_username="bob", balance=150),
         TopUserEntry(user_id=3, username=None, tg_username=None, balance=50),
     ]
 
     expected = (
         "🏆 Топ игроков:\n\n"
-        "1. Alice — 200 🥜\n"
+        "1. Queen — 200 🥜\n"
         "2. @bob — 150 🥜\n"
         "3. ID 3 — 50 🥜"
     )

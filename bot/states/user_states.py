@@ -22,6 +22,7 @@ class PromoInputState(StatesGroup):
 class ProfileEditState(StatesGroup):
     choosing_action = State()
     editing_about = State()
+    editing_nickname = State()
     choosing_title = State()
     choosing_achievement = State()
 

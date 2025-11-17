@@ -46,7 +46,7 @@ async def test_achievement_history_formats_time_in_msk(monkeypatch, message_fact
     earned_at = datetime(2024, 3, 5, 5, 0, tzinfo=ZoneInfo("UTC"))
     entry = SimpleNamespace(earned_at=earned_at, tg_id=111, source="system")
     session = FakeAsyncSession(
-        execute_results=[[(entry, "player", None, "First Steps")]]
+        execute_results=[[(entry, "botnick", "player", None, "First Steps")]]
     )
     monkeypatch.setattr(
         achievements, "async_session", make_async_session_stub(session)

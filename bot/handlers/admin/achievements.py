@@ -168,7 +168,13 @@ async def _send_achievement_list(
 async def _send_history(target: types.Message, *, as_edit: bool = False) -> None:
     async with async_session() as session:
         stmt = (
-            select(UserAchievement, User.username, User.tg_username, Achievement.name)
+            select(
+                UserAchievement,
+                User.bot_nickname,
+                User.username,
+                User.tg_username,
+                Achievement.name,
+            )
             .join(User, User.id == UserAchievement.user_id)
             .join(Achievement, Achievement.id == UserAchievement.achievement_id)
             .order_by(UserAchievement.earned_at.desc())
@@ -180,8 +186,11 @@ async def _send_history(target: types.Message, *, as_edit: bool = False) -> None
         text = "Пока нет выдач достижений зафиксированных системой."
     else:
         lines = ["📚 <b>Последние выдачи</b>\n"]
-        for entry, username, tg_username, ach_name in rows:
-            user_label = username or tg_username or entry.tg_id
+        for entry, bot_nickname, username, tg_username, ach_name in rows:
+            user_label = bot_nickname or username
+            if not user_label and tg_username:
+                user_label = f"@{tg_username}"
+            user_label = user_label or entry.tg_id
             lines.append(
                 f"{to_msk(entry.earned_at):%d.%m %H:%M} — {html.escape(str(user_label))}"
                 f" получил {html.escape(ach_name)} ({entry.source})"
@@ -454,7 +463,7 @@ async def ach_users_callback(call: types.CallbackQuery):
 
     async with async_session() as session:
         stmt = (
-            select(UserAchievement, User.username, User.tg_username)
+            select(UserAchievement, User.bot_nickname, User.username, User.tg_username)
             .join(User, User.id == UserAchievement.user_id)
             .where(UserAchievement.achievement_id == ach_id_int)
             .order_by(UserAchievement.earned_at.desc())
@@ -470,8 +479,11 @@ async def ach_users_callback(call: types.CallbackQuery):
         text = "Пока никто не получал это достижение"
     else:
         text_lines = ["👥 <b>Получатели</b>\n"]
-        for entry, username, tg_username in rows:
-            label = username or tg_username or f"tg:{entry.tg_id}"
+        for entry, bot_nickname, username, tg_username in rows:
+            label = bot_nickname or username
+            if not label and tg_username:
+                label = f"@{tg_username}"
+            label = label or f"tg:{entry.tg_id}"
             text_lines.append(
                 f"{to_msk(entry.earned_at):%d.%m %H:%M} — {html.escape(str(label))} ({entry.source})"
             )

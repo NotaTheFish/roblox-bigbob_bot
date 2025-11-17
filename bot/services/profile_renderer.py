@@ -15,6 +15,7 @@ class ProfileView:
 
     heading: str
     bot_user_id: str | None = None
+    bot_nickname: str | None = None
     tg_username: str | None = None
     tg_id: int | None = None
     roblox_username: str | None = None
@@ -37,6 +38,8 @@ def render_profile(view: ProfileView) -> str:
 
     if view.bot_user_id is not None:
         lines.append(f"ID бота: <code>{_format(view.bot_user_id)}</code>")
+    if view.bot_nickname is not None:
+        lines.append(f"Ник в боте: <code>{_format(view.bot_nickname)}</code>")
     if view.tg_username is not None:
         username_value = _format(view.tg_username)
         if view.tg_username:
