@@ -21,7 +21,7 @@ class LogCategory(str, Enum):
     """Available log buckets shown to administrators."""
 
     TOPUPS = "topups"
-    SPENDINGS = "spendings"
+    ACHIEVEMENTS = "achievements"
     PURCHASES = "purchases"
     PROMOCODES = "promocodes"
     ADMIN_ACTIONS = "admin"
@@ -29,7 +29,7 @@ class LogCategory(str, Enum):
 
 _CATEGORY_EVENT_TYPES: Mapping[LogCategory, Sequence[str]] = {
     LogCategory.TOPUPS: ("payment_received", "payment_applied"),
-    LogCategory.SPENDINGS: ("purchase_created",),
+    LogCategory.ACHIEVEMENTS: ("achievement_granted", "achievement_manual_granted"),
     LogCategory.PURCHASES: ("purchase_created",),
     LogCategory.PROMOCODES: ("promocode_redeemed",),
     LogCategory.ADMIN_ACTIONS: (

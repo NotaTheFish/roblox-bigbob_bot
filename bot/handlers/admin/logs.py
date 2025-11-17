@@ -11,11 +11,11 @@ from sqlalchemy import select
 from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
+    LOGS_ACHIEVEMENTS_BUTTON,
     LOGS_ADMIN_PICK_BUTTON,
     LOGS_NEXT_BUTTON,
     LOGS_PREV_BUTTON,
     LOGS_REFRESH_BUTTON,
-    LOGS_RESET_FILTER_BUTTON,
     LOGS_SEARCH_BUTTON,
     admin_logs_demote_confirm_kb,
     admin_logs_filters_inline,
@@ -95,27 +95,6 @@ async def previous_page(message: types.Message, state: FSMContext):
     await _send_logs_message(message, state)
 
 
-@router.message(AdminLogsState.browsing, F.text == LOGS_RESET_FILTER_BUTTON)
-async def reset_filters(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    data = await state.get_data()
-    if not data.get("user_id") and not data.get("telegram_id"):
-        await message.answer("Фильтр не активен")
-        return
-
-    await state.update_data(
-        user_id=None,
-        telegram_id=None,
-        search_label=None,
-        search_is_admin=False,
-        demote_pending=False,
-        page=1,
-    )
-    await _send_logs_message(message, state)
-
-
 @router.message(AdminLogsState.browsing, F.text == LOGS_SEARCH_BUTTON)
 async def prompt_search(message: types.Message, state: FSMContext):
     if not await _require_admin_message(message):
@@ -146,6 +125,19 @@ async def handle_search_query(message: types.Message, state: FSMContext):
 @router.message(AdminLogsState.waiting_for_admin)
 async def handle_admin_search(message: types.Message, state: FSMContext):
     await _handle_search_input(message, state, require_admin=True)
+
+
+@router.message(AdminLogsState.browsing, F.text == LOGS_ACHIEVEMENTS_BUTTON)
+async def show_achievement_logs(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    await state.update_data(
+        category=LogCategory.ACHIEVEMENTS.value,
+        page=1,
+        demote_pending=False,
+    )
+    await _send_logs_message(message, state)
 
 
 @router.callback_query(F.data.startswith("logs:category:"))
@@ -453,7 +445,7 @@ async def _demote_admin(target_id: int, moderator_id: int, bot: Bot) -> bool:
 
 _CATEGORY_TITLES = {
     LogCategory.TOPUPS: "Пополнения",
-    LogCategory.SPENDINGS: "Траты",
+    LogCategory.ACHIEVEMENTS: "Достижения",
     LogCategory.PURCHASES: "Покупки",
     LogCategory.PROMOCODES: "Промокоды",
     LogCategory.ADMIN_ACTIONS: "Админ-действия",

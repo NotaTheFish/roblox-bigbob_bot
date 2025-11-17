@@ -6,7 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from bot.handlers.admin import logs
-from bot.keyboards.admin_keyboards import LOGS_NEXT_BUTTON, admin_logs_filters_inline
+from bot.keyboards.admin_keyboards import (
+    LOGS_ACHIEVEMENTS_BUTTON,
+    LOGS_NEXT_BUTTON,
+    admin_logs_filters_inline,
+)
 from bot.services.admin_logs import LogCategory, LogPage, LogQuery, LogsRepository
 from bot.states.admin_states import AdminLogsState
 from db.models import Admin, LogEntry
@@ -112,6 +116,30 @@ async def test_category_callback_switches_filter(monkeypatch, callback_query_fac
     await logs.category_callback(call, mock_state)
 
     assert captured and captured[-1].category == LogCategory.PROMOCODES
+    assert captured[-1].page == 1
+
+
+@pytest.mark.anyio("asyncio")
+async def test_achievement_button_switches_category(monkeypatch, message_factory, mock_state):
+    captured: list[LogQuery] = []
+
+    async def fake_fetch(query: LogQuery) -> LogPage:
+        captured.append(query)
+        return LogPage(entries=[], page=query.page, has_prev=False, has_next=False)
+
+    async def fake_is_admin(*_args, **_kwargs) -> bool:
+        return True
+
+    monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
+    monkeypatch.setattr(logs, "is_admin", fake_is_admin)
+
+    await mock_state.set_state(AdminLogsState.browsing)
+    await mock_state.update_data(category=LogCategory.TOPUPS.value, page=2)
+
+    message = message_factory(text=LOGS_ACHIEVEMENTS_BUTTON, user_id=99)
+    await logs.show_achievement_logs(message, mock_state)
+
+    assert captured and captured[-1].category == LogCategory.ACHIEVEMENTS
     assert captured[-1].page == 1
 
 

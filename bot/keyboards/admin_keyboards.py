@@ -13,7 +13,7 @@ LOGS_SEARCH_BUTTON = "🔍 Поиск по пользователю"
 LOGS_ADMIN_PICK_BUTTON = "👮 Выбрать админа"
 LOGS_PREV_BUTTON = "⬅️ Предыдущая"
 LOGS_NEXT_BUTTON = "➡️ Следующая"
-LOGS_RESET_FILTER_BUTTON = "❎ Сбросить фильтр"
+LOGS_ACHIEVEMENTS_BUTTON = "🏆 Достижения"
 
 
 ACHIEVEMENT_VISIBILITY_FILTERS = {
@@ -46,7 +46,7 @@ def admin_logs_menu_kb(*, is_root: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text=LOGS_REFRESH_BUTTON), KeyboardButton(text=LOGS_SEARCH_BUTTON)],
         [KeyboardButton(text=LOGS_PREV_BUTTON), KeyboardButton(text=LOGS_NEXT_BUTTON)],
-        [KeyboardButton(text=LOGS_RESET_FILTER_BUTTON)],
+        [KeyboardButton(text=LOGS_ACHIEVEMENTS_BUTTON)],
     ]
     if is_root:
         buttons.insert(1, [KeyboardButton(text=LOGS_ADMIN_PICK_BUTTON)])
@@ -56,7 +56,7 @@ def admin_logs_menu_kb(*, is_root: bool = False) -> ReplyKeyboardMarkup:
 
 _LOG_CATEGORY_LABELS = {
     LogCategory.TOPUPS: "💰 Пополнения",
-    LogCategory.SPENDINGS: "💸 Траты",
+    LogCategory.ACHIEVEMENTS: "🏆 Достижения",
     LogCategory.PURCHASES: "🛒 Покупки",
     LogCategory.PROMOCODES: "🎟 Промокоды",
     LogCategory.ADMIN_ACTIONS: "👮 Админ-действия",
@@ -64,7 +64,7 @@ _LOG_CATEGORY_LABELS = {
 
 _LOG_CATEGORY_ORDER = (
     LogCategory.TOPUPS,
-    LogCategory.SPENDINGS,
+    LogCategory.ACHIEVEMENTS,
     LogCategory.PURCHASES,
     LogCategory.PROMOCODES,
     LogCategory.ADMIN_ACTIONS,
