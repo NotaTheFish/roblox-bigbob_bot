@@ -106,6 +106,7 @@ def admin_logs_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
 def admin_users_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="🔁 Обновить список")],
+        [KeyboardButton(text="🚫 Бан-лист")],
         [KeyboardButton(text="↩️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)

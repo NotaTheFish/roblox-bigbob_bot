@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 from html import escape
 from typing import Sequence
@@ -9,7 +10,7 @@ from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from bot.db import Admin, User, async_session
 from backend.services.nuts import add_nuts, subtract_nuts
@@ -49,6 +50,9 @@ router = Router(name="admin_users")
 logger = logging.getLogger(__name__)
 
 
+BANLIST_PAGE_SIZE = 1
+
+
 # -------- Проверка админа --------
 async def is_admin(uid: int) -> bool:
     async with async_session() as session:
@@ -77,6 +81,101 @@ def user_card_kb(user_id, is_blocked):
     builder.button(text="⬅️ Назад", callback_data="admin_users")
     builder.adjust(2, 1, 2, 1)
     return builder.as_markup()
+
+
+def _banlist_navigation_kb(
+    *, user_id: int | None, current_page: int, total_pages: int
+):
+    builder = InlineKeyboardBuilder()
+    has_buttons = False
+
+    if total_pages > 1:
+        if current_page > 0:
+            builder.button(
+                text="⬅️ Предыдущий", callback_data=f"banlist:page:{current_page - 1}"
+            )
+            has_buttons = True
+        if current_page < total_pages - 1:
+            builder.button(
+                text="➡️ Следующий", callback_data=f"banlist:page:{current_page + 1}"
+            )
+            has_buttons = True
+        builder.adjust(2)
+
+    if user_id is not None:
+        builder.button(text="✅ Разбанить", callback_data=f"banlist:unban:{user_id}")
+        builder.adjust(1)
+        has_buttons = True
+
+    return builder.as_markup() if has_buttons else None
+
+
+async def _load_banlist_page(page: int, page_size: int = BANLIST_PAGE_SIZE):
+    async with async_session() as session:
+        total_blocked = await session.scalar(
+            select(func.count()).select_from(User).where(User.is_blocked.is_(True))
+        )
+        total_blocked = total_blocked or 0
+
+        if not total_blocked:
+            return total_blocked, [], 0
+
+        total_pages = math.ceil(total_blocked / page_size)
+        current_page = max(0, min(page, total_pages - 1))
+
+        users = (
+            await session.scalars(
+                select(User)
+                .where(User.is_blocked.is_(True))
+                .order_by(User.ban_notified_at.desc().nullslast(), User.id.desc())
+                .offset(current_page * page_size)
+                .limit(page_size)
+            )
+        ).all()
+
+    return total_blocked, users, current_page
+
+
+async def _render_banlist_page(
+    message: types.Message,
+    state: FSMContext,
+    page: int,
+    *,
+    as_edit: bool = False,
+):
+    total_blocked, users, current_page = await _load_banlist_page(page)
+
+    if not total_blocked or not users:
+        text = (
+            "🚫 <b>Бан-лист пуст</b>\n"
+            "На данный момент нет заблокированных пользователей."
+        )
+        reply_markup = None
+    else:
+        total_pages = math.ceil(total_blocked / BANLIST_PAGE_SIZE)
+        user = users[0]
+        profile_text = render_search_profile(
+            user,
+            SearchRenderOptions(
+                heading=(
+                    f"<b>🚫 Бан-лист</b> — страница {current_page + 1}/{total_pages}"
+                ),
+                include_private_fields=True,
+            ),
+        )
+        text = f"{profile_text}\n\nВсего заблокировано: {total_blocked}"
+        reply_markup = _banlist_navigation_kb(
+            user_id=user.tg_id,
+            current_page=current_page,
+            total_pages=total_pages,
+        )
+
+    if as_edit:
+        await message.edit_text(text, parse_mode="HTML", reply_markup=reply_markup)
+    else:
+        await message.answer(text, parse_mode="HTML", reply_markup=reply_markup)
+
+    await state.update_data(banlist_page=current_page)
 
 
 def _shorten_title_label(text: str, limit: int = 32) -> str:
@@ -192,11 +291,14 @@ async def _process_block_user(
         await call.answer("✅ Пользователь заблокирован", show_alert=True)
 
 
-async def _process_unblock_user(call: types.CallbackQuery, user_id: int) -> None:
+async def _process_unblock_user(
+    call: types.CallbackQuery, user_id: int, *, notify_operator: bool = True
+) -> bool:
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == user_id))
         if not user:
-            return await call.answer("Пользователь не найден", show_alert=True)
+            await call.answer("Пользователь не найден", show_alert=True)
+            return False
 
         await unblock_user_record(session, user=user)
 
@@ -208,10 +310,13 @@ async def _process_unblock_user(call: types.CallbackQuery, user_id: int) -> None
         except Exception:  # pragma: no cover - ignore delivery errors
             logger.debug("Failed to notify user %s about unblock", user_id)
 
-    if call.message:
-        await call.message.edit_text("✅ Пользователь разблокирован")
-    else:
-        await call.answer("✅ Пользователь разблокирован", show_alert=True)
+    if notify_operator:
+        if call.message:
+            await call.message.edit_text("✅ Пользователь разблокирован")
+        else:
+            await call.answer("✅ Пользователь разблокирован", show_alert=True)
+
+    return True
 
 
 # -------- /admin_users — список --------
@@ -267,7 +372,9 @@ async def admin_users_list(message: types.Message):
     await _send_users_list(message)
 
 
-@router.message(StateFilter(AdminUsersState.searching), F.text == "↩️ Назад")
+@router.message(
+    StateFilter(AdminUsersState.searching, AdminUsersState.banlist), F.text == "↩️ Назад"
+)
 async def admin_users_back(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
@@ -280,6 +387,21 @@ async def admin_users_back(message: types.Message, state: FSMContext):
         "👑 <b>Админ-панель</b>\nВыберите раздел:",
         reply_markup=admin_main_menu_kb(),
     )
+
+
+@router.message(
+    StateFilter(AdminUsersState.searching, AdminUsersState.banlist),
+    F.text == "🚫 Бан-лист",
+)
+async def admin_users_banlist(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await state.set_state(AdminUsersState.banlist)
+    await _render_banlist_page(message, state, page=0)
 
 
 # -------- Поиск пользователя --------
@@ -380,6 +502,62 @@ async def user_management_actions(call: types.CallbackQuery, state: FSMContext):
     if action == "unblock_user":
         await _process_unblock_user(call, user_id)
         return
+
+
+@router.callback_query(F.data.startswith("banlist:page:"))
+async def admin_banlist_paginate(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    current_state = await state.get_state()
+    if current_state != AdminUsersState.banlist.state:
+        return await call.answer("Откройте бан-лист заново", show_alert=True)
+
+    try:
+        _, _, page_raw = call.data.split(":", maxsplit=2)
+        page = int(page_raw)
+    except (ValueError, AttributeError):
+        return await call.answer("Некорректный запрос", show_alert=True)
+
+    if not call.message:
+        return await call.answer("Сообщение недоступно", show_alert=True)
+
+    await _render_banlist_page(call.message, state, page=page, as_edit=True)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("banlist:unban:"))
+async def admin_banlist_unban(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    current_state = await state.get_state()
+    if current_state != AdminUsersState.banlist.state:
+        return await call.answer("Откройте бан-лист заново", show_alert=True)
+
+    try:
+        _prefix, _action, user_id_raw = call.data.split(":", maxsplit=2)
+        user_id = int(user_id_raw)
+    except (ValueError, AttributeError):
+        return await call.answer("Некорректный запрос", show_alert=True)
+
+    success = await _process_unblock_user(call, user_id, notify_operator=False)
+    if not success:
+        return
+
+    await call.answer("✅ Пользователь разблокирован", show_alert=True)
+
+    data = await state.get_data()
+    page = data.get("banlist_page", 0)
+
+    if call.message:
+        await _render_banlist_page(call.message, state, page=page, as_edit=True)
 
 
 @router.callback_query(F.data.startswith("confirm_block_admin:"))
