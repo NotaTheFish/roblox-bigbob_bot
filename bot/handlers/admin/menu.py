@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router, types
+from aiogram.exceptions import SkipHandler
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
@@ -55,7 +56,7 @@ async def admin_back_to_panel(message: types.Message, state: FSMContext):
 
     current_state = await state.get_state()
     if current_state and current_state.startswith(f"{ServerManageState.__name__}:"):
-        return
+        raise SkipHandler
 
     await state.clear()
     await message.answer(

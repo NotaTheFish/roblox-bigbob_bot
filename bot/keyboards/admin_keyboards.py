@@ -260,10 +260,14 @@ def achievement_history_inline(return_callback: str = "ach:list:filter:all:all")
 
 def admin_servers_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton(text="➕ Создать сервер")],
-        [KeyboardButton(text="🗑 Удалить сервер")],
-        [KeyboardButton(text="🔗 Назначить ссылку")],
-        [KeyboardButton(text="🚫 Удалить ссылку")],
+        [
+            KeyboardButton(text="➕ Создать сервер"),
+            KeyboardButton(text="🗑 Удалить сервер"),
+        ],
+        [
+            KeyboardButton(text="🔗 Назначить ссылку"),
+            KeyboardButton(text="🚫 Удалить ссылку"),
+        ],
         [KeyboardButton(text="↩️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
