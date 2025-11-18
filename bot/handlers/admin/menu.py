@@ -8,6 +8,7 @@ from sqlalchemy import select
 from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.keyboards.main_menu import main_menu
+from bot.states.server_states import ServerManageState
 
 
 router = Router(name="admin_menu")
@@ -51,6 +52,10 @@ async def admin_back_to_panel(message: types.Message, state: FSMContext):
 
     if not await is_admin(message.from_user.id):
         return await message.answer("⛔ У вас нет доступа")
+
+    current_state = await state.get_state()
+    if current_state and current_state.startswith(f"{ServerManageState.__name__}:"):
+        return
 
     await state.clear()
     await message.answer(
