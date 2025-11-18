@@ -22,6 +22,7 @@ from bot.db import (
 )
 from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
+    admin_server_navigation_kb,
     admin_server_picker_kb,
     admin_servers_menu_kb,
 )
@@ -36,6 +37,7 @@ SERVER_DELETE_BUTTON = "🗑 Удалить сервер"
 SERVER_SET_LINK_BUTTON = "🔗 Назначить ссылку"
 SERVER_CLEAR_LINK_BUTTON = "🚫 Удалить ссылку"
 SERVER_BACK_BUTTON = "↩️ В админ-панель"
+SERVER_STEP_BACK_BUTTON = "↩️ Назад"
 
 
 async def is_admin(uid: int) -> bool:
@@ -47,10 +49,7 @@ def _format_servers_list(servers: Sequence[Server]) -> str:
     lines = ["Доступные серверы:"]
     for server in sorted(servers, key=lambda item: item.position or 0):
         url = server.url or "нет"
-        display_name = f"Сервер {server.position}"
-        lines.append(
-            f"{display_name} — ID <b>{server.id}</b> — {server.name} — ссылка: {url}"
-        )
+        lines.append(f"Сервер {server.position} — ссылка:\n{url}")
     return "\n".join(lines)
 
 
@@ -75,6 +74,46 @@ async def server_back_to_main(message: types.Message, state: FSMContext) -> None
 
     if not await is_admin(message.from_user.id):
         return
+
+    await state.clear()
+    await message.answer(
+        "👑 <b>Админ-панель</b>\nВыберите раздел:",
+        reply_markup=admin_main_menu_kb(),
+    )
+
+
+@router.message(F.text == SERVER_STEP_BACK_BUTTON)
+async def server_step_back(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    current_state = await state.get_state()
+    data = await state.get_data()
+
+    if current_state == ServerManageState.waiting_for_server.state:
+        await state.clear()
+        await message.answer(
+            "⚙️ Управление серверами:", reply_markup=admin_servers_menu_kb()
+        )
+        return
+
+    if current_state in {
+        ServerManageState.waiting_for_link.state,
+        ServerManageState.waiting_for_closed_message.state,
+    }:
+        operation = data.get("operation")
+        prompt = data.get("prompt")
+        if operation and prompt:
+            await _request_server_choice(
+                message,
+                state,
+                operation=operation,
+                prompt=prompt,
+            )
+            return
 
     await state.clear()
     await message.answer(
@@ -163,6 +202,7 @@ async def _request_server_choice(
     await state.set_state(ServerManageState.waiting_for_server)
     await state.update_data(
         operation=operation,
+        prompt=prompt,
         position_map={str(server.position): server.id for server in servers},
     )
 
@@ -310,11 +350,17 @@ async def server_select_handler(message: types.Message, state: FSMContext) -> No
     elif operation == "set_link":
         await state.update_data(server_id=server_id)
         await state.set_state(ServerManageState.waiting_for_link)
-        await message.answer("Отправьте новую ссылку для сервера:")
+        await message.answer(
+            "Отправьте новую ссылку для сервера:",
+            reply_markup=admin_server_navigation_kb(),
+        )
     elif operation == "clear_link":
         await state.update_data(server_id=server_id)
         await state.set_state(ServerManageState.waiting_for_closed_message)
-        await message.answer("Введите новое сообщение для закрытого сервера:")
+        await message.answer(
+            "Введите новое сообщение для закрытого сервера:",
+            reply_markup=admin_server_navigation_kb(),
+        )
     else:
         await state.clear()
         await message.answer("Неизвестная операция.", reply_markup=admin_servers_menu_kb())
@@ -391,7 +437,10 @@ async def server_set_link_finish(message: types.Message, state: FSMContext) -> N
     link = (message.text or "").strip()
 
     if not link:
-        await message.answer("Ссылка не может быть пустой. Повторите ввод:")
+        await message.answer(
+            "Ссылка не может быть пустой. Повторите ввод:",
+            reply_markup=admin_server_navigation_kb(),
+        )
         return
 
     data = await state.get_data()
@@ -439,7 +488,9 @@ async def server_clear_link_finish(message: types.Message, state: FSMContext) ->
 
     if not closed_message:
         await message.answer(
-            "Сообщение не может быть пустым. Введите новое сообщение для закрытого сервера:")
+            "Сообщение не может быть пустым. Введите новое сообщение для закрытого сервера:",
+            reply_markup=admin_server_navigation_kb(),
+        )
         return
 
     data = await state.get_data()

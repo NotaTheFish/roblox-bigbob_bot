@@ -262,7 +262,7 @@ def admin_servers_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="➕ Создать сервер"), KeyboardButton(text="🗑 Удалить сервер")],
         [KeyboardButton(text="🔗 Назначить ссылку"), KeyboardButton(text="🚫 Удалить ссылку")],
-        [KeyboardButton(text="↩️ В админ-панель")],
+        [KeyboardButton(text="↩️ Назад"), KeyboardButton(text="↩️ В админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -282,7 +282,16 @@ def admin_server_picker_kb(
     if current_row:
         rows.append(current_row)
 
+    footer_row: list[KeyboardButton] = [KeyboardButton(text="↩️ Назад")]
+
     if footer_button:
-        rows.append([KeyboardButton(text=footer_button)])
+        footer_row.append(KeyboardButton(text=footer_button))
+
+    rows.append(footer_row)
 
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def admin_server_navigation_kb() -> ReplyKeyboardMarkup:
+    buttons = [[KeyboardButton(text="↩️ Назад"), KeyboardButton(text="↩️ В админ-панель")]]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
