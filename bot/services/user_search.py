@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from bot.db import User, async_session
@@ -21,11 +21,18 @@ class SearchRenderOptions:
 
 
 async def find_user_by_query(query: str, *, include_blocked: bool = True) -> User | None:
-    """Find a user by bot nickname, Telegram ID, bot_user_id or username."""
+    """Find a user by nickname, username or identifiers in priority order."""
 
-    normalized = query.strip().lstrip("@")
+    normalized = query.strip()
     if not normalized:
         return None
+
+    normalized = normalized.lstrip("@").strip()
+    if not normalized:
+        return None
+
+    normalized_casefold = normalized.casefold()
+    maybe_bot_id = normalized.upper()
 
     stmt = (
         select(User)
@@ -36,26 +43,31 @@ async def find_user_by_query(query: str, *, include_blocked: bool = True) -> Use
     if not include_blocked:
         stmt = stmt.where(User.is_blocked.is_(False))
 
-    maybe_bot_id = normalized.upper()
-    is_bot_id_query = maybe_bot_id.startswith(BOT_USER_ID_PREFIX)
-
     async with async_session() as session:
-        if is_bot_id_query:
+        for column in (User.bot_nickname, User.tg_username, User.username):
+            text_stmt = stmt.where(func.lower(column) == normalized_casefold)
+            user = await session.scalar(text_stmt)
+            if user:
+                return user
+
+        if maybe_bot_id.startswith(BOT_USER_ID_PREFIX):
             bot_id_stmt = stmt.where(User.bot_user_id == maybe_bot_id)
             user = await session.scalar(bot_id_stmt)
             if user:
                 return user
 
-        filters = []
         if normalized.isdigit():
-            filters.append(User.tg_id == int(normalized))
+            tg_id_stmt = stmt.where(User.tg_id == int(normalized))
+            user = await session.scalar(tg_id_stmt)
+            if user:
+                return user
 
-        like_pattern = f"%{normalized}%"
-        filters.append(User.tg_username.ilike(like_pattern))
-        filters.append(User.username.ilike(like_pattern))
-        filters.append(User.bot_nickname.ilike(like_pattern))
+            roblox_id_stmt = stmt.where(User.roblox_id == normalized)
+            user = await session.scalar(roblox_id_stmt)
+            if user:
+                return user
 
-        return await session.scalar(stmt.where(or_(*filters)))
+    return None
 
 
 def render_search_profile(user: User, options: SearchRenderOptions) -> str:
