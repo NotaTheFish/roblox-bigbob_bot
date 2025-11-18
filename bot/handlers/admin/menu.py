@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router, types
-from aiogram.exceptions import SkipHandler
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, Filter, StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
@@ -13,6 +12,14 @@ from bot.states.server_states import ServerManageState
 
 
 router = Router(name="admin_menu")
+
+
+class OutsideServerManageState(Filter):
+    async def __call__(self, message: types.Message, state: FSMContext) -> bool:
+        current_state = await state.get_state()
+        if not current_state:
+            return True
+        return not current_state.startswith(f"{ServerManageState.__name__}:")
 
 
 # Проверка администратора
@@ -46,17 +53,13 @@ async def admin_panel_button(message: types.Message):
 
 
 # Обработка кнопок админ-панели
-@router.message(F.text == "↩️ Назад")
+@router.message(OutsideServerManageState(), F.text == ↩️ Назад")
 async def admin_back_to_panel(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
 
     if not await is_admin(message.from_user.id):
         return await message.answer("⛔ У вас нет доступа")
-
-    current_state = await state.get_state()
-    if current_state and current_state.startswith(f"{ServerManageState.__name__}:"):
-        raise SkipHandler
 
     await state.clear()
     await message.answer(
