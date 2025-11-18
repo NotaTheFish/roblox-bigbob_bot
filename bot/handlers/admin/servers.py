@@ -36,7 +36,6 @@ SERVER_CREATE_BUTTON = "➕ Создать сервер"
 SERVER_DELETE_BUTTON = "🗑 Удалить сервер"
 SERVER_SET_LINK_BUTTON = "🔗 Назначить ссылку"
 SERVER_CLEAR_LINK_BUTTON = "🚫 Удалить ссылку"
-SERVER_BACK_BUTTON = "↩️ В админ-панель"
 SERVER_STEP_BACK_BUTTON = "↩️ Назад"
 
 
@@ -64,21 +63,6 @@ async def server_menu(message: types.Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         "⚙️ Управление серверами:", reply_markup=admin_servers_menu_kb()
-    )
-
-
-@router.message(F.text == SERVER_BACK_BUTTON)
-async def server_back_to_main(message: types.Message, state: FSMContext) -> None:
-    if not message.from_user:
-        return
-
-    if not await is_admin(message.from_user.id):
-        return
-
-    await state.clear()
-    await message.answer(
-        "👑 <b>Админ-панель</b>\nВыберите раздел:",
-        reply_markup=admin_main_menu_kb(),
     )
 
 
@@ -208,7 +192,6 @@ async def _request_server_choice(
 
     keyboard = admin_server_picker_kb(
         [f"Сервер {server.position}" for server in servers],
-        footer_button=SERVER_BACK_BUTTON,
     )
 
     await message.answer(

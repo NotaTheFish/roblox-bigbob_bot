@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from bot.handlers.admin import servers
-from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.states.server_states import ServerManageState
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE, LogEntry, Server
 from tests.conftest import FakeAsyncSession, make_async_session_stub
@@ -302,15 +301,42 @@ async def test_server_clear_link_requests_message(
 
 
 @pytest.mark.anyio("asyncio")
-async def test_server_back_button_returns_admin_menu(message_factory, mock_state):
-    message = message_factory(text=servers.SERVER_BACK_BUTTON)
+async def test_server_step_back_from_picker_returns_to_menu(message_factory, mock_state):
+    await mock_state.set_state(ServerManageState.waiting_for_server)
+    message = message_factory(text=servers.SERVER_STEP_BACK_BUTTON)
 
-    await servers.server_back_to_main(message, mock_state)
+    await servers.server_step_back(message, mock_state)
 
     assert await mock_state.get_state() is None
     assert message.answers
-    text, params = message.answers[-1]
+    text, _ = message.answers[-1]
+    assert "Управление серверами" in text
+
+
+@pytest.mark.anyio("asyncio")
+async def test_server_step_back_from_root_returns_admin_menu(message_factory, mock_state):
+    message = message_factory(text=servers.SERVER_STEP_BACK_BUTTON)
+
+    await servers.server_step_back(message, mock_state)
+
+    assert await mock_state.get_state() is None
+    assert message.answers
+    text, _ = message.answers[-1]
     assert "Админ-панель" in text
-    expected_kb = admin_main_menu_kb()
-    assert params.get("reply_markup") is not None
-    assert params["reply_markup"].keyboard == expected_kb.keyboard
+
+
+
+@pytest.mark.anyio("asyncio")
+async def test_server_step_back_from_link_returns_to_picker(
+    monkeypatch, message_factory, mock_state
+):
+    await mock_state.set_state(ServerManageState.waiting_for_link)
+    await mock_state.update_data(operation="set_link", prompt="Выберите сервер")
+
+    request_mock = AsyncMock()
+    monkeypatch.setattr(servers, "_request_server_choice", request_mock)
+
+    message = message_factory(text=servers.SERVER_STEP_BACK_BUTTON)
+    await servers.server_step_back(message, mock_state)
+
+    request_mock.assert_awaited_once()

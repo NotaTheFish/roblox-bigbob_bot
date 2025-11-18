@@ -262,14 +262,12 @@ def admin_servers_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="➕ Создать сервер"), KeyboardButton(text="🗑 Удалить сервер")],
         [KeyboardButton(text="🔗 Назначить ссылку"), KeyboardButton(text="🚫 Удалить ссылку")],
-        [KeyboardButton(text="↩️ Назад"), KeyboardButton(text="↩️ В админ-панель")],
+        [KeyboardButton(text="↩️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def admin_server_picker_kb(
-    button_labels: Sequence[str], *, footer_button: str | None = None
-) -> ReplyKeyboardMarkup:
+def admin_server_picker_kb(button_labels: Sequence[str]) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = []
     current_row: list[KeyboardButton] = []
 
@@ -282,16 +280,11 @@ def admin_server_picker_kb(
     if current_row:
         rows.append(current_row)
 
-    footer_row: list[KeyboardButton] = [KeyboardButton(text="↩️ Назад")]
-
-    if footer_button:
-        footer_row.append(KeyboardButton(text=footer_button))
-
-    rows.append(footer_row)
+    rows.append([KeyboardButton(text="↩️ Назад")])
 
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def admin_server_navigation_kb() -> ReplyKeyboardMarkup:
-    buttons = [[KeyboardButton(text="↩️ Назад"), KeyboardButton(text="↩️ В админ-панель")]]
+    buttons = [[KeyboardButton(text="↩️ Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
