@@ -258,33 +258,31 @@ def achievement_history_inline(return_callback: str = "ach:list:filter:all:all")
     return builder.as_markup()
 
 
-def admin_servers_menu_kb() -> ReplyKeyboardMarkup:
-    buttons = [
-        [KeyboardButton(text="➕ Создать сервер"), KeyboardButton(text="🗑 Удалить сервер")],
-        [KeyboardButton(text="🔗 Назначить ссылку"), KeyboardButton(text="🚫 Удалить ссылку")],
-        [KeyboardButton(text="↩️ Назад")],
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+def admin_servers_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Создать сервер", callback_data="servers_create")
+    builder.button(text="🗑 Удалить сервер", callback_data="servers_delete")
+    builder.button(text="🔗 Назначить ссылку", callback_data="servers_set_link")
+    builder.button(text="🚫 Удалить ссылку", callback_data="servers_clear_link")
+    builder.button(text="↩️ Назад", callback_data="servers_back")
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
 
 
-def admin_server_picker_kb(button_labels: Sequence[str]) -> ReplyKeyboardMarkup:
-    rows: list[list[KeyboardButton]] = []
-    current_row: list[KeyboardButton] = []
-
-    for label in button_labels:
-        current_row.append(KeyboardButton(text=label))
-        if len(current_row) == 2:
-            rows.append(current_row)
-            current_row = []
-
-    if current_row:
-        rows.append(current_row)
-
-    rows.append([KeyboardButton(text="↩️ Назад")])
-
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+def admin_server_picker_kb(
+    button_items: Sequence[tuple[int, str]]
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for position, label in button_items:
+        builder.button(text=label, callback_data=f"servers_pick:{position}")
+    builder.button(text="↩️ Назад", callback_data="servers_back")
+    builder.adjust(2)
+    return builder.as_markup()
 
 
-def admin_server_navigation_kb() -> ReplyKeyboardMarkup:
-    buttons = [[KeyboardButton(text="↩️ Назад")]]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+def admin_server_navigation_kb(
+    callback_data: str = "servers_back",
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="↩️ Назад", callback_data=callback_data)
+    return builder.as_markup()

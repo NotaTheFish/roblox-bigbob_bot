@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router, types
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
@@ -75,3 +75,28 @@ async def admin_exit_to_main(message: types.Message, state: FSMContext):
         "🏠 Вы вернулись в главное меню.",
         reply_markup=main_menu(is_admin=is_user_admin),
     )
+
+
+@router.callback_query(
+    StateFilter(None),
+    F.data.func(lambda data: isinstance(data, str) and data.endswith("_back")),
+)
+async def admin_inline_back(call: types.CallbackQuery, state: FSMContext):
+    data = call.data or ""
+    if data.startswith("servers_"):
+        return await call.answer()
+
+    if not call.from_user:
+        return await call.answer()
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("⛔ У вас нет доступа", show_alert=True)
+
+    await state.clear()
+    if call.message:
+        await call.message.answer(
+            "👑 <b>Админ-панель</b>\nВыберите раздел:",
+            reply_markup=admin_main_menu_kb(),
+        )
+
+    await call.answer()
