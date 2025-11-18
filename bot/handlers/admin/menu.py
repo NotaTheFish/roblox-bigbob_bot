@@ -53,7 +53,7 @@ async def admin_panel_button(message: types.Message):
 
 
 # Обработка кнопок админ-панели
-@router.message(OutsideServerManageState(), F.text == ↩️ Назад")
+@router.message(OutsideServerManageState(), F.text == "↩️ Назад")
 async def admin_back_to_panel(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
