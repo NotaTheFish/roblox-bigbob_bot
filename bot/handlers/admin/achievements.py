@@ -204,6 +204,23 @@ async def _send_history(target: types.Message, *, as_edit: bool = False) -> None
         await target.answer(text, reply_markup=markup, parse_mode="HTML")
 
 
+async def _send_achievement_management(
+    target: types.Message,
+    *,
+    visibility_filter: str = DEFAULT_VISIBILITY_FILTER,
+    condition_filter: str = DEFAULT_CONDITION_FILTER,
+    as_edit: bool = False,
+) -> None:
+    achievements = await _load_achievements(visibility_filter, condition_filter)
+    rows = [(ach.id, ach.name) for ach in achievements]
+    text = "Выберите достижение для управления"
+    markup = achievement_manage_inline(rows[:25], visibility_filter, condition_filter)
+    if as_edit:
+        await target.edit_text(text, reply_markup=markup)
+    else:
+        await target.answer(text, reply_markup=markup)
+
+
 async def is_admin(uid: int) -> bool:
     async with async_session() as session:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
@@ -227,18 +244,18 @@ async def ach_list(message: types.Message):
     await _send_achievement_list(message)
 
 
-@router.message(F.text == "🎯 Фильтры")
-async def ach_filters(message: types.Message):
-    if not message.from_user or not await is_admin(message.from_user.id):
-        return
-    await _send_achievement_list(message)
-
-
 @router.message(F.text == "📚 История")
 async def ach_history_message(message: types.Message):
     if not message.from_user or not await is_admin(message.from_user.id):
         return
     await _send_history(message)
+
+
+@router.message(F.text == "⚙️ Управление")
+async def ach_manage_menu(message: types.Message):
+    if not message.from_user or not await is_admin(message.from_user.id):
+        return
+    await _send_achievement_management(message)
 
 
 @router.message(F.text == "🎁 Выдать награду")
@@ -302,12 +319,26 @@ async def ach_manage_callback(call: types.CallbackQuery):
     _, _, visibility_raw, condition_raw = parts
     visibility = _normalize_visibility_filter(visibility_raw)
     condition = _normalize_condition_filter(condition_raw)
-    achievements = await _load_achievements(visibility, condition)
-    rows = [(ach.id, ach.name) for ach in achievements]
-    text = "Выберите достижение для управления"
-    markup = achievement_manage_inline(rows[:25], visibility, condition)
-    await call.message.edit_text(text, reply_markup=markup)
+    await _send_achievement_management(
+        call.message,
+        visibility_filter=visibility,
+        condition_filter=condition,
+        as_edit=True,
+    )
     await call.answer()
+
+
+@router.callback_query(F.data == "ach:manage:create")
+async def ach_manage_create_callback(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user or not await is_admin(call.from_user.id):
+        await call.answer("Недостаточно прав", show_alert=True)
+        return
+    if not call.message:
+        return
+    await call.answer()
+    await state.set_state(AchievementsState.waiting_for_name)
+    await state.update_data(mode="create")
+    await call.message.answer("Введите название достижения:")
 
 
 @router.callback_query(F.data.startswith("ach:details:"))
@@ -510,16 +541,6 @@ async def ach_history_callback(call: types.CallbackQuery):
         return
     await call.answer()
     await _send_history(call.message, as_edit=True)
-
-
-@router.message(F.text == "➕ Создать")
-async def ach_add(message: types.Message, state: FSMContext):
-    if not message.from_user or not await is_admin(message.from_user.id):
-        return
-
-    await state.set_state(AchievementsState.waiting_for_name)
-    await state.update_data(mode="create")
-    await message.answer("Введите название достижения:")
 
 
 @router.callback_query(F.data.startswith("ach:edit:"))

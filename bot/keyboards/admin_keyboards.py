@@ -145,9 +145,9 @@ def shop_type_kb() -> ReplyKeyboardMarkup:
 
 def admin_achievements_kb() -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton(text="➕ Создать"), KeyboardButton(text="📃 Список")],
-        [KeyboardButton(text="🎯 Фильтры"), KeyboardButton(text="📚 История")],
-        [KeyboardButton(text="🎁 Выдать награду"), KeyboardButton(text="↩️ Назад")],
+        [KeyboardButton(text="📃 Список"), KeyboardButton(text="⚙️ Управление")],
+        [KeyboardButton(text="📚 История"), KeyboardButton(text="🎁 Выдать награду")],
+        [KeyboardButton(text="↩️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -171,14 +171,6 @@ def achievement_list_inline(
             callback_data=f"ach:list:filter:{visibility_filter}:{value}",
         )
     builder.adjust(2, 3)
-
-    builder.button(text="📚 История", callback_data="ach:history:1")
-    builder.button(text="🎁 Выдать", callback_data="ach:grant:start")
-    builder.adjust(2)
-    builder.button(
-        text="⚙️ Управление",
-        callback_data=f"ach:manage:{visibility_filter}:{condition_filter}",
-    )
 
     return builder.as_markup()
 
@@ -251,6 +243,7 @@ def achievement_manage_inline(
             )
     else:
         builder.button(text="Нет достижений", callback_data="ach:list:noop")
+    builder.button(text="➕ Создать достижение", callback_data="ach:manage:create")
     builder.button(
         text="⬅️ Назад",
         callback_data=f"ach:list:filter:{visibility_filter}:{condition_filter}",
