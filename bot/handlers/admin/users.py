@@ -20,6 +20,7 @@ from bot.keyboards.admin_keyboards import (
     admin_main_menu_kb,
     admin_users_menu_kb,
 )
+from bot.firebase.firebase_service import add_firebase_ban, remove_firebase_ban
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.ban_appeal import ban_appeal_keyboard
 from bot.services.user_blocking import (
@@ -261,6 +262,14 @@ async def _prompt_admin_block_confirmation(call: types.CallbackQuery, user_id: i
 async def _process_block_user(
     call: types.CallbackQuery, user_id: int, *, confirmed: bool
 ) -> None:
+    roblox_id = ""
+    banned_by = "unknown"
+    if call.from_user:
+        if call.from_user.username:
+            banned_by = f"@{call.from_user.username}"
+        else:
+            banned_by = str(call.from_user.id)
+
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == user_id))
         if not user:
@@ -286,6 +295,8 @@ async def _process_block_user(
             return
 
         notified = False
+        roblox_id_value = user.roblox_id if user else ""
+        roblox_id = str(roblox_id_value).strip() if roblox_id_value else ""
         try:
             await call.bot.send_message(
                 user_id,
@@ -300,6 +311,23 @@ async def _process_block_user(
             user.ban_notified_at = datetime.now(timezone.utc)
             await session.commit()
 
+    if roblox_id:
+        payload = {
+            "reason": "Manual Telegram ban",
+            "banned_by": banned_by,
+        }
+        try:
+            success = await add_firebase_ban(roblox_id, payload)
+            if not success:
+                logger.error(
+                    "Failed to add Firebase ban for roblox_id=%s", roblox_id
+                )
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Unexpected error when syncing Firebase ban for roblox_id=%s",
+                roblox_id,
+            )
+
     if call.message:
         await call.message.edit_text("✅ Пользователь заблокирован")
     else:
@@ -309,12 +337,15 @@ async def _process_block_user(
 async def _process_unblock_user(
     call: types.CallbackQuery, user_id: int, *, notify_operator: bool = True
 ) -> bool:
+    roblox_id = ""
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == user_id))
         if not user:
             await call.answer("Пользователь не найден", show_alert=True)
             return False
 
+        roblox_id_value = user.roblox_id or ""
+        roblox_id = str(roblox_id_value).strip() if roblox_id_value else ""
         await unblock_user_record(session, user=user)
 
         try:
@@ -324,6 +355,19 @@ async def _process_unblock_user(
             )
         except Exception:  # pragma: no cover - ignore delivery errors
             logger.debug("Failed to notify user %s about unblock", user_id)
+
+    if roblox_id:
+        try:
+            success = await remove_firebase_ban(roblox_id)
+            if not success:
+                logger.error(
+                    "Failed to remove Firebase ban for roblox_id=%s", roblox_id
+                )
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Unexpected error when removing Firebase ban for roblox_id=%s",
+                roblox_id,
+            )
 
     if notify_operator:
         if call.message:
