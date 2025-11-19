@@ -1,12 +1,42 @@
-
+# --- Project data ---
 data/
+
+# --- Secrets & Environment variables ---
 *.env
 .env
-__pycache__/
-*.pyc
-*.db
-# Python venv
-venv/
+*.key
+*.pem
+
+# Firebase / Google Service Account keys
 bot/firebase/serviceAccountKey.json
 
+# --- Python cache & venv ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
 
+# --- Node.js ---
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+
+# --- Databases ---
+*.db
+*.sqlite3
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+logs/
+*.log
+
+# --- Build & output ---
+dist/
+build/
