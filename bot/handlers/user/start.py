@@ -34,103 +34,157 @@ async def start_cmd(message: types.Message, command: CommandStart):
     tg_id = message.from_user.id
     tg_username = normalize_tg_username(message.from_user.username)
     referral_code = (command.args or "").strip()  # ✅ Aiogram v3 способ
+    branch = "unknown"
 
-    async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    try:
+        async with async_session() as session:
+            user = await session.scalar(select(User).where(User.tg_id == tg_id))
 
-        if not user:
-            bot_user_id = await _generate_bot_user_id(session)
-            user = User(
-                bot_user_id=bot_user_id,
-                tg_id=tg_id,
-                tg_username=tg_username,
-                username=None,
-                roblox_id=None,
-                balance=0,
-                verified=False,
-                code=None,
-                is_blocked=False,
-            )
-            session.add(user)
-            await session.flush()
+            if not user:
+                branch = "new_user_registered"
+                bot_user_id = await _generate_bot_user_id(session)
+                user = User(
+                    bot_user_id=bot_user_id,
+                    tg_id=tg_id,
+                    tg_username=tg_username,
+                    username=None,
+                    roblox_id=None,
+                    balance=0,
+                    verified=False,
+                    code=None,
+                    is_blocked=False,
+                )
+                session.add(user)
+                await session.flush()
 
-            code = await ensure_referral_code(session, user)
-            referrer = None
-            if referral_code:
-                referrer = await find_referrer_by_code(session, referral_code)
+                code = await ensure_referral_code(session, user)
+                referrer = None
+                if referral_code:
+                    referrer = await find_referrer_by_code(session, referral_code)
 
-            if referrer:
-                referral = await attach_referral(session, referrer, user)
-                if referral:
-                    pending_message = (
-                        "Новый реферал — бонус будет доступен после подтверждения Roblox."
-                    )
-                    session.add(
-                        LogEntry(
-                            user_id=referrer.id,
-                            telegram_id=referrer.tg_id,
-                            event_type="referral_attached",
-                            message=pending_message,
-                            data={
-                                "referred_id": user.id,
-                                "referral_code": referral_code,
-                                "pending": True,
-                            },
+                if referrer:
+                    referral = await attach_referral(session, referrer, user)
+                    if referral:
+                        pending_message = (
+                            "Новый реферал — бонус будет доступен после подтверждения Roblox."
                         )
-                    )
-                    session.add(
-                        LogEntry(
-                            user_id=user.id,
-                            telegram_id=user.tg_id,
-                            event_type="referred_signup",
-                            message="Регистрация по реферальной ссылке",
-                            data={"referrer_id": referrer.id},
+                        session.add(
+                            LogEntry(
+                                user_id=referrer.id,
+                                telegram_id=referrer.tg_id,
+                                event_type="referral_attached",
+                                message=pending_message,
+                                data={
+                                    "referred_id": user.id,
+                                    "referral_code": referral_code,
+                                    "pending": True,
+                                },
+                            )
                         )
-                    )
-
-                    referred_username = normalize_tg_username(message.from_user.username)
-                    notify_text = (
-                        "Новый реферал!\n"
-                        f"@{referred_username} зарегистрировался по вашей ссылке.\n"
-                        "Бонус будет начислен после подтверждения его Roblox-аккаунта."
-                    )
-                    try:
-                        await message.bot.send_message(referrer.tg_id, notify_text)
-                    except Exception:  # pragma: no cover - network/runtime issues
-                        logger.warning(
-                            "Failed to notify referrer %s about pending referral from %s",
-                            referrer.tg_id,
-                            user.tg_id,
-                            exc_info=True,
+                        session.add(
+                            LogEntry(
+                                user_id=user.id,
+                                telegram_id=user.tg_id,
+                                event_type="referred_signup",
+                                message="Регистрация по реферальной ссылке",
+                                data={"referrer_id": referrer.id},
+                            )
                         )
 
-            session.add(LogEntry(
-                user_id=user.id,
-                telegram_id=user.tg_id,
-                event_type="user_registered",
-                message="Пользователь зарегистрирован",
-                data={"referral_code": code},
-            ))
-            await session.commit()
+                        referred_username = normalize_tg_username(message.from_user.username)
+                        notify_text = (
+                            "Новый реферал!\n"
+                            f"@{referred_username} зарегистрировался по вашей ссылке.\n"
+                            "Бонус будет начислен после подтверждения его Roblox-аккаунта."
+                        )
+                        try:
+                            await message.bot.send_message(referrer.tg_id, notify_text)
+                        except Exception:  # pragma: no cover - network/runtime issues
+                            logger.warning(
+                                "Failed to notify referrer %s about pending referral from %s",
+                                referrer.tg_id,
+                                user.tg_id,
+                                exc_info=True,
+                            )
 
-            return await message.answer(
-                "👋 Добро пожаловать!\n"
-                "Перед началом нужно подтвердить Roblox-аккаунт.",
-                reply_markup=verify_button(),
+                session.add(LogEntry(
+                    user_id=user.id,
+                    telegram_id=user.tg_id,
+                    event_type="user_registered",
+                    message="Пользователь зарегистрирован",
+                    data={"referral_code": code},
+                ))
+                await session.commit()
+
+                logger.info(
+                    "Handled /start for new user",
+                    extra={
+                        "telegram_id": tg_id,
+                        "referral_code": referral_code,
+                        "branch": branch,
+                    },
+                )
+
+                return await message.answer(
+                    "👋 Добро пожаловать!\n",
+                    "Перед началом нужно подтвердить Roblox-аккаунт.",
+                    reply_markup=verify_button(),
+                )
+
+            # Проверка Roblox верификации
+            if not user.verified:
+                branch = "unverified_user"
+                logger.info(
+                    "Handled /start for unverified user",
+                    extra={
+                        "telegram_id": tg_id,
+                        "referral_code": referral_code,
+                        "branch": branch,
+                    },
+                )
+                return await message.answer(
+                    "🔐 Для продолжения нужно подтвердить Roblox-аккаунт.",
+                    reply_markup=verify_button(),
+                )
+
+            is_admin = bool(
+                await session.scalar(select(Admin).where(Admin.telegram_id == tg_id))
             )
+            branch = "verified_user"
 
-        # Проверка Roblox верификации
-        if not user.verified:
-            return await message.answer(
-                "🔐 Для продолжения нужно подтвердить Roblox-аккаунт.",
-                reply_markup=verify_button(),
-            )
-
-        is_admin = bool(
-            await session.scalar(select(Admin).where(Admin.telegram_id == tg_id))
+        logger.info(
+            "Handled /start for verified user",
+            extra={
+                "telegram_id": tg_id,
+                "referral_code": referral_code,
+                "branch": branch,
+            },
         )
 
-    await message.answer(
-        f"✅ Добро пожаловать, <b>{tg_username}</b>!",
-        reply_markup=main_menu(is_admin=is_admin),
-    )
+        await message.answer(
+            f"✅ Добро пожаловать, <b>{tg_username}</b>!",
+            reply_markup=main_menu(is_admin=is_admin),
+        )
+    except Exception:
+        logger.exception(
+            "Failed to handle /start",
+            extra={
+                "telegram_id": tg_id,
+                "referral_code": referral_code,
+                "branch": branch,
+            },
+        )
+        try:
+            await message.answer(
+                "⚠️ Не удалось обработать команду. Пожалуйста, попробуйте позже."
+            )
+        except Exception:
+            logger.warning(
+                "Failed to send fallback response for /start",
+                extra={
+                    "telegram_id": tg_id,
+                    "referral_code": referral_code,
+                    "branch": branch,
+                },
+                exc_info=True,
+            )
