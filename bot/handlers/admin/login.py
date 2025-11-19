@@ -217,24 +217,6 @@ async def admin_request_callback(call: types.CallbackQuery):
         await call.bot.send_message(uid, msg, reply_markup=reply_markup)
     else:
         await call.bot.send_message(uid, msg)
-    try:
-        await call.bot.send_message(
-            ROOT_ADMIN_ID,
-            (
-                f"🆔 Заявка <code>{escape(request_id)}</code> пользователя "
-                f"<b>{escaped_full_name}</b> ( {escaped_username} / <code>{uid}</code> ):"
-                f" {escape(result)}"
-            ),
-            parse_mode="HTML",
-        )
-    except Exception:  # pragma: no cover - exercised via unit tests
-        logger.exception(
-            "Failed to notify root admin %s about admin request %s result for user %s",
-            ROOT_ADMIN_ID,
-            request_id,
-            uid,
-            extra={"user_id": uid, "request_id": request_id, "moderator_id": moderator_id},
-        )
     await call.message.edit_text(
         (
             f"{escape(result)}\n"
