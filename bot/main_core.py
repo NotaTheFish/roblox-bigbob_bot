@@ -13,6 +13,7 @@ from bot.bot_instance import bot
 from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
+from bot.handlers.global_block_filter import router as global_block_filter_router
 from bot.handlers.user import routers as user_routers
 from bot.middleware import BannedMiddleware, UserSyncMiddleware
 
@@ -49,6 +50,7 @@ def build_dispatcher() -> Dispatcher:
     dispatcher.update.outer_middleware(UserSyncMiddleware())
     dispatcher.update.outer_middleware(BannedMiddleware())
 
+    dispatcher.include_router(global_block_filter_router)
     for router in (*user_routers, *admin_routers):
         dispatcher.include_router(router)
 

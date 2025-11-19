@@ -70,8 +70,8 @@ class BannedMiddleware(BaseMiddleware):
                 with suppress(Exception):
                     await callback.answer()
 
-            # Block any further processing for banned users.
-            return None
+            # Let the global handlers perform final blocking steps.
+            return await handler(event, data)
         finally:
             if owns_session:
                 await session.close()
