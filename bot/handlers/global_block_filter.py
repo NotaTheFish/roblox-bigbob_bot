@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 from contextlib import suppress
+import logging
 
 from aiogram import Router, types
 
 from bot.utils.user import get_user
 
+logger = logging.getLogger(__name__)
 router = Router(name="global_block_filter")
 
 
-def _is_banned(user: object) -> bool:
-    return bool(getattr(user, "is_banned", False))
+def _is_blocked(user: object) -> bool:
+    return bool(getattr(user, "is_blocked", False))
 
 
 @router.callback_query()
@@ -24,7 +26,7 @@ async def block_banned_callback(
         return
 
     user = await get_user(callback.from_user.id, data=data)
-    if not user or not _is_banned(user):
+    if not user or not _is_blocked(user):
         return
 
     if callback.message:
@@ -33,6 +35,8 @@ async def block_banned_callback(
 
     with suppress(Exception):
         await callback.answer("❌ Вы заблокированы.")
+
+    logger.info("Blocked callback from user %s intercepted and halted.", callback.from_user.id)
 
 
 @router.message()
@@ -44,11 +48,13 @@ async def block_banned_message(
         return
 
     user = await get_user(message.from_user.id, data=data)
-    if not user or not _is_banned(user):
+    if not user or not _is_blocked(user):
         return
 
     with suppress(Exception):
         await message.answer("❌ Вы заблокированы.", reply_markup=None)
+
+    logger.info("Blocked message from user %s intercepted and halted.", message.from_user.id)
 
 
 __all__ = ["router"]
