@@ -15,15 +15,19 @@ from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
 from bot.handlers.user import routers as user_routers
 from bot.middleware import BannedMiddleware, UserSyncMiddleware
+
+# Firebase sync
 from bot.firebase.firebase_service import init_firebase, firebase_sync_loop
 
 logger = logging.getLogger(__name__)
+
 
 redis_url = os.getenv("REDIS_URL")
 if not redis_url:
     raise RuntimeError("REDIS_URL environment variable is not set")
 
 storage = RedisStorage.from_url(redis_url)
+
 firebase_sync_task: Optional[asyncio.Task] = None
 
 
@@ -31,6 +35,7 @@ async def ensure_root_admin() -> None:
     async with async_session() as session:
         result = await session.execute(select(Admin).where(Admin.telegram_id == ROOT_ADMIN_ID))
         root = result.scalar_one_or_none()
+
         if not root and ROOT_ADMIN_ID != 0:
             session.add(Admin(telegram_id=ROOT_ADMIN_ID, is_root=True))
             await session.commit()
@@ -39,32 +44,48 @@ async def ensure_root_admin() -> None:
 
 def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher(storage=storage)
+
+    # Мидлварь синхронизации с Firebase
     dispatcher.update.outer_middleware(UserSyncMiddleware())
     dispatcher.update.outer_middleware(BannedMiddleware())
+
     for router in (*user_routers, *admin_routers):
         dispatcher.include_router(router)
+
     return dispatcher
 
 
 async def on_startup(dispatcher: Dispatcher) -> None:
     await init_db()
     await ensure_root_admin()
-    init_firebase()
+
+    # Инициализация Firebase
+    try:
+        init_firebase()
+        logger.info("🔥 Firebase инициализирован!")
+    except Exception as e:
+        logger.error(f"❌ Firebase init error: {e}")
+
+    # Запуск фонового синка
     global firebase_sync_task
     firebase_sync_task = asyncio.create_task(firebase_sync_loop())
+    logger.info("🔄 Firebase sync task запущен")
+
     await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("🤖 Бот запущен в режиме polling (webhook отключён)")
+    logger.info("🤖 Бот запущен (polling)")
 
 
 async def on_shutdown(dispatcher: Dispatcher) -> None:
     global firebase_sync_task
+
     if firebase_sync_task:
         firebase_sync_task.cancel()
         with suppress(asyncio.CancelledError):
             await firebase_sync_task
-        firebase_sync_task = None
+        logger.info("🔻 Firebase sync task остановлен")
+
     await bot.session.close()
-    logger.info("🛑 Bot polling остановлен")
+    logger.info("🛑 Бот остановлен")
 
 
 async def start_bot() -> None:
@@ -75,9 +96,8 @@ async def start_bot() -> None:
     try:
         await dispatcher.start_polling(bot)
     except TelegramConflictError:
-        logger.warning("⚠️ Polling conflict detected — возможно, предыдущий процесс бота ещё завершается.")
+        logger.warning("⚠️ Polling conflict — ждём завершения старого процесса...")
         await asyncio.sleep(5)
-        logger.info("🔁 Повторный запуск polling...")
         await dispatcher.start_polling(bot)
 
 
