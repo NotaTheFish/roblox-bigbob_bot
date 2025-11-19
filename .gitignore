@@ -7,4 +7,6 @@ __pycache__/
 *.db
 # Python venv
 venv/
+bot/firebase/serviceAccountKey.json
+
 
