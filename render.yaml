@@ -10,6 +10,8 @@ services:
         value: backend
       - key: DATABASE_URL
         sync: false
+      - key: REDIS_URL
+        sync: false
       - key: BACKEND_HMAC_SECRET
         sync: false
       - key: BACKEND_IDEMPOTENCY_TTL
@@ -31,6 +33,8 @@ services:
       - key: TELEGRAM_TOKEN
         sync: false
       - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
         sync: false
       - key: ADMINS
         sync: false
