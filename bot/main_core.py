@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+from contextlib import suppress
+from typing import Optional
 
 from aiogram import Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
@@ -13,6 +15,7 @@ from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
 from bot.handlers.user import routers as user_routers
 from bot.middleware import BannedMiddleware, UserSyncMiddleware
+from bot.firebase.firebase_service import init_firebase, firebase_sync_loop
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,7 @@ if not redis_url:
     raise RuntimeError("REDIS_URL environment variable is not set")
 
 storage = RedisStorage.from_url(redis_url)
+firebase_sync_task: Optional[asyncio.Task] = None
 
 
 async def ensure_root_admin() -> None:
@@ -45,11 +49,20 @@ def build_dispatcher() -> Dispatcher:
 async def on_startup(dispatcher: Dispatcher) -> None:
     await init_db()
     await ensure_root_admin()
+    init_firebase()
+    global firebase_sync_task
+    firebase_sync_task = asyncio.create_task(firebase_sync_loop())
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("🤖 Бот запущен в режиме polling (webhook отключён)")
 
 
 async def on_shutdown(dispatcher: Dispatcher) -> None:
+    global firebase_sync_task
+    if firebase_sync_task:
+        firebase_sync_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await firebase_sync_task
+        firebase_sync_task = None
     await bot.session.close()
     logger.info("🛑 Bot polling остановлен")
 
