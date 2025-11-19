@@ -119,6 +119,26 @@ async def add_firebase_ban(
         return False
 
 
+async def add_ban_to_firebase(
+    roblox_id: Optional[str], data: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Add or update a ban entry under `/bans` in Firebase."""
+
+    if not roblox_id:
+        logger.warning("Cannot add Firebase ban without roblox_id")
+        return False
+
+    try:
+        app = _firebase_app or init_firebase()
+        ref = db.reference("/bans", app=app).child(str(roblox_id))
+        payload = data if data is not None else {"banned": True}
+        await _run_in_thread(ref.update, payload)
+        return True
+    except Exception:
+        logger.exception("Failed to add Firebase ban for roblox_id=%s", roblox_id)
+        return False
+
+
 async def remove_firebase_ban(roblox_id: Optional[str]) -> bool:
     if not roblox_id:
         logger.warning("Cannot remove Firebase ban without roblox_id")
@@ -129,6 +149,25 @@ async def remove_firebase_ban(roblox_id: Optional[str]) -> bool:
         return True
     except Exception:
         logger.exception("Failed to remove ban for roblox_id=%s", roblox_id)
+        return False
+
+
+async def remove_ban_from_firebase(roblox_id: Optional[str]) -> bool:
+    """Remove a ban entry from `/bans` in Firebase."""
+
+    if not roblox_id:
+        logger.warning("Cannot remove Firebase ban without roblox_id")
+        return False
+
+    try:
+        app = _firebase_app or init_firebase()
+        ref = db.reference("/bans", app=app).child(str(roblox_id))
+        await _run_in_thread(ref.delete)
+        return True
+    except Exception:
+        logger.exception(
+            "Failed to remove Firebase ban entry for roblox_id=%s", roblox_id
+        )
         return False
 
 
@@ -304,7 +343,9 @@ __all__ = [
     "init_firebase",
     "get_db",
     "add_firebase_ban",
+    "add_ban_to_firebase",
     "remove_firebase_ban",
+    "remove_ban_from_firebase",
     "fetch_all_firebase_bans",
     "add_whitelist",
     "remove_whitelist",
