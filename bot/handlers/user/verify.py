@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from bot.db import Admin, LogEntry, Referral, User, async_session
+from bot.firebase.firebase_service import add_whitelist
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.verify_kb import verify_button, verify_check_button
 from bot.middleware.user_sync import normalize_tg_username
@@ -124,6 +125,20 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                     await session.scalar(select(Admin).where(Admin.telegram_id == call.from_user.id))
                 )
                 await session.commit()
+
+                if roblox_id:
+                    try:
+                        normalized_roblox_id = str(int(roblox_id))
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Failed to normalise roblox_id=%s for Firebase whitelist", roblox_id
+                        )
+                    else:
+                        success = await add_whitelist(normalized_roblox_id)
+                        if not success:
+                            logger.warning(
+                                "Failed to push roblox_id=%s to Firebase whitelist", roblox_id
+                            )
 
         if referrer_notify:
             referred_username = referrer_notify["referred_username"]
