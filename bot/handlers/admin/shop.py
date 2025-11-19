@@ -7,11 +7,12 @@ from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from bot.db import Admin, LogEntry, Product, Server, async_session
 from bot.keyboards.admin_keyboards import admin_shop_menu_kb, shop_type_kb
 from bot.states.shop_states import ShopCreateState
+from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 
 router = Router(name="admin_shop")
@@ -25,7 +26,16 @@ async def is_admin(uid: int) -> bool:
 async def _get_or_create_default_server(session) -> Server:
     server = await session.scalar(select(Server).where(Server.slug == "default"))
     if not server:
-        server = Server(name="Главный сервер", slug="default", status="active")
+        max_position = await session.scalar(select(func.max(Server.position)))
+        server = Server(
+            name="Главный сервер",
+            slug="default",
+            position=(max_position or 0) + 1,
+            telegram_chat_id=None,
+            url=None,
+            closed_message=SERVER_DEFAULT_CLOSED_MESSAGE,
+            status="active",
+        )
         session.add(server)
         await session.flush()
     return server
