@@ -436,6 +436,19 @@ async def admin_users_list(message: types.Message):
     await _send_users_list(message)
 
 
+@router.message(StateFilter(AdminUsersState.viewing_user), F.text == "↩️ Назад")
+async def admin_user_card_back(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+    await _send_users_list(message)
+
+
 @router.message(
     StateFilter(AdminUsersState.searching, AdminUsersState.banlist), F.text == "↩️ Назад"
 )
@@ -468,13 +481,40 @@ async def admin_users_banlist(message: types.Message, state: FSMContext):
     await _render_banlist_page(message, state, page=0)
 
 
+@router.callback_query(
+    StateFilter(AdminUsersState.viewing_user),
+    F.data == "admin_users",
+)
+async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+
+    if call.message:
+        await _send_users_list(call.message)
+    else:
+        await call.bot.send_message(
+            call.from_user.id,
+            "👥 <b>Пользователи</b>",
+            parse_mode="HTML",
+            reply_markup=admin_users_menu_kb(),
+        )
+
+    await call.answer()
+
+
 # -------- Поиск пользователя --------
 @router.message(
     StateFilter(AdminUsersState.searching),
     F.text,
     ~F.text.in_({"👥 Пользователи", "🔁 Обновить список", "↩️ Назад", "↩️ В меню"}),
 )
-async def admin_search_user(message: types.Message):
+async def admin_search_user(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
 
@@ -519,6 +559,8 @@ async def admin_search_user(message: types.Message):
         ),
     )
 
+
+    await state.set_state(AdminUsersState.viewing_user)
 
 # -------- Управление пользователем: блок/разблок/выдача -------
 @router.callback_query(

@@ -22,6 +22,7 @@ class RemoveTitleState(StatesGroup):
 class AdminUsersState(StatesGroup):
     searching = State()
     banlist = State()
+    viewing_user = State()
 
 
 class AdminLogsState(StatesGroup):
