@@ -291,6 +291,12 @@ async def _process_block_user(
             await _prompt_admin_block_confirmation(call, user_id)
             return
 
+        if call.message:
+            try:
+                await call.message.edit_reply_markup(None)
+            except Exception:  # pragma: no cover - defensive cleanup
+                logger.debug("Failed to remove block keyboard for user %s", user_id)
+
         roblox_id_value = user.roblox_id or ""
         roblox_id = str(roblox_id_value).strip() if roblox_id_value else ""
 
