@@ -70,8 +70,8 @@ class BannedMiddleware(BaseMiddleware):
                 with suppress(Exception):
                     await callback.answer()
 
-            # Let the global handlers perform final blocking steps.
-            return await handler(event, data)
+            # Stop any further processing for banned users once we have notified them.
+            return None
         finally:
             if owns_session:
                 await session.close()
@@ -147,6 +147,7 @@ class BannedMiddleware(BaseMiddleware):
             return False
 
         if message:
+            await self._update_reply_markup(message, reply_markup)
             with suppress(Exception):
                 await message.answer(
                     BAN_NOTIFICATION_TEXT,
@@ -174,6 +175,7 @@ class BannedMiddleware(BaseMiddleware):
                 )
                 return True
             except TelegramBadRequest:
+                await self._update_reply_markup(callback.message, reply_markup)
                 with suppress(Exception):
                     await callback.message.answer(
                         BAN_NOTIFICATION_TEXT,
@@ -182,6 +184,12 @@ class BannedMiddleware(BaseMiddleware):
                     return True
             except Exception:
                 return False
+        return False
+
+    async def _update_reply_markup(self, message: Message, reply_markup) -> bool:
+        with suppress(Exception):
+            await message.edit_reply_markup(reply_markup=reply_markup)
+            return True
         return False
 
     def _extract_event_entities(
