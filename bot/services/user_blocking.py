@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import Admin, BannedRobloxAccount, User
+from bot.firebase.firebase_service import (
+    add_ban_to_firebase,
+    add_whitelist,
+    remove_ban_from_firebase,
+    remove_whitelist,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class BlockUserError(Exception):
@@ -49,6 +60,8 @@ async def block_user(
     await _add_banned_account(session, user)
     await session.commit()
 
+    await _sync_firebase_block_state(user, blocked=True)
+
 
 async def unblock_user(session: AsyncSession, *, user: User) -> None:
     """Unblock a user and reset ban-related fields."""
@@ -61,6 +74,8 @@ async def unblock_user(session: AsyncSession, *, user: User) -> None:
     user.ban_notified_at = None
     await _remove_banned_account(session, user)
     await session.commit()
+
+    await _sync_firebase_block_state(user, blocked=False)
 
 
 def _build_banned_filters(user: User):
@@ -112,6 +127,59 @@ async def _remove_banned_account(session: AsyncSession, user: User) -> None:
 
     stmt = delete(BannedRobloxAccount).where(or_(*filters))
     await session.execute(stmt)
+
+
+def _normalize_roblox_id(roblox_id: str | int | None) -> str | None:
+    if roblox_id is None:
+        return None
+
+    try:
+        normalized = str(int(roblox_id)).strip()
+    except (TypeError, ValueError):
+        logger.warning("Failed to normalise roblox_id=%s", roblox_id)
+        return None
+
+    return normalized or None
+
+
+async def _sync_firebase_block_state(user: User, *, blocked: bool) -> None:
+    roblox_id = _normalize_roblox_id(user.roblox_id)
+    if not roblox_id:
+        return
+
+    try:
+        if blocked:
+            success = await add_ban_to_firebase(roblox_id)
+            if not success:
+                logger.warning(
+                    "Failed to push roblox_id=%s to Firebase bans", roblox_id
+                )
+
+            if user.verified:
+                removed = await remove_whitelist(roblox_id)
+                if not removed:
+                    logger.warning(
+                        "Failed to remove roblox_id=%s from Firebase whitelist", roblox_id
+                    )
+        else:
+            success = await remove_ban_from_firebase(roblox_id)
+            if not success:
+                logger.warning(
+                    "Failed to remove roblox_id=%s from Firebase bans", roblox_id
+                )
+
+            if user.verified:
+                added = await add_whitelist(roblox_id)
+                if not added:
+                    logger.warning(
+                        "Failed to add roblox_id=%s to Firebase whitelist", roblox_id
+                    )
+    except Exception:  # pragma: no cover - defensive logging
+        logger.exception(
+            "Unexpected Firebase sync error for roblox_id=%s (blocked=%s)",
+            roblox_id,
+            blocked,
+        )
 
 
 __all__ = [
