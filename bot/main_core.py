@@ -5,6 +5,7 @@ from contextlib import suppress
 from typing import Optional
 
 from aiogram import Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.exceptions import TelegramConflictError
 from sqlalchemy import select
@@ -24,10 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 redis_url = os.getenv("REDIS_URL")
-if not redis_url:
-    raise RuntimeError("REDIS_URL environment variable is not set")
 
-storage = RedisStorage.from_url(redis_url)
+if redis_url:
+    storage = RedisStorage.from_url(redis_url)
+else:
+    logger.warning("REDIS_URL is not set; falling back to in-memory FSM storage (non-persistent).")
+    storage = MemoryStorage()
 
 firebase_sync_task: Optional[asyncio.Task] = None
 

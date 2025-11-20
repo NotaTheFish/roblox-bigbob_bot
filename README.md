@@ -25,7 +25,10 @@ publish a Telegram handle—no manual action is required.
 &nbsp;  ```
 
 2. Edit `.env` and provide values for at least `TELEGRAM_TOKEN`, `ADMIN_LOGIN_PASSWORD`,
-   `BACKEND_HMAC_SECRET`, and `DATABASE_URL`. Optional settings such as `DOMAIN`,
+   `BACKEND_HMAC_SECRET`, and `DATABASE_URL`. The bot also expects `REDIS_URL` to point
+   to your Redis instance (for example `redis://default:<PASSWORD>@<HOST>:<PORT>`); when
+   unset it falls back to in-memory FSM storage, which is suitable only for local
+   debugging because it loses state on restart. Optional settings such as `DOMAIN`,
    `ROBLOX_API_BASE_URL`, or Render-specific values (`SERVICE_ROLE`, `PORT`) can remain
    unchanged until you need them.
 

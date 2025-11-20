@@ -36,6 +36,10 @@ services: the FastAPI backend (`roblox-backend`) and the Telegram bot webhook ha
 
 &nbsp;  \* `DATABASE\_URL`
 
+&nbsp;  \* `REDIS\_URL` (for example `redis://default:<PASSWORD>@<HOST>:<PORT>`). If omitted the
+&nbsp;    bot will run with in-memory FSM storage that loses conversation state on restart, so
+&nbsp;    configure Redis for production.
+
 &nbsp;  \* Any optional settings you plan to use (`DOMAIN`, `ROBLOX\_API\_BASE\_URL`,
 
 &nbsp;    `TELEGRAM\_PAYMENT\_SECRET`, etc.).
