@@ -248,4 +248,5 @@ class BannedMiddleware(BaseMiddleware):
             filters.append(BannedRobloxAccount.username == user.username)
         return filters
 
+
 __all__ = ["BannedMiddleware"]
