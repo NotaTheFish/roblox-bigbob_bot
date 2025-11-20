@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from bot.db import Admin, LogEntry, Referral, User, async_session
-from bot.firebase.firebase_service import add_whitelist
+from bot.firebase.firebase_service import add_whitelist, remove_whitelist
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.verify_kb import verify_button, verify_check_button
 from bot.middleware.user_sync import normalize_tg_username
@@ -46,8 +46,30 @@ async def set_username(message: types.Message, state: FSMContext):
         if not user:
             return
 
+        previous_roblox_id = user.roblox_id
+
+        normalized_previous_id: str | None = None
+        if previous_roblox_id:
+            try:
+                normalized_previous_id = str(int(previous_roblox_id))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Failed to normalise roblox_id=%s for whitelist removal",
+                    previous_roblox_id,
+                )
+
+        if normalized_previous_id:
+            removed = await remove_whitelist(normalized_previous_id)
+            if not removed:
+                logger.warning(
+                    "Failed to remove roblox_id=%s from Firebase whitelist",
+                    normalized_previous_id,
+                )
+
         user.username = username
         user.code = str(code)
+        user.roblox_id = None
+        user.verified = False
         await session.commit()
 
     text = (
