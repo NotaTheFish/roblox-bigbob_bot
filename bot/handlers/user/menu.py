@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from aiogram import F, Router, types
@@ -35,12 +36,14 @@ from bot.states.user_states import (
     TopPlayersSearchState,
 )
 from bot.utils.referrals import ensure_referral_code
+from bot.utils.roblox import get_roblox_profile
 from bot.utils.time import to_msk
 from db.constants import BOT_USER_ID_PREFIX
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 
 router = Router(name="user_menu")
+logger = logging.getLogger(__name__)
 
 MAX_ABOUT_LENGTH = 500
 NICKNAME_MIN_LENGTH = 3
@@ -48,6 +51,8 @@ NICKNAME_MAX_LENGTH = 32
 NICKNAME_CHANGE_COOLDOWN = timedelta(days=7)
 TOP_SEARCH_TIMEOUT = timedelta(minutes=3)
 TOP_SEARCH_CANCEL = {"отмена", "cancel", "назад"}
+ROBLOX_ID_CACHE_TTL = timedelta(hours=1)
+ROBLOX_ID_CACHE: dict[str, tuple[str, datetime]] = {}
 
 
 def _profile_edit_keyboard() -> InlineKeyboardMarkup:
@@ -78,6 +83,54 @@ def _shorten_button_text(text: str, limit: int = 32) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1] + "…"
+
+
+def _get_cached_roblox_id(username: str | None) -> str | None:
+    if not username:
+        return None
+
+    entry = ROBLOX_ID_CACHE.get(username.lower())
+    if not entry:
+        return None
+
+    roblox_id, cached_at = entry
+    if datetime.now(timezone.utc) - cached_at > ROBLOX_ID_CACHE_TTL:
+        ROBLOX_ID_CACHE.pop(username.lower(), None)
+        return None
+
+    return roblox_id
+
+
+def _cache_roblox_id(username: str, roblox_id: str) -> None:
+    ROBLOX_ID_CACHE[username.lower()] = (roblox_id, datetime.now(timezone.utc))
+
+
+async def _fetch_roblox_id(username: str, user_id: int | None) -> str | None:
+    username = username.strip()
+    if not username:
+        return None
+
+    try:
+        _, _, roblox_id = get_roblox_profile(username)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to fetch Roblox profile for %s: %s", username, exc)
+        return None
+
+    if not roblox_id:
+        return None
+
+    _cache_roblox_id(username, roblox_id)
+
+    if not user_id:
+        return roblox_id
+
+    async with async_session() as session:
+        db_user = await session.get(User, user_id)
+        if db_user and not db_user.roblox_id:
+            db_user.roblox_id = roblox_id
+            await session.commit()
+
+    return roblox_id
 
 
 async def _prompt_edit_menu(message: types.Message, state: FSMContext, text: str) -> None:
@@ -158,6 +211,10 @@ async def open_profile_menu(message: types.Message, state: FSMContext):
     if not user:
         return await message.answer("❗ Сначала нажмите /start")
 
+    roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
+    if not roblox_id and user.username:
+        roblox_id = await _fetch_roblox_id(user.username, user.id)
+
     titles = normalize_titles(user.titles)
     profile_text = render_profile(
         ProfileView(
@@ -167,7 +224,7 @@ async def open_profile_menu(message: types.Message, state: FSMContext):
             tg_username=user.tg_username or "",
             tg_id=user.tg_id,
             roblox_username=user.username or "",
-            roblox_id=user.roblox_id or "",
+            roblox_id=roblox_id or "",
             balance=user.nuts_balance,
             titles=titles,
             selected_title=user.selected_title,
