@@ -399,7 +399,9 @@ async def ach_list_callback(call: types.CallbackQuery):
     await call.answer("Список обновлён")
 
 
-@router.callback_query(F.data.startswith("ach:manage:"))
+@router.callback_query(
+    F.data.startswith("ach:manage:") & ~F.data.startswith("ach:manage:create")
+)
 async def ach_manage_callback(call: types.CallbackQuery):
     if not call.from_user or not await is_admin(call.from_user.id):
         await call.answer("Недостаточно прав", show_alert=True)
