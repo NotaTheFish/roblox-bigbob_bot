@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db import LogEntry, Payment, User
 from ..logging import get_logger
 from ..models import PaymentWebhookEvent
+from .achievements import evaluate_and_grant_achievements
 from .nuts import add_nuts
 from .referrals import grant_referral_topup_bonus
 
@@ -118,6 +119,17 @@ async def apply_payment_to_user(
         payer=user,
         nuts_amount=amount,
         payment=payment,
+    )
+
+    await evaluate_and_grant_achievements(
+        session,
+        user=user,
+        trigger="topup",
+        payload={
+            "payment_id": payment.id,
+            "provider": payment.provider,
+            "amount": amount,
+        },
     )
     payment.status = "applied"
     payment.user_id = user.id

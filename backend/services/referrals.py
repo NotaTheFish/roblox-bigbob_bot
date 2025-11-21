@@ -1,6 +1,3 @@
-"""Referral bonus helpers for balance top-ups."""
-from __future__ import annotations
-
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -12,6 +9,7 @@ from bot.db import Invoice, LogEntry, Payment, Referral, User
 from bot.utils.referrals import DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT
 
 from ..logging import get_logger
+from .achievements import evaluate_and_grant_achievements
 from .nuts import add_nuts
 from .telegram import TelegramNotificationError, send_message
 
@@ -88,6 +86,28 @@ async def grant_referral_topup_bonus(
         metadata=bonus_metadata,
     )
 
+    await evaluate_and_grant_achievements(
+        session,
+        user=referrer,
+        trigger="referral_bonus",
+        payload={
+            "referral_id": referral.id,
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "payer_id": payer.id,
+        },
+    )
+    await evaluate_and_grant_achievements(
+        session,
+        user=payer,
+        trigger="referral_progress",
+        payload={
+            "referral_id": referral.id,
+            "source_kind": source_kind,
+            "source_id": source_id,
+        },
+    )
+
     if metadata_bundle is not None:
         _append_bonus_record(
             source_target,
@@ -161,8 +181,7 @@ def _format_notification_text(payer: User, nuts_amount: int, bonus_amount: int) 
     payer_id = payer.bot_user_id or f"ID {payer.id}"
     return (
         f"💰 Ваш реферал {payer_id} пополнил баланс на {nuts_amount} монет.\n"
-        f"💸 Вы получили {bonus_amount} монет ("
-        f"{DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT}% бонус)."
+        f"💸 Вы получили {bonus_amount} монет ({DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT}% бонус)."
     )
 
 
@@ -194,9 +213,7 @@ def _load_referral_metadata(target: Payment | Invoice) -> _MetadataBundle:
     return _MetadataBundle(metadata, records)
 
 
-def _has_bonus_record(
-    records: List[Dict[str, Any]], kind: str, identifier: int | None
-) -> bool:
+def _has_bonus_record(records: List[Dict[str, Any]], kind: str, identifier: int | None) -> bool:
     if identifier is None:
         return False
     return any(

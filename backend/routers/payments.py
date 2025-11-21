@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict
 
@@ -17,6 +16,7 @@ from bot.db import Invoice, User
 from ..database import session_scope
 from ..logging import get_logger
 from ..security import ensure_idempotency, finalize_idempotency, validate_hmac_signature
+from ..services.achievements import evaluate_and_grant_achievements
 from ..services.nuts import add_nuts
 from ..services.payments import apply_payment_to_user, mark_payment_processed, record_payment
 from ..services.referrals import grant_referral_topup_bonus
@@ -152,12 +152,14 @@ async def telegram_stars_webhook(
     invoice.status = "paid"
     invoice.paid_at = datetime.now(tz=timezone.utc)
     metadata = dict(invoice.metadata_json or {})
-    metadata.update({
-        "package_code": package.code,
-        "product_id": payload.product_id,
-        "stars_amount": payload.stars_amount,
-        "payload": payload.payload,
-    })
+    metadata.update(
+        {
+            "package_code": package.code,
+            "product_id": payload.product_id,
+            "stars_amount": payload.stars_amount,
+            "payload": payload.payload,
+        }
+    )
     invoice.metadata_json = metadata
 
     await add_nuts(
@@ -181,6 +183,18 @@ async def telegram_stars_webhook(
         invoice=invoice,
     )
 
+    await evaluate_and_grant_achievements(
+        session,
+        user=user,
+        trigger="stars_topup",
+        payload={
+            "invoice_id": invoice.id,
+            "provider_invoice_id": payload.invoice_id,
+            "product_id": payload.product_id,
+            "stars_amount": payload.stars_amount,
+        },
+    )
+
     await finalize_idempotency(session, idempotency_entry, response, status.HTTP_200_OK)
     logger.info(
         "Stars invoice paid",
@@ -191,6 +205,7 @@ async def telegram_stars_webhook(
         },
     )
     return response
+
 
 @router.post("/wallet/webhook", response_model=Dict[str, Any])
 async def wallet_pay_webhook(
@@ -264,6 +279,19 @@ async def wallet_pay_webhook(
                 payer=user,
                 nuts_amount=nuts_amount,
                 invoice=invoice,
+            )
+
+            await evaluate_and_grant_achievements(
+                session,
+                user=user,
+                trigger="wallet_topup",
+                payload={
+                    "invoice_id": invoice.id,
+                    "external_invoice_id": invoice.external_invoice_id,
+                    "wallet_status": normalized_status,
+                    "paid_amount": str(paid_ton_amount),
+                    "wallet_payload": payload.payload.model_dump(),
+                },
             )
             logger.info(
                 "Wallet invoice paid",

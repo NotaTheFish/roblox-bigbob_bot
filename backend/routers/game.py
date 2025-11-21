@@ -9,10 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.db import User
+
 from ..database import session_scope
 from ..logging import get_logger
 from ..models import GameProgress, GrantEvent
 from ..security import ensure_idempotency, finalize_idempotency, validate_hmac_signature
+from ..services.achievements import evaluate_and_grant_achievements
 from ..services.roblox import sync_grant, sync_progress
 
 router = APIRouter(prefix="/game", tags=["game"])
@@ -90,6 +93,15 @@ async def push_progress(
 
     await session.flush()
     await sync_progress(session, payload.roblox_user_id, payload.progress)
+
+    db_user = await session.scalar(select(User).where(User.roblox_id == payload.roblox_user_id))
+    if db_user:
+        await evaluate_and_grant_achievements(
+            session,
+            user=db_user,
+            trigger="progress_update",
+            payload={"version": progress.version, "metadata": payload.metadata},
+        )
 
     response = {
         "status": "ok",
