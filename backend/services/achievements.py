@@ -47,6 +47,28 @@ ACHIEVEMENT_DATA_SOURCES: Mapping[str, str] = {
 }
 
 
+def _normalize_product_condition_value(
+    raw_value: Any,
+) -> tuple[int | None, str | None]:
+    """Split product purchase condition into numeric ID or slug."""
+
+    if raw_value is None:
+        return None, None
+
+    if isinstance(raw_value, int):
+        return raw_value, None
+
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        if not value:
+            return None, None
+        if value.isdigit():
+            return int(value), None
+        return None, value
+
+    return None, None
+
+
 async def evaluate_and_grant_achievements(
     session: AsyncSession,
     *,
@@ -245,15 +267,21 @@ async def _check_condition(
         )
 
     if condition_type is AchievementConditionType.PRODUCT_PURCHASE:
-        product_id = achievement.condition_value
+        product_id, product_slug = _normalize_product_condition_value(
+            achievement.condition_value
+        )
+        if achievement.condition_value is not None and not (product_id or product_slug):
+            return False, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["purchases"]]}
         stmt = (
             select(Purchase.id)
             .join(Product, Product.id == Purchase.product_id)
             .where(Purchase.user_id == user.id, Purchase.status == "completed")
             .limit(1)
         )
-        if product_id:
+        if product_id is not None:
             stmt = stmt.where(Product.id == product_id)
+        elif product_slug:
+            stmt = stmt.where(Product.slug == product_slug)
         has_purchase = bool(await session.scalar(stmt))
         return has_purchase, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["purchases"]]}
 

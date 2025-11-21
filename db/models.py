@@ -210,7 +210,7 @@ class Achievement(Base):
         default=AchievementConditionType.NONE,
         server_default=AchievementConditionType.NONE.value,
     )
-    condition_value = Column(Integer)
+    condition_value = Column(String(255))
     condition_threshold = Column(Integer)
     is_visible = Column(Boolean, nullable=False, default=True, server_default="true")
     is_hidden = Column(Boolean, nullable=False, default=False, server_default="false")

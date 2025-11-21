@@ -42,6 +42,7 @@ class AchievementMetrics:
     spent_sum: int = 0
     promocode_redemptions: int = 0
     purchased_products: set[int] | None = None
+    purchased_product_slugs: set[str] | None = None
 
 
 @dataclass
@@ -251,14 +252,20 @@ async def _load_metrics(session, user: User) -> AchievementMetrics:
         or 0
     )
 
-    purchased_products = set(
-        await session.scalars(
-            select(Product.id)
-            .join(Purchase, Purchase.product_id == Product.id)
-            .where(Purchase.user_id == user.id, Purchase.status == "completed")
-        )
+    product_rows = await session.execute(
+        select(Product.id, Product.slug)
+        .join(Purchase, Purchase.product_id == Product.id)
+        .where(Purchase.user_id == user.id, Purchase.status == "completed")
     )
+    purchased_products: set[int] = set()
+    purchased_product_slugs: set[str] = set()
+    for prod_id, slug in product_rows:
+        if prod_id is not None:
+            purchased_products.add(prod_id)
+        if slug:
+            purchased_product_slugs.add(slug)
     metrics.purchased_products = purchased_products
+    metrics.purchased_product_slugs = purchased_product_slugs
 
     return metrics
 
@@ -365,6 +372,26 @@ def _format_progress(achievement: Achievement, context: AchievementContext) -> s
     return f"Прогресс: {current}/{target}"
 
 
+def _normalize_product_condition_value(
+    raw_value: object,
+) -> tuple[int | None, str | None]:
+    if raw_value is None:
+        return None, None
+
+    if isinstance(raw_value, int):
+        return raw_value, None
+
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        if not value:
+            return None, None
+        if value.isdigit():
+            return int(value), None
+        return None, value
+
+    return None, None
+
+
 def _achievement_progress(
     achievement: Achievement, context: AchievementContext
 ) -> tuple[int | None, int | None]:
@@ -395,10 +422,19 @@ def _achievement_progress(
     if condition_type is AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST:
         return metrics.promocode_redemptions, threshold
     if condition_type is AchievementConditionType.PRODUCT_PURCHASE:
-        product_id = achievement.condition_value
-        if not isinstance(product_id, int):
+        product_id, product_slug = _normalize_product_condition_value(
+            achievement.condition_value
+        )
+        if product_id is None and not product_slug:
             return None, None
-        purchased = 1 if product_id in (metrics.purchased_products or set()) else 0
+        purchased = (
+            1
+            if (
+                product_id in (metrics.purchased_products or set())
+                or product_slug in (metrics.purchased_product_slugs or set())
+            )
+            else 0
+        )
         return purchased, 1
     if condition_type is AchievementConditionType.PROFILE_PHRASE_STREAK:
         phrase: str | None = None

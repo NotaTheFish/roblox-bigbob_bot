@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import re
 from typing import Sequence
 
 import logging
@@ -67,7 +68,7 @@ CONDITION_TYPES: dict[str, dict[str, object]] = {
         "unit": "орешков",
     },
     AchievementConditionType.PRODUCT_PURCHASE.value: {
-        "title": "Покупка товара (ID)",
+        "title": "Покупка товара (ID или slug)",
         "needs_value": True,
         "needs_threshold": False,
     },
@@ -828,7 +829,7 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
     if info["needs_value"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_value)
         await message.answer(
-            "Введите числовое значение условия (например, ID товара или 0 для любых):"
+            "Введите ID или slug товара (например, 42, starter-pack или 0 для любых):"
         )
         return
     if info["needs_threshold"]:  # type: ignore[index]
@@ -866,10 +867,15 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
     if raw_value == "-":
         value: int | None = None
     else:
-        try:
-            value = int(raw_value)
-        except ValueError:
-            await message.answer("Введите целое число или '-' для пропуска")
+        normalized = raw_value.strip().lower()
+        if normalized.isdigit():
+            value = int(normalized)
+        elif re.match(r"^[a-z0-9_-]+$", normalized):
+            value = normalized
+        else:
+            await message.answer(
+                "Введите положительный ID, slug (буквы/цифры/-, _) или '-' для пропуска"
+            )
             return
 
     await state.update_data(condition_value=value)
