@@ -7,7 +7,10 @@ import logging
 
 from aiogram import Router, types
 from aiogram.filters import Filter
+from aiogram.fsm.context import FSMContext
 
+from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK
+from bot.states.user_states import BanAppealState
 from bot.utils.user import get_user
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,16 @@ class BlockedUserFilter(Filter):
         user = await get_user(from_user.id, data=data)
         if not user or not _is_blocked(user):
             return False
+
+        if getattr(event, "data", None) == BAN_APPEAL_CALLBACK:
+            return False
+
+        if getattr(event, "message_id", None) is not None:
+            state: FSMContext | None = data.get("state")
+            if state:
+                current_state = await state.get_state()
+                if current_state == BanAppealState.waiting_for_message.state:
+                    return False
 
         if data is not None and "current_user" not in data:
             data["current_user"] = user
