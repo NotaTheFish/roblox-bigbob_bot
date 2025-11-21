@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from contextlib import suppress
 from datetime import datetime, timezone
 from html import escape
 from typing import Sequence
@@ -9,6 +10,7 @@ from typing import Sequence
 from aiogram import Bot, F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
+from aiogram.types import ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
@@ -100,6 +102,17 @@ def user_card_kb(user_id, is_blocked, *, show_demote: bool = False):
         layout.append(1)
     builder.adjust(*layout)
     return builder.as_markup()
+
+
+async def _remove_reply_keyboard(bot: Bot, chat_id: int) -> None:
+    with suppress(Exception):
+        cleanup_message = await bot.send_message(
+            chat_id,
+            "\u2063",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        with suppress(Exception):
+            await cleanup_message.delete()
 
 
 def _banlist_navigation_kb(
@@ -315,6 +328,7 @@ async def _process_block_user(
 
         notified = False
         try:
+            await _remove_reply_keyboard(call.bot, user_id)
             await call.bot.send_message(
                 user_id,
                 BAN_NOTIFICATION_TEXT,
@@ -479,6 +493,19 @@ async def admin_users_list(message: types.Message):
         return
 
     await _send_users_list(message)
+
+
+@router.message(StateFilter(AdminUsersState.banlist), F.text == "🔁 Обновить список")
+async def admin_users_refresh_banlist(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    state_data = await state.get_data()
+    current_page = state_data.get("banlist_page", 0)
+    await _render_banlist_page(message, state, page=current_page)
 
 
 @router.message(StateFilter(AdminUsersState.viewing_user), F.text == "↩️ Назад")
