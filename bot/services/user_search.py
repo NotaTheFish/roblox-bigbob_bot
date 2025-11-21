@@ -21,7 +21,12 @@ class SearchRenderOptions:
     roblox_id: str | None = None
 
 
-async def find_user_by_query(query: str, *, include_blocked: bool = True) -> User | None:
+async def find_user_by_query(
+    query: str,
+    *,
+    include_blocked: bool = True,
+    is_blocked: bool | None = None,
+) -> User | None:
     """Find a user by nickname, username or identifiers in priority order."""
 
     normalized = query.strip()
@@ -41,7 +46,9 @@ async def find_user_by_query(query: str, *, include_blocked: bool = True) -> Use
         .limit(1)
     )
 
-    if not include_blocked:
+    if is_blocked is not None:
+        stmt = stmt.where(User.is_blocked.is_(is_blocked))
+    elif not include_blocked:
         stmt = stmt.where(User.is_blocked.is_(False))
 
     async with async_session() as session:

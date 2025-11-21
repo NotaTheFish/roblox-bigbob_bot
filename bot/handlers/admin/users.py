@@ -528,7 +528,10 @@ async def admin_users_refresh_from_user_card(message: types.Message, state: FSMC
     await _send_users_list(message)
 
 
-@router.message(StateFilter(AdminUsersState.banlist), F.text == "🔁 Обновить список")
+@router.message(
+    StateFilter(AdminUsersState.banlist, AdminUsersState.banlist_search),
+    F.text == "🔁 Обновить список",
+)
 async def admin_users_refresh_banlist(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
@@ -556,7 +559,10 @@ async def admin_user_card_back(message: types.Message, state: FSMContext):
 
 
 @router.message(
-    StateFilter(AdminUsersState.searching, AdminUsersState.banlist), F.text == "↩️ Назад"
+    StateFilter(
+        AdminUsersState.searching, AdminUsersState.banlist, AdminUsersState.banlist_search
+    ),
+    F.text == "↩️ Назад",
 )
 async def admin_users_back(message: types.Message, state: FSMContext):
     if not message.from_user:
@@ -570,7 +576,8 @@ async def admin_users_back(message: types.Message, state: FSMContext):
     banlist_return_state = state_data.get("banlist_return_state")
 
     if (
-        current_state == AdminUsersState.banlist.state
+        current_state
+        in {AdminUsersState.banlist.state, AdminUsersState.banlist_search.state}
         and banlist_return_state == AdminUsersState.viewing_user.state
     ):
         await _clear_user_card_keyboard(message.bot, message.chat.id, state)
@@ -590,6 +597,7 @@ async def admin_users_back(message: types.Message, state: FSMContext):
     StateFilter(
         AdminUsersState.searching,
         AdminUsersState.banlist,
+        AdminUsersState.banlist_search,
         AdminUsersState.viewing_user,
     ),
     F.text == "🚫 Бан-лист",
@@ -605,6 +613,91 @@ async def admin_users_banlist(message: types.Message, state: FSMContext):
     await state.update_data(banlist_return_state=current_state)
     await state.set_state(AdminUsersState.banlist)
     await _render_banlist_page(message, state, page=0)
+
+
+@router.message(
+    StateFilter(AdminUsersState.banlist, AdminUsersState.banlist_search),
+    F.text,
+    ~F.text.in_(
+        {
+            "🔁 Обновить список",
+            "↩️ Назад",
+            "🚫 Бан-лист",
+        }
+    ),
+)
+async def admin_banlist_search_user(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    query = message.text.strip().lstrip("@")
+    state_data = await state.get_data()
+    requested_page = state_data.get("banlist_page", 0)
+
+    total_blocked, _, current_page = await _load_banlist_page(requested_page)
+    total_pages = math.ceil(total_blocked / BANLIST_PAGE_SIZE) if total_blocked else 0
+
+    def _navigation_for(user_id: int | None):
+        return _banlist_navigation_kb(
+            user_id=user_id,
+            current_page=current_page,
+            total_pages=total_pages,
+        )
+
+    if not query:
+        await message.reply(
+            "Введите TG ID, ник в боте, username или ID бота для поиска в бан-листе",
+            reply_markup=_navigation_for(None),
+        )
+        await state.update_data(banlist_page=current_page)
+        await state.set_state(AdminUsersState.banlist_search)
+        return
+
+    user = await find_user_by_query(query, is_blocked=True)
+
+    if not user:
+        await message.reply(
+            "❌ В бан-листе не найдено совпадений по запросу.\n"
+            "Введите другой запрос или используйте навигацию по списку.",
+            reply_markup=_navigation_for(None),
+        )
+        await state.update_data(banlist_page=current_page)
+        await state.set_state(AdminUsersState.banlist_search)
+        return
+
+    roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
+    if not roblox_id and user.username:
+        try:
+            roblox_id = await _fetch_roblox_id(user.username, user.id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to fetch Roblox ID for tg_id=%s username=%s: %s",
+                user.tg_id,
+                user.username,
+                exc,
+            )
+
+    heading = "<b>🚫 Бан-лист</b> — найден пользователь"
+    profile_text = render_search_profile(
+        user,
+        SearchRenderOptions(
+            heading=heading,
+            include_private_fields=True,
+            roblox_id=roblox_id,
+        ),
+    )
+
+    await message.reply(
+        f"{profile_text}\n\nВсего заблокировано: {total_blocked}",
+        parse_mode="HTML",
+        reply_markup=_navigation_for(user.tg_id),
+    )
+
+    await state.update_data(banlist_page=current_page)
+    await state.set_state(AdminUsersState.banlist_search)
 
 
 @router.callback_query(
@@ -851,7 +944,10 @@ async def admin_banlist_paginate(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("Нет доступа", show_alert=True)
 
     current_state = await state.get_state()
-    if current_state != AdminUsersState.banlist.state:
+    if current_state not in {
+        AdminUsersState.banlist.state,
+        AdminUsersState.banlist_search.state,
+    }:
         return await call.answer("Откройте бан-лист заново", show_alert=True)
 
     try:
@@ -876,7 +972,10 @@ async def admin_banlist_unban(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("Нет доступа", show_alert=True)
 
     current_state = await state.get_state()
-    if current_state != AdminUsersState.banlist.state:
+    if current_state not in {
+        AdminUsersState.banlist.state,
+        AdminUsersState.banlist_search.state,
+    }:
         return await call.answer("Откройте бан-лист заново", show_alert=True)
 
     try:
