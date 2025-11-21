@@ -3,10 +3,13 @@ from __future__ import annotations
 import html
 from typing import Sequence
 
+import logging
+
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.services.nuts import add_nuts
 from bot.db import (
@@ -31,6 +34,7 @@ from bot.states.admin_states import AchievementsState
 from bot.utils.time import to_msk
 
 router = Router(name="admin_achievements")
+logger = logging.getLogger(__name__)
 
 DEFAULT_VISIBILITY_FILTER = "all"
 DEFAULT_CONDITION_FILTER = "all"
@@ -799,38 +803,52 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
     manual_grant_only = data.get("manual_grant_only", False)
 
     async with async_session() as session:
-        if mode == "edit":
-            achievement = await session.get(Achievement, data.get("editing_id"))
-            if not achievement:
-                await message.answer("Не удалось найти достижение для обновления")
-                await state.clear()
-                return
-            achievement.name = data["name"]
-            achievement.description = description
-            achievement.reward = data["reward"]
-            achievement.condition_type = condition_type
-            achievement.condition_value = condition_value
-            achievement.condition_threshold = condition_threshold
-            achievement.is_visible = is_visible
-            achievement.is_hidden = is_hidden
-            achievement.manual_grant_only = manual_grant_only
-            await session.commit()
-            await message.answer("Достижение обновлено", reply_markup=admin_achievements_kb())
-        else:
-            achievement = Achievement(
-                name=data["name"],
-                description=description,
-                reward=data["reward"],
-                condition_type=condition_type,
-                condition_value=condition_value,
-                condition_threshold=condition_threshold,
-                is_visible=is_visible,
-                is_hidden=is_hidden,
-                manual_grant_only=manual_grant_only,
+        try:
+            if mode == "edit":
+                achievement = await session.get(Achievement, data.get("editing_id"))
+                if not achievement:
+                    await message.answer("Не удалось найти достижение для обновления")
+                    await state.clear()
+                    return
+                achievement.name = data["name"]
+                achievement.description = description
+                achievement.reward = data["reward"]
+                achievement.condition_type = condition_type
+                achievement.condition_value = condition_value
+                achievement.condition_threshold = condition_threshold
+                achievement.is_visible = is_visible
+                achievement.is_hidden = is_hidden
+                achievement.manual_grant_only = manual_grant_only
+                await session.commit()
+                await message.answer("Достижение обновлено", reply_markup=admin_achievements_kb())
+            else:
+                achievement = Achievement(
+                    name=data["name"],
+                    description=description,
+                    reward=data["reward"],
+                    condition_type=condition_type,
+                    condition_value=condition_value,
+                    condition_threshold=condition_threshold,
+                    is_visible=is_visible,
+                    is_hidden=is_hidden,
+                    manual_grant_only=manual_grant_only,
+                )
+                session.add(achievement)
+                await session.commit()
+                await message.answer("✅ Достижение создано!", reply_markup=admin_achievements_kb())
+        except (IntegrityError, SQLAlchemyError) as exc:
+            await session.rollback()
+            logger.warning(
+                "Failed to save achievement '%s' in mode '%s': %s",
+                data.get("name"),
+                mode,
+                exc,
             )
-            session.add(achievement)
-            await session.commit()
-            await message.answer("✅ Достижение создано!", reply_markup=admin_achievements_kb())
+            await state.set_state(AchievementsState.waiting_for_manual_grant)
+            await message.answer(
+                "Не удалось сохранить достижение, проверьте уникальность имени/данные"
+            )
+            return
 
     await state.clear()
 
