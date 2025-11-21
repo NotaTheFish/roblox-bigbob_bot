@@ -26,6 +26,7 @@ from bot.firebase.firebase_service import (
     add_ban_to_firebase,
     remove_ban_from_firebase,
 )
+from bot.handlers.user.menu import _fetch_roblox_id, _get_cached_roblox_id
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.ban_appeal import ban_appeal_keyboard
 from bot.services.user_blocking import (
@@ -611,11 +612,24 @@ async def admin_search_user(message: types.Message, state: FSMContext):
             reply_markup=admin_users_menu_kb(),
         )
 
+    roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
+    if not roblox_id and user.username:
+        try:
+            roblox_id = await _fetch_roblox_id(user.username, user.id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to fetch Roblox ID for tg_id=%s username=%s: %s",
+                user.tg_id,
+                user.username,
+                exc,
+            )
+
     profile_text = render_search_profile(
         user,
         SearchRenderOptions(
             heading="<b>👤 Пользователь найден</b>",
             include_private_fields=True,
+            roblox_id=roblox_id,
         ),
     )
 

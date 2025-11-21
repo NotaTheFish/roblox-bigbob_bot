@@ -18,6 +18,7 @@ class SearchRenderOptions:
 
     heading: str
     include_private_fields: bool = True
+    roblox_id: str | None = None
 
 
 async def find_user_by_query(query: str, *, include_blocked: bool = True) -> User | None:
@@ -74,6 +75,7 @@ def render_search_profile(user: User, options: SearchRenderOptions) -> str:
     """Render a user profile for search results."""
 
     titles = normalize_titles(user.titles)
+    roblox_id = options.roblox_id or user.roblox_id or ""
     return render_profile(
         ProfileView(
             heading=options.heading,
@@ -82,7 +84,7 @@ def render_search_profile(user: User, options: SearchRenderOptions) -> str:
             tg_username=user.tg_username or "",
             tg_id=user.tg_id if options.include_private_fields else None,
             roblox_username=user.username or "",
-            roblox_id=user.roblox_id or "",
+            roblox_id=roblox_id,
             balance=user.nuts_balance,
             titles=titles,
             selected_title=user.selected_title,
