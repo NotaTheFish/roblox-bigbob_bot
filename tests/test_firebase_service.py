@@ -39,7 +39,7 @@ async def test_add_ban_to_firebase_merges_custom_payload(monkeypatch):
 
 
 @pytest.mark.anyio("asyncio")
-async def test_add_ban_to_firebase_sets_default_payload(monkeypatch):
+async def test_add_ban_to_firebase_sets_empty_payload_when_missing(monkeypatch):
     firebase_service._firebase_app = object()
 
     calls: list[tuple[str, dict]] = []
@@ -67,4 +67,4 @@ async def test_add_ban_to_firebase_sets_default_payload(monkeypatch):
 
     await firebase_service.add_ban_to_firebase("12345")
 
-    assert calls == [("set", {"banned": True})]
+    assert calls == [("set", {})]
