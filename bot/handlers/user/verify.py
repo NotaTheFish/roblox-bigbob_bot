@@ -9,7 +9,7 @@ from aiogram.filters import StateFilter
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from bot.db import Admin, LogEntry, Referral, User, async_session
+from bot.db import Admin, BannedRobloxAccount, LogEntry, Referral, User, async_session
 from bot.firebase.firebase_service import (
     add_whitelist,
     fetch_firebase_ban,
@@ -126,6 +126,36 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                 firebase_ban = await fetch_firebase_ban(normalized_roblox_id)
 
         if firebase_ban is not None:
+            async with async_session() as session:
+                db_user = await session.scalar(
+                    select(User).where(User.tg_id == call.from_user.id)
+                )
+
+                if db_user:
+                    if roblox_id and not db_user.roblox_id:
+                        db_user.roblox_id = roblox_id
+
+                    db_user.is_blocked = True
+
+                    existing_ban = await session.scalar(
+                        select(BannedRobloxAccount).where(
+                            BannedRobloxAccount.roblox_id == normalized_roblox_id
+                        )
+                    )
+
+                    if not existing_ban:
+                        session.add(
+                            BannedRobloxAccount(
+                                roblox_id=normalized_roblox_id,
+                                username=db_user.username,
+                                user_id=db_user.id,
+                            )
+                        )
+
+                    await session.commit()
+                else:
+                    await session.rollback()
+
             await state.clear()
             await call.message.answer(
                 "❌ Этот Roblox аккаунт заблокирован. Верификация невозможна.",
