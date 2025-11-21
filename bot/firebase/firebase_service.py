@@ -132,8 +132,10 @@ async def add_ban_to_firebase(
     try:
         app = _firebase_app or init_firebase()
         ref = db.reference("/bans", app=app).child(str(roblox_id))
-        payload = data or {}
-        await _run_in_thread(ref.update, payload)
+        if data:
+            await _run_in_thread(ref.update, data)
+        else:
+            await _run_in_thread(ref.set, {"banned": True})
         return True
     except Exception:
         logger.exception("Failed to add Firebase ban for roblox_id=%s", roblox_id)
