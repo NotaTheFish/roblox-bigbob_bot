@@ -26,13 +26,16 @@ ACHIEVEMENT_VISIBILITY_FILTERS = {
 
 ACHIEVEMENT_CONDITION_FILTERS = {
     "all": "Все условия",
-    "none": "Без условий",
+    "none": "Без условия",
+    "time_in_game_at_least": "Время в игре",
+    "payments_sum_at_least": "Пополнения",
     "balance_at_least": "Баланс",
-    "nuts_at_least": "Орешки",
-    "product_purchase": "Покупка",
+    "spent_sum_at_least": "Траты",
     "purchase_count_at_least": "Кол-во покупок",
-    "payments_sum_at_least": "Платежи",
+    "product_purchase": "Покупка",
+    "nuts_at_least": "Орешки",
     "referral_count_at_least": "Рефералы",
+    "promocode_redemption_count_at_least": "Промокоды",
 }
 
 

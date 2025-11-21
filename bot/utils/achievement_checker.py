@@ -6,7 +6,9 @@ from bot.db import (
     Achievement,
     AchievementConditionType,
     LogEntry,
+    GameProgress,
     Payment,
+    PromocodeRedemption,
     Product,
     Purchase,
     Referral,
@@ -96,7 +98,7 @@ async def _check_condition(
         threshold = achievement.condition_threshold or 0
         return (user.balance or 0) >= threshold
 
-    condition_type is AchievementConditionType.NUTS_AT_LEAST:
+    if condition_type is AchievementConditionType.NUTS_AT_LEAST:
         threshold = achievement.condition_threshold or 0
         return (user.nuts_balance or 0) >= threshold
 
@@ -139,4 +141,55 @@ async def _check_condition(
         total_referrals = await session.scalar(referral_stmt)
         return (total_referrals or 0) >= threshold
 
+    if condition_type is AchievementConditionType.TIME_IN_GAME_AT_LEAST:
+        threshold = achievement.condition_threshold or 0
+        playtime = await _load_playtime_minutes(session, user)
+        if playtime is None:
+            return False
+        return playtime >= threshold
+
+    if condition_type is AchievementConditionType.SPENT_SUM_AT_LEAST:
+        threshold = achievement.condition_threshold or 0
+        spent_stmt = select(func.coalesce(func.sum(Purchase.total_price), 0)).where(
+            Purchase.user_id == user.id, Purchase.status == "completed"
+        )
+        spent_total = await session.scalar(spent_stmt)
+        return (spent_total or 0) >= threshold
+
+    if condition_type is AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST:
+        threshold = achievement.condition_threshold or 0
+        promo_stmt = select(func.count(PromocodeRedemption.id)).where(
+            PromocodeRedemption.user_id == user.id
+        )
+        promo_total = await session.scalar(promo_stmt)
+        return (promo_total or 0) >= threshold
+
     return False
+
+
+async def _load_playtime_minutes(session, user: User) -> int | None:
+    if not user.roblox_id:
+        return None
+
+    progress = await session.scalar(
+        select(GameProgress.progress)
+        .where(GameProgress.roblox_user_id == str(user.roblox_id))
+        .order_by(GameProgress.updated_at.desc())
+        .limit(1)
+    )
+    if not isinstance(progress, dict):
+        return None
+
+    for key in (
+        "time_in_game",
+        "timeInGame",
+        "play_time",
+        "playTime",
+        "playtime",
+        "minutes_played",
+    ):
+        value = progress.get(key)
+        if isinstance(value, (int, float)):
+            return int(value)
+
+    return None

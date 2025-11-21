@@ -44,14 +44,16 @@ CONDITION_TYPES: dict[str, dict[str, object]] = {
         "needs_threshold": False,
     },
     AchievementConditionType.BALANCE_AT_LEAST.value: {
-        "title": "Баланс пользователя",
+        "title": "Баланс монет",
         "needs_value": False,
         "needs_threshold": True,
+        "unit": "монет",
     },
     AchievementConditionType.NUTS_AT_LEAST.value: {
         "title": "Баланс орешков",
         "needs_value": False,
         "needs_threshold": True,
+        "unit": "орешков",
     },
     AchievementConditionType.PRODUCT_PURCHASE.value: {
         "title": "Покупка товара (ID)",
@@ -64,12 +66,30 @@ CONDITION_TYPES: dict[str, dict[str, object]] = {
         "needs_threshold": True,
     },
     AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value: {
-        "title": "Сумма платежей",
+        "title": "Сумма пополнений",
         "needs_value": False,
         "needs_threshold": True,
+        "unit": "монет",
     },
     AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value: {
         "title": "Количество приглашённых друзей",
+        "needs_value": False,
+        "needs_threshold": True,
+    },
+    AchievementConditionType.TIME_IN_GAME_AT_LEAST.value: {
+        "title": "Время в игре",
+        "needs_value": False,
+        "needs_threshold": True,
+        "unit": "минут",
+    },
+    AchievementConditionType.SPENT_SUM_AT_LEAST.value: {
+        "title": "Сумма трат",
+        "needs_value": False,
+        "needs_threshold": True,
+        "unit": "монет",
+    },
+    AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value: {
+        "title": "Активации промокодов",
         "needs_value": False,
         "needs_threshold": True,
     },
@@ -89,9 +109,18 @@ CONDITION_ALIASES = {
     "покупки": AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value,
     "orders": AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value,
     "платежи": AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value,
+    "пополнение": AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value,
     "пополнения": AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value,
     "рефералы": AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value,
     "друзья": AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value,
+    "время": AchievementConditionType.TIME_IN_GAME_AT_LEAST.value,
+    "игра": AchievementConditionType.TIME_IN_GAME_AT_LEAST.value,
+    "play": AchievementConditionType.TIME_IN_GAME_AT_LEAST.value,
+    "траты": AchievementConditionType.SPENT_SUM_AT_LEAST.value,
+    "spend": AchievementConditionType.SPENT_SUM_AT_LEAST.value,
+    "промокоды": AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value,
+    "промокод": AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value,
+    "promo": AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value,
 }
 
 
@@ -121,6 +150,18 @@ def _parse_bool_answer(value: str) -> bool:
     return normalized in {"да", "yes", "y", "true", "1", "+", "ok"}
 
 
+def _threshold_prompt(condition_type: str) -> str:
+    unit = CONDITION_TYPES.get(condition_type, {}).get("unit")
+    suffix = ""
+    if unit:
+        suffix = f" ({unit})"
+
+    if condition_type == AchievementConditionType.TIME_IN_GAME_AT_LEAST.value:
+        suffix = " (в минутах)"
+
+    return f"Введите числовой порог условия{suffix}:"
+
+
 def _describe_condition(achievement: Achievement) -> str:
     condition_type = _condition_key(achievement.condition_type)
     info = CONDITION_TYPES.get(condition_type)
@@ -129,21 +170,17 @@ def _describe_condition(achievement: Achievement) -> str:
 
     if condition_type == "none":
         return info["title"]  # type: ignore[index]
-    if condition_type in {"balance_at_least", "nuts_at_least"}:
+    if condition_type == AchievementConditionType.PRODUCT_PURCHASE.value:
+        value = achievement.condition_value
+        label = "любой товар" if value in {None, 0} else value
+        return f"{info['title']}: {label}"
+
+    if info.get("needs_threshold"):
         threshold = achievement.condition_threshold or 0
-        unit = "монет" if condition_type == "balance_at_least" else "орешков"
-        return f"{info['title']} ≥ {threshold} {unit}"
-    if condition_type == "product_purchase":
-        return f"{info['title']}: {achievement.condition_value or '—'}"
-    if condition_type in {
-        AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value,
-        AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value,
-    }:
-        threshold = achievement.condition_threshold or 0
-        return f"{info['title']} ≥ {threshold}"
-    if condition_type == AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value:
-        threshold = achievement.condition_threshold or 0
-        return f"{info['title']} ≥ {threshold}"
+        unit = info.get("unit")
+        suffix = f" {unit}" if unit else ""
+        return f"{info['title']} ≥ {threshold}{suffix}"
+
     return info["title"]  # type: ignore[index]
 
 
@@ -678,7 +715,7 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
         return
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
-        await message.answer("Введите числовой порог условия:")
+        await message.answer(_threshold_prompt(normalized))
         return
 
     await state.set_state(AchievementsState.waiting_for_visibility)
@@ -701,7 +738,8 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
     info = CONDITION_TYPES[(await state.get_data())["condition_type"]]
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
-        await message.answer("Введите числовой порог условия:")
+                condition_type = (await state.get_data())["condition_type"]
+        await message.answer(_threshold_prompt(condition_type))
     else:
         await state.set_state(AchievementsState.waiting_for_visibility)
         await message.answer("Сделать достижение видимым сразу? (да/нет)")

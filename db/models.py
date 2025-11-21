@@ -49,6 +49,9 @@ class AchievementConditionType(str, Enum):
     PURCHASE_COUNT_AT_LEAST = "purchase_count_at_least"
     PAYMENTS_SUM_AT_LEAST = "payments_sum_at_least"
     REFERRAL_COUNT_AT_LEAST = "referral_count_at_least"
+    TIME_IN_GAME_AT_LEAST = "time_in_game_at_least"
+    SPENT_SUM_AT_LEAST = "spent_sum_at_least"
+    PROMOCODE_REDEMPTION_COUNT_AT_LEAST = "promocode_redemption_count_at_least"
 
 
 class User(Base):
