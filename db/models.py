@@ -54,6 +54,7 @@ class AchievementConditionType(str, Enum):
     PROMOCODE_REDEMPTION_COUNT_AT_LEAST = "promocode_redemption_count_at_least"
     FIRST_MESSAGE_SENT = "first_message_sent"
     PROFILE_PHRASE_STREAK = "profile_phrase_streak"
+    SECRET_WORD = "secret_word"
 
 
 class User(Base):
