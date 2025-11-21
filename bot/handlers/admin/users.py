@@ -565,6 +565,20 @@ async def admin_users_back(message: types.Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
 
+    current_state = await state.get_state()
+    state_data = await state.get_data()
+    banlist_return_state = state_data.get("banlist_return_state")
+
+    if (
+        current_state == AdminUsersState.banlist.state
+        and banlist_return_state == AdminUsersState.viewing_user.state
+    ):
+        await _clear_user_card_keyboard(message.bot, message.chat.id, state)
+        await state.clear()
+        await state.set_state(AdminUsersState.searching)
+        await _send_users_list(message)
+        return
+
     await state.clear()
     await message.answer(
         "👑 <b>Админ-панель</b>\nВыберите раздел:",
@@ -573,7 +587,11 @@ async def admin_users_back(message: types.Message, state: FSMContext):
 
 
 @router.message(
-    StateFilter(AdminUsersState.searching, AdminUsersState.banlist),
+    StateFilter(
+        AdminUsersState.searching,
+        AdminUsersState.banlist,
+        AdminUsersState.viewing_user,
+    ),
     F.text == "🚫 Бан-лист",
 )
 async def admin_users_banlist(message: types.Message, state: FSMContext):
@@ -583,6 +601,8 @@ async def admin_users_banlist(message: types.Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
 
+    current_state = await state.get_state()
+    await state.update_data(banlist_return_state=current_state)
     await state.set_state(AdminUsersState.banlist)
     await _render_banlist_page(message, state, page=0)
 
