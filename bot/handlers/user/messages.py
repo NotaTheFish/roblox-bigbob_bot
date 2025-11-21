@@ -1,67 +1,51 @@
-"""General message tracker for user achievements."""
+"""Message handler for secret word achievements."""
 
-from aiogram import F, Router, types
-from aiogram.filters import Command, StateFilter
+from aiogram import Router, types
 from sqlalchemy import select
 
-from bot.db import LogEntry, User, async_session
+from bot.db import Achievement, User, async_session
 from backend.services.achievements import evaluate_and_grant_achievements
-from .promocode_use import PROMOCODE_PATTERN
-
 
 router = Router(name="user_messages")
 
 
-@router.message(
-    StateFilter(None),
-    F.text,
-    ~F.text.startswith("/"),
-    ~F.text.in_(("🏆 Достижения игрока", "🛠 Режим админа")),
-    ~F.text.regexp(PROMOCODE_PATTERN),
-)
-async def record_user_message(message: types.Message) -> None:
-    """Record a user's free-form message and trigger achievement evaluation."""
+async def _matches_secret_word(message: types.Message) -> bool:
+    """Check whether the incoming message matches a secret word condition."""
 
     if not message.from_user:
-        return
+        return False
 
     text = (message.text or "").strip()
     if not text:
-        return
+        return False
+
+    async with async_session() as session:
+        secret_words = await session.scalars(
+            select(Achievement.condition_value).where(Achievement.condition_type == "secret_word")
+        )
+
+        lowered_text = text.lower()
+        for value in secret_words:
+            if isinstance(value, str) and lowered_text == value.strip().lower():
+                return True
+
+    return False
+
+
+@router.message(_matches_secret_word)
+async def handle_secret_word_message(message: types.Message) -> None:
+    """Grant achievements when the message matches a configured secret word."""
 
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
         if not user:
             return
 
-        has_marker = await session.scalar(
-            select(LogEntry.id)
-            .where(
-                LogEntry.user_id == user.id,
-                LogEntry.event_type == "user_message_seen",
-            )
-            .limit(1)
-        )
-
-        log_added = False
-        if not has_marker:
-            session.add(
-                LogEntry(
-                    user_id=user.id,
-                    telegram_id=user.tg_id,
-                    event_type="user_message_seen",
-                    message="Первое пользовательское сообщение",
-                    data={"message_id": message.message_id},
-                )
-            )
-            log_added = True
-
-        granted = await evaluate_and_grant_achievements(
+        await evaluate_and_grant_achievements(
             session,
             user=user,
-            trigger="user_message",
+            trigger="secret_word",
             payload={"message_id": message.message_id},
         )
 
-        if log_added or granted:
-            await session.commit()
+        await session.commit()
