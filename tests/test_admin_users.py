@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +38,48 @@ async def test_give_title_flow_normalizes_titles_and_clears_state(
     assert message.replies, "Expected confirmation reply from handler"
     assert await mock_state.get_state() is None
     assert await mock_state.get_data() == {}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_process_block_user_sends_firebase_payload(
+    monkeypatch, callback_query_factory, mock_state
+):
+    user = SimpleNamespace(tg_id=321, roblox_id="12345", ban_notified_at=None)
+    session = FakeAsyncSession(scalar_results=[user, None])
+    monkeypatch.setattr(users, "async_session", make_async_session_stub(session))
+
+    async def block_user_stub(*_args, **_kwargs):
+        user.is_blocked = True
+
+    captured: dict[str, object] = {}
+
+    async def add_ban_stub(roblox_id, data=None):
+        captured["roblox_id"] = roblox_id
+        captured["payload"] = data
+        return True
+
+    async def get_me_stub():
+        return SimpleNamespace(full_name="Test Bot")
+
+    monkeypatch.setattr(users, "block_user_record", block_user_stub)
+    monkeypatch.setattr(users, "add_ban_to_firebase", add_ban_stub)
+
+    call = callback_query_factory("block_user:321")
+    call.bot.get_me = get_me_stub  # type: ignore[attr-defined]
+
+    await users._process_block_user(call, user_id=user.tg_id, confirmed=True)
+
+    assert captured.get("roblox_id") == "12345"
+    payload = captured.get("payload")
+    assert isinstance(payload, dict)
+    assert payload["banned"] is True
+    assert payload["bannedBy"] == "Test Bot"
+    assert (
+        payload["reason"]
+        == "Вы забанены, чтобы обжаловать напишите дежурному админу"
+    )
+    assert isinstance(payload["timestamp"], int)
+    assert abs(int(time.time()) - payload["timestamp"]) < 5
 
 
 @pytest.mark.anyio("asyncio")

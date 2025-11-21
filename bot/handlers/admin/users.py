@@ -4,6 +4,7 @@ import logging
 import math
 from contextlib import suppress
 from datetime import datetime, timezone
+import time
 from html import escape
 from typing import Sequence
 
@@ -371,7 +372,23 @@ async def _process_block_user(
 
         if roblox_id:
             try:
-                success = await add_ban_to_firebase(roblox_id)
+                bot_info = await call.bot.get_me()
+                bot_display_name = (
+                    getattr(bot_info, "full_name", None)
+                    or getattr(bot_info, "first_name", None)
+                    or getattr(bot_info, "username", None)
+                    or "Unknown"
+                )
+
+                success = await add_ban_to_firebase(
+                    roblox_id,
+                    {
+                        "banned": True,
+                        "bannedBy": bot_display_name,
+                        "reason": "Вы забанены, чтобы обжаловать напишите дежурному админу",
+                        "timestamp": int(time.time()),
+                    },
+                )
                 if not success:
                     logger.error(
                         "Failed to add Firebase ban for roblox_id=%s", roblox_id
