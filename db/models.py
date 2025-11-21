@@ -197,7 +197,12 @@ class Achievement(Base):
     description = Column(Text)
     reward = Column(Integer, nullable=False)
     condition_type = Column(
-        SAEnum(AchievementConditionType, name="achievement_condition_type"),
+        SAEnum(
+            AchievementConditionType,
+            name="achievement_condition_type",
+            values_callable=lambda enum: [member.value for member in enum],
+            validate_strings=True,
+        ),
         nullable=False,
         default=AchievementConditionType.NONE,
         server_default=AchievementConditionType.NONE.value,
