@@ -738,7 +738,7 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
     info = CONDITION_TYPES[(await state.get_data())["condition_type"]]
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
-                condition_type = (await state.get_data())["condition_type"]
+        condition_type = (await state.get_data())["condition_type"]
         await message.answer(_threshold_prompt(condition_type))
     else:
         await state.set_state(AchievementsState.waiting_for_visibility)
