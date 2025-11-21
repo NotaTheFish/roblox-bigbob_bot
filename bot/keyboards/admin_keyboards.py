@@ -30,6 +30,9 @@ ACHIEVEMENT_CONDITION_FILTERS = {
     "balance_at_least": "Баланс",
     "nuts_at_least": "Орешки",
     "product_purchase": "Покупка",
+    "purchase_count_at_least": "Кол-во покупок",
+    "payments_sum_at_least": "Платежи",
+    "referral_count_at_least": "Рефералы",
 }
 
 

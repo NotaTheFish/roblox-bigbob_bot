@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from aiogram import Router, types
 from aiogram.filters import Command
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from bot.db import Achievement, UserAchievement, async_session
 
@@ -25,7 +25,10 @@ async def my_achievements(message: types.Message):
         )
 
         achievements = await session.scalars(
-            select(Achievement).where(Achievement.is_visible.is_(True))
+            select(Achievement).where(
+                Achievement.is_visible.is_(True),
+                or_(Achievement.is_hidden.is_(False), Achievement.id.in_(owned)),
+            )
         )
 
     text = "🏆 <b>Ваши достижения:</b>\n\n"

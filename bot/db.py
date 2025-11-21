@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from db import (
     Base,
     Achievement,
+    AchievementConditionType,
     Admin,
     AdminRequest,
     BannedRobloxAccount,
@@ -97,6 +98,7 @@ __all__ = [
     "AsyncSession",
     "init_db",
     "Achievement",
+    "AchievementConditionType",
     "Admin",
     "AdminRequest",
     "BannedRobloxAccount",

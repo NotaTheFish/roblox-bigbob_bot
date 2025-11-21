@@ -2,6 +2,7 @@
 from .models import (  # noqa: F401
     Base,
     Achievement,
+    AchievementConditionType,
     Admin,
     AdminRequest,
     BannedRobloxAccount,
@@ -31,6 +32,7 @@ from .models import (  # noqa: F401
 __all__ = [
     "Base",
     "Achievement",
+    "AchievementConditionType",
     "Admin",
     "AdminRequest",
     "BannedRobloxAccount",

@@ -9,7 +9,14 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import and_, func, or_, select
 
 from backend.services.nuts import add_nuts
-from bot.db import Achievement, Admin, User, UserAchievement, async_session
+from bot.db import (
+    Achievement,
+    AchievementConditionType,
+    Admin,
+    User,
+    UserAchievement,
+    async_session,
+)
 from bot.keyboards.admin_keyboards import (
     ACHIEVEMENT_CONDITION_FILTERS,
     ACHIEVEMENT_VISIBILITY_FILTERS,
@@ -31,35 +38,60 @@ HISTORY_LIMIT = 10
 USERS_PAGE_SIZE = 10
 
 CONDITION_TYPES: dict[str, dict[str, object]] = {
-    "none": {"title": "Без условий", "needs_value": False, "needs_threshold": False},
-    "balance_at_least": {
+    AchievementConditionType.NONE.value: {
+        "title": "Без условий",
+        "needs_value": False,
+        "needs_threshold": False,
+    },
+    AchievementConditionType.BALANCE_AT_LEAST.value: {
         "title": "Баланс пользователя",
         "needs_value": False,
         "needs_threshold": True,
     },
-    "nuts_at_least": {
+    AchievementConditionType.NUTS_AT_LEAST.value: {
         "title": "Баланс орешков",
         "needs_value": False,
         "needs_threshold": True,
     },
-    "product_purchase": {
-        "title": "Покупка товара (slug)",
+    AchievementConditionType.PRODUCT_PURCHASE.value: {
+        "title": "Покупка товара (ID)",
         "needs_value": True,
         "needs_threshold": False,
+    },
+    AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value: {
+        "title": "Количество завершённых покупок",
+        "needs_value": False,
+        "needs_threshold": True,
+    },
+    AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value: {
+        "title": "Сумма платежей",
+        "needs_value": False,
+        "needs_threshold": True,
+    },
+    AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value: {
+        "title": "Количество приглашённых друзей",
+        "needs_value": False,
+        "needs_threshold": True,
     },
 }
 
 CONDITION_ALIASES = {
-    "нет": "none",
-    "none": "none",
-    "без": "none",
-    "баланс": "balance_at_least",
-    "balance": "balance_at_least",
-    "nuts": "nuts_at_least",
-    "орешки": "nuts_at_least",
-    "покупка": "product_purchase",
-    "product": "product_purchase",
-    "товар": "product_purchase",
+    "нет": AchievementConditionType.NONE.value,
+    "none": AchievementConditionType.NONE.value,
+    "без": AchievementConditionType.NONE.value,
+    "баланс": AchievementConditionType.BALANCE_AT_LEAST.value,
+    "balance": AchievementConditionType.BALANCE_AT_LEAST.value,
+    "nuts": AchievementConditionType.NUTS_AT_LEAST.value,
+    "орешки": AchievementConditionType.NUTS_AT_LEAST.value,
+    "покупка": AchievementConditionType.PRODUCT_PURCHASE.value,
+    "product": AchievementConditionType.PRODUCT_PURCHASE.value,
+    "товар": AchievementConditionType.PRODUCT_PURCHASE.value,
+    "покупки": AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value,
+    "orders": AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value,
+    "платежи": AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value,
+    "пополнения": AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value,
+    "рефералы": AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value,
+    "друзья": AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value,
 }
 
 
@@ -78,8 +110,19 @@ def _normalize_condition_type(value: str) -> str | None:
     return CONDITION_ALIASES.get(candidate)
 
 
+def _condition_key(value: AchievementConditionType | str | None) -> str:
+    if isinstance(value, AchievementConditionType):
+        return value.value
+    return (value or AchievementConditionType.NONE.value).lower()
+
+
+def _parse_bool_answer(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized in {"да", "yes", "y", "true", "1", "+", "ok"}
+
+
 def _describe_condition(achievement: Achievement) -> str:
-    condition_type = (achievement.condition_type or "none").lower()
+    condition_type = _condition_key(achievement.condition_type)
     info = CONDITION_TYPES.get(condition_type)
     if not info:
         return "Неизвестное условие"
@@ -92,16 +135,28 @@ def _describe_condition(achievement: Achievement) -> str:
         return f"{info['title']} ≥ {threshold} {unit}"
     if condition_type == "product_purchase":
         return f"{info['title']}: {achievement.condition_value or '—'}"
+    if condition_type in {
+        AchievementConditionType.PURCHASE_COUNT_AT_LEAST.value,
+        AchievementConditionType.REFERRAL_COUNT_AT_LEAST.value,
+    }:
+        threshold = achievement.condition_threshold or 0
+        return f"{info['title']} ≥ {threshold}"
+    if condition_type == AchievementConditionType.PAYMENTS_SUM_AT_LEAST.value:
+        threshold = achievement.condition_threshold or 0
+        return f"{info['title']} ≥ {threshold}"
     return info["title"]  # type: ignore[index]
 
 
 def _build_detail_text(achievement: Achievement, total: int | None) -> str:
+    visibility = "открыто" if achievement.is_visible else "скрыто"
+    hidden = "секретное" if achievement.is_hidden else "публичное"
+    manual = "только вручную" if achievement.manual_grant_only else "автовыдача"
     return (
         f"🏆 <b>{html.escape(achievement.name)}</b>\n\n"
         f"Описание: {html.escape(achievement.description or '—')}\n"
         f"Награда: {achievement.reward}🥜\n"
         f"Условие: {_describe_condition(achievement)}\n"
-        f"Видимость: {'открыто' if achievement.is_visible else 'скрыто'}\n"
+        f"Статус: {visibility}, {hidden}, {manual}\n"
         f"Получили: {total or 0} пользователей"
     )
 
@@ -113,9 +168,11 @@ def _build_achievements_overview(achievements: Sequence[Achievement]) -> str:
     lines = ["🏆 <b>Достижения</b>\n"]
     for achievement in achievements:
         visibility = "👁" if achievement.is_visible else "🚫"
+        hidden = "🕵️" if achievement.is_hidden else ""
+        manual = "🤝" if achievement.manual_grant_only else ""
         name = html.escape(achievement.name)
         lines.append(
-            f"{visibility} <b>{name}</b> — {achievement.reward}🥜\n"
+            f"{visibility}{hidden}{manual} <b>{name}</b> — {achievement.reward}🥜\n"
             f"<i>{_describe_condition(achievement)}</i>\n"
         )
     return "\n".join(lines)
@@ -141,7 +198,7 @@ async def _load_achievements(
 
     filtered: list[Achievement] = []
     for achievement in achievements:
-        ach_type = (achievement.condition_type or "none").lower()
+        ach_type = _condition_key(achievement.condition_type)
         if condition_filter == "none" and ach_type == "none":
             filtered.append(achievement)
         elif condition_filter != "none" and ach_type == condition_filter:
@@ -615,7 +672,9 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
     info = CONDITION_TYPES[normalized]
     if info["needs_value"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_value)
-        await message.answer("Введите значение условия (например, slug товара):")
+        await message.answer(
+            "Введите числовое значение условия (например, ID товара или 0 для любых):"
+        )
         return
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
@@ -628,7 +687,17 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
 
 @router.message(StateFilter(AchievementsState.waiting_for_condition_value))
 async def ach_set_condition_value(message: types.Message, state: FSMContext):
-    await state.update_data(condition_value=message.text.strip())
+    raw_value = message.text.strip()
+    if raw_value == "-":
+        value: int | None = None
+    else:
+        try:
+            value = int(raw_value)
+        except ValueError:
+            await message.answer("Введите целое число или '-' для пропуска")
+            return
+
+    await state.update_data(condition_value=value)
     info = CONDITION_TYPES[(await state.get_data())["condition_type"]]
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
@@ -652,16 +721,31 @@ async def ach_set_condition_threshold(message: types.Message, state: FSMContext)
 
 @router.message(StateFilter(AchievementsState.waiting_for_visibility))
 async def ach_set_visibility(message: types.Message, state: FSMContext):
-    normalized = message.text.strip().lower()
-    visible = normalized in {"да", "yes", "y", "true", "1"}
-    await state.update_data(is_visible=visible)
+    await state.update_data(is_visible=_parse_bool_answer(message.text))
+    await state.set_state(AchievementsState.waiting_for_hidden)
+    await message.answer("Должно ли достижение быть секретным? (да/нет)")
+
+
+@router.message(StateFilter(AchievementsState.waiting_for_hidden))
+async def ach_set_hidden(message: types.Message, state: FSMContext):
+    await state.update_data(is_hidden=_parse_bool_answer(message.text))
+    await state.set_state(AchievementsState.waiting_for_manual_grant)
+    await message.answer("Выдавать только вручную? (да/нет)")
+
+
+@router.message(StateFilter(AchievementsState.waiting_for_manual_grant))
+async def ach_set_manual_grant(message: types.Message, state: FSMContext):
+    await state.update_data(manual_grant_only=_parse_bool_answer(message.text))
 
     data = await state.get_data()
     mode = data.get("mode", "create")
-    condition_type = data.get("condition_type", "none")
+    condition_type = data.get("condition_type", AchievementConditionType.NONE.value)
     condition_value = data.get("condition_value")
     condition_threshold = data.get("condition_threshold")
     description = data.get("description")
+    is_visible = data.get("is_visible", True)
+    is_hidden = data.get("is_hidden", False)
+    manual_grant_only = data.get("manual_grant_only", False)
 
     async with async_session() as session:
         if mode == "edit":
@@ -676,7 +760,9 @@ async def ach_set_visibility(message: types.Message, state: FSMContext):
             achievement.condition_type = condition_type
             achievement.condition_value = condition_value
             achievement.condition_threshold = condition_threshold
-            achievement.is_visible = visible
+            achievement.is_visible = is_visible
+            achievement.is_hidden = is_hidden
+            achievement.manual_grant_only = manual_grant_only
             await session.commit()
             await message.answer("Достижение обновлено", reply_markup=admin_achievements_kb())
         else:
@@ -687,7 +773,9 @@ async def ach_set_visibility(message: types.Message, state: FSMContext):
                 condition_type=condition_type,
                 condition_value=condition_value,
                 condition_threshold=condition_threshold,
-                is_visible=visible,
+                is_visible=is_visible,
+                is_hidden=is_hidden,
+                manual_grant_only=manual_grant_only,
             )
             session.add(achievement)
             await session.commit()

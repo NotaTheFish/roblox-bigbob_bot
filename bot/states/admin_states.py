@@ -41,6 +41,8 @@ class AchievementsState(StatesGroup):
     waiting_for_condition_value = State()
     waiting_for_condition_threshold = State()
     waiting_for_visibility = State()
+    waiting_for_hidden = State()
+    waiting_for_manual_grant = State()
     manual_grant_user = State()
     manual_grant_achievement = State()
     manual_grant_comment = State()

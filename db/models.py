@@ -1,6 +1,7 @@
 """SQLAlchemy models shared between the Telegram bot and backend services."""
 from __future__ import annotations
 
+from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base
@@ -37,6 +39,16 @@ SERVER_DEFAULT_CLOSED_MESSAGE = "Сервер закрыт"
 def _compile_jsonb_for_sqlite(_type, compiler, **kwargs):
     """Render JSONB columns as JSON for SQLite compatibility."""
     return "JSON"
+
+
+class AchievementConditionType(str, Enum):
+    NONE = "none"
+    BALANCE_AT_LEAST = "balance_at_least"
+    NUTS_AT_LEAST = "nuts_at_least"
+    PRODUCT_PURCHASE = "product_purchase"
+    PURCHASE_COUNT_AT_LEAST = "purchase_count_at_least"
+    PAYMENTS_SUM_AT_LEAST = "payments_sum_at_least"
+    REFERRAL_COUNT_AT_LEAST = "referral_count_at_least"
 
 
 class User(Base):
@@ -182,14 +194,16 @@ class Achievement(Base):
     description = Column(Text)
     reward = Column(Integer, nullable=False)
     condition_type = Column(
-        String(64),
+        SAEnum(AchievementConditionType, name="achievement_condition_type"),
         nullable=False,
-        default="none",
-        server_default="none",
+        default=AchievementConditionType.NONE,
+        server_default=AchievementConditionType.NONE.value,
     )
-    condition_value = Column(String(255))
+    condition_value = Column(Integer)
     condition_threshold = Column(Integer)
     is_visible = Column(Boolean, nullable=False, default=True, server_default="true")
+    is_hidden = Column(Boolean, nullable=False, default=False, server_default="false")
+    manual_grant_only = Column(Boolean, nullable=False, default=False, server_default="false")
     metadata_json = Column("metadata", JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
