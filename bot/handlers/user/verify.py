@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from random import randint
 
 from aiogram import F, Router, types
@@ -156,7 +157,13 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                             "Failed to normalise roblox_id=%s for Firebase whitelist", roblox_id
                         )
                     else:
-                        success = await add_whitelist(normalized_roblox_id)
+                        whitelist_payload = {
+                            "addedBy": call.from_user.username or str(call.from_user.id),
+                            "timestamp": int(time.time()),
+                        }
+                        success = await add_whitelist(
+                            normalized_roblox_id, whitelist_payload
+                        )
                         if not success:
                             logger.warning(
                                 "Failed to push roblox_id=%s to Firebase whitelist", roblox_id

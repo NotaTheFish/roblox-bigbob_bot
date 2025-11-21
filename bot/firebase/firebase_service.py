@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import asyncio
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -193,7 +194,7 @@ async def add_whitelist(
         logger.warning("Cannot add whitelist entry without roblox_id")
         return False
 
-    payload = data or True
+    payload = data or {"addedBy": "system", "timestamp": int(time.time())}
     try:
         await _run_in_thread(_get_reference(f"yes/{roblox_id}").set, payload)
         return True
