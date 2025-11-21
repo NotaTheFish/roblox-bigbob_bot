@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import html
 from typing import Sequence
 
@@ -19,6 +20,11 @@ from bot.db import (
     User,
     UserAchievement,
     async_session,
+)
+from backend.database import session_scope
+from backend.services.achievements import (
+    ACHIEVEMENT_DATA_SOURCES,
+    evaluate_user_by_id,
 )
 from bot.keyboards.admin_keyboards import (
     ACHIEVEMENT_CONDITION_FILTERS,
@@ -40,6 +46,7 @@ DEFAULT_VISIBILITY_FILTER = "all"
 DEFAULT_CONDITION_FILTER = "all"
 HISTORY_LIMIT = 10
 USERS_PAGE_SIZE = 10
+RECALCULATION_BATCH_SIZE = 200
 
 CONDITION_TYPES: dict[str, dict[str, object]] = {
     AchievementConditionType.NONE.value: {
@@ -217,6 +224,71 @@ def _build_achievements_overview(achievements: Sequence[Achievement]) -> str:
             f"<i>{_describe_condition(achievement)}</i>\n"
         )
     return "\n".join(lines)
+
+
+async def _recalculate_achievements_for_all_users(trigger: str) -> None:
+    try:
+        async with async_session() as session:
+            user_ids = list(await session.scalars(select(User.id)))
+        total_users = len(user_ids)
+
+        if not user_ids:
+            logger.info(
+                "Skipping achievement backfill because there are no users",
+                extra={"trigger": trigger},
+            )
+            return
+
+        logger.info(
+            "Starting admin-triggered achievement backfill",
+            extra={
+                "trigger": trigger,
+                "total_users": total_users,
+                "batch_size": RECALCULATION_BATCH_SIZE,
+            },
+        )
+
+        for start in range(0, total_users, RECALCULATION_BATCH_SIZE):
+            batch = user_ids[start : start + RECALCULATION_BATCH_SIZE]
+            async with session_scope() as session:
+                for user_id in batch:
+                    await evaluate_user_by_id(
+                        session=session,
+                        user_id=user_id,
+                        trigger=trigger,
+                        payload={
+                            "reason": "achievement_definition_updated",
+                            "data_sources": ACHIEVEMENT_DATA_SOURCES,
+                        },
+                    )
+
+        logger.info(
+            "Completed admin-triggered achievement backfill",
+            extra={"trigger": trigger, "total_users": total_users},
+        )
+    except Exception:  # pragma: no cover - defensive logging
+        logger.exception(
+            "Admin-triggered achievement backfill failed", extra={"trigger": trigger}
+        )
+
+
+async def _schedule_achievements_recalculation(
+    message: types.Message, *, cancelled: bool, mode: str
+) -> None:
+    if cancelled:
+        logger.info(
+            "Skipping achievement backfill because creation was cancelled",
+            extra={"mode": mode},
+        )
+        return
+
+    trigger = f"admin_{mode}_update"
+    asyncio.create_task(_recalculate_achievements_for_all_users(trigger))
+    await message.answer(
+        "♻️ Запустили пересчёт достижений для всех пользователей. "
+        "Изменения применятся в фоне.",
+        reply_markup=admin_achievements_kb(),
+    )
 
 
 async def _load_achievements(
@@ -801,6 +873,9 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
     is_visible = data.get("is_visible", True)
     is_hidden = data.get("is_hidden", False)
     manual_grant_only = data.get("manual_grant_only", False)
+    cancelled = data.get("cancelled", False)
+
+    save_successful = False
 
     async with async_session() as session:
         try:
@@ -820,7 +895,10 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
                 achievement.is_hidden = is_hidden
                 achievement.manual_grant_only = manual_grant_only
                 await session.commit()
-                await message.answer("Достижение обновлено", reply_markup=admin_achievements_kb())
+                await message.answer(
+                    "Достижение обновлено", reply_markup=admin_achievements_kb()
+                )
+                save_successful = True
             else:
                 achievement = Achievement(
                     name=data["name"],
@@ -836,6 +914,7 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
                 session.add(achievement)
                 await session.commit()
                 await message.answer("✅ Достижение создано!", reply_markup=admin_achievements_kb())
+                save_successful = True
         except (IntegrityError, SQLAlchemyError) as exc:
             await session.rollback()
             logger.warning(
@@ -849,6 +928,11 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
                 "Не удалось сохранить достижение, проверьте уникальность имени/данные"
             )
             return
+
+    if save_successful:
+        await _schedule_achievements_recalculation(
+            message, cancelled=cancelled, mode=mode
+        )
 
     await state.clear()
 
