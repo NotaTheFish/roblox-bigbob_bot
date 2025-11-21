@@ -72,12 +72,12 @@ async def test_process_block_user_sends_firebase_payload(
     assert captured.get("roblox_id") == "12345"
     payload = captured.get("payload")
     assert isinstance(payload, dict)
-    assert payload["banned"] is True
     assert payload["bannedBy"] == "Test Bot"
     assert (
         payload["reason"]
         == "Вы забанены, чтобы обжаловать напишите дежурному админу"
     )
+    assert "banned" not in payload
     assert isinstance(payload["timestamp"], int)
     assert abs(int(time.time()) - payload["timestamp"]) < 5
 

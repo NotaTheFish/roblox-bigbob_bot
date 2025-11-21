@@ -35,6 +35,4 @@ async def test_add_ban_to_firebase_merges_custom_payload(monkeypatch):
         "54321", {"reason": "test", "bannedBy": "bot"}
     )
 
-    assert updates == [
-        {"banned": True, "reason": "test", "bannedBy": "bot"}
-    ]
+    assert updates == [{"reason": "test", "bannedBy": "bot"}]

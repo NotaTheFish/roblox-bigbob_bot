@@ -380,12 +380,15 @@ async def _process_block_user(
                     or "Unknown"
                 )
 
+                ban_reason = (
+                    "Вы забанены, чтобы обжаловать напишите дежурному админу"
+                )
+
                 success = await add_ban_to_firebase(
                     roblox_id,
                     {
-                        "banned": True,
                         "bannedBy": bot_display_name,
-                        "reason": "Вы забанены, чтобы обжаловать напишите дежурному админу",
+                        "reason": ban_reason,
                         "timestamp": int(time.time()),
                     },
                 )
