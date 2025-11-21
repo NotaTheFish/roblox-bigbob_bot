@@ -8,7 +8,13 @@ from typing import Any, Awaitable, Callable, Dict, Tuple
 from aiogram import BaseMiddleware
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, TelegramObject, Update
+from aiogram.types import (
+    CallbackQuery,
+    Message,
+    ReplyKeyboardRemove,
+    TelegramObject,
+    Update,
+)
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,6 +144,7 @@ class BannedMiddleware(BaseMiddleware):
                 return True
             if bot and callback.from_user:
                 with suppress(Exception):
+                    await self._remove_reply_keyboard(bot, callback.from_user.id)
                     await bot.send_message(
                         callback.from_user.id,
                         BAN_NOTIFICATION_TEXT,
@@ -147,6 +154,8 @@ class BannedMiddleware(BaseMiddleware):
             return False
 
         if message:
+            if bot:
+                await self._remove_reply_keyboard(bot, message.chat.id)
             await self._update_reply_markup(message, reply_markup)
             with suppress(Exception):
                 await message.answer(
@@ -158,6 +167,7 @@ class BannedMiddleware(BaseMiddleware):
 
         if bot:
             with suppress(Exception):
+                await self._remove_reply_keyboard(bot, user_id)
                 await bot.send_message(
                     user_id,
                     BAN_NOTIFICATION_TEXT,
@@ -167,6 +177,9 @@ class BannedMiddleware(BaseMiddleware):
         return False
 
     async def _notify_callback(self, callback: CallbackQuery, reply_markup) -> bool:
+        bot = callback.message.bot if callback.message else getattr(callback, "bot", None)
+        if bot and callback.from_user:
+            await self._remove_reply_keyboard(bot, callback.from_user.id)
         if callback.message:
             try:
                 await callback.message.edit_text(
@@ -185,6 +198,16 @@ class BannedMiddleware(BaseMiddleware):
             except Exception:
                 return False
         return False
+
+    async def _remove_reply_keyboard(self, bot, chat_id: int) -> None:
+        with suppress(Exception):
+            cleanup_message = await bot.send_message(
+                chat_id,
+                "\u2063",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            with suppress(Exception):
+                await cleanup_message.delete()
 
     async def _update_reply_markup(self, message: Message, reply_markup) -> bool:
         with suppress(Exception):
