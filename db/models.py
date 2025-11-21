@@ -52,6 +52,7 @@ class AchievementConditionType(str, Enum):
     TIME_IN_GAME_AT_LEAST = "time_in_game_at_least"
     SPENT_SUM_AT_LEAST = "spent_sum_at_least"
     PROMOCODE_REDEMPTION_COUNT_AT_LEAST = "promocode_redemption_count_at_least"
+    FIRST_MESSAGE_SENT = "first_message_sent"
 
 
 class User(Base):

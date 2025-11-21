@@ -41,6 +41,7 @@ ACHIEVEMENT_DATA_SOURCES: Mapping[str, str] = {
     "referrals": "internal:services.referrals",
     "promocodes": "internal:services.promocodes",
     "playtime": "firebase:game_progress",
+    "messages": "internal:bot.messages",
 }
 
 
@@ -200,6 +201,22 @@ async def _check_condition(
 
     if condition_type is AchievementConditionType.NONE:
         return True, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["balance"]]}
+
+    if condition_type is AchievementConditionType.FIRST_MESSAGE_SENT:
+        has_message = bool(
+            await session.scalar(
+                select(LogEntry.id)
+                .where(
+                    LogEntry.user_id == user.id,
+                    LogEntry.event_type == "user_message_seen",
+                )
+                .limit(1)
+            )
+        )
+        return has_message, {
+            "observed": int(has_message),
+            "data_sources": [ACHIEVEMENT_DATA_SOURCES["messages"]],
+        }
 
     if condition_type is AchievementConditionType.BALANCE_AT_LEAST:
         threshold = achievement.condition_threshold or 0
