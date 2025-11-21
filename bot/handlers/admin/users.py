@@ -670,7 +670,7 @@ async def admin_search_user(message: types.Message, state: FSMContext):
 
     show_demote = await _should_show_demote_button(message.from_user.id, user.tg_id)
 
-        profile_message = await message.reply(
+    profile_message = await message.reply(
         profile_text,
         parse_mode="HTML",
         reply_markup=user_card_kb(
