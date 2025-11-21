@@ -172,6 +172,26 @@ async def remove_ban_from_firebase(roblox_id: Optional[str]) -> bool:
         return False
 
 
+async def fetch_firebase_ban(roblox_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not roblox_id:
+        logger.warning("Cannot fetch Firebase ban without roblox_id")
+        return None
+
+    try:
+        data = await _run_in_thread(_get_reference(f"bans/{roblox_id}").get)
+        if data is None:
+            return None
+        if isinstance(data, dict):
+            return data
+        logger.warning(
+            "Unexpected Firebase ban payload for roblox_id=%s: %s", roblox_id, data
+        )
+        return None
+    except Exception:
+        logger.exception("Failed to fetch Firebase ban for roblox_id=%s", roblox_id)
+        return None
+
+
 async def fetch_all_firebase_bans() -> Dict[str, Any]:
     try:
         data = await _run_in_thread(_get_reference("bans").get)
@@ -347,6 +367,7 @@ __all__ = [
     "add_ban_to_firebase",
     "remove_firebase_ban",
     "remove_ban_from_firebase",
+    "fetch_firebase_ban",
     "fetch_all_firebase_bans",
     "add_whitelist",
     "remove_whitelist",

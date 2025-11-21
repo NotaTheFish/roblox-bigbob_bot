@@ -10,7 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from bot.db import Admin, LogEntry, Referral, User, async_session
-from bot.firebase.firebase_service import add_whitelist, remove_whitelist
+from bot.firebase.firebase_service import (
+    add_whitelist,
+    fetch_firebase_ban,
+    remove_whitelist,
+)
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.verify_kb import verify_button, verify_check_button
 from bot.middleware.user_sync import normalize_tg_username
@@ -109,6 +113,25 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
 
     if code and code in full_text:
         is_admin = False
+        normalized_roblox_id: str | None = None
+        firebase_ban: dict | None = None
+        if roblox_id:
+            try:
+                normalized_roblox_id = str(int(roblox_id))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Failed to normalise roblox_id=%s for Firebase ban check", roblox_id
+                )
+            else:
+                firebase_ban = await fetch_firebase_ban(normalized_roblox_id)
+
+        if firebase_ban is not None:
+            await state.clear()
+            await call.message.answer(
+                "❌ Этот Roblox аккаунт заблокирован. Верификация невозможна.",
+                reply_markup=verify_button(),
+            )
+            return
         referrer_notify: dict | None = None
         async with async_session() as session:
             db_user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
@@ -149,25 +172,18 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                 )
                 await session.commit()
 
-                if roblox_id:
-                    try:
-                        normalized_roblox_id = str(int(roblox_id))
-                    except (TypeError, ValueError):
+                if normalized_roblox_id:
+                    whitelist_payload = {
+                        "addedBy": call.from_user.username or str(call.from_user.id),
+                        "timestamp": int(time.time()),
+                    }
+                    success = await add_whitelist(
+                        normalized_roblox_id, whitelist_payload
+                    )
+                    if not success:
                         logger.warning(
-                            "Failed to normalise roblox_id=%s for Firebase whitelist", roblox_id
+                            "Failed to push roblox_id=%s to Firebase whitelist", roblox_id
                         )
-                    else:
-                        whitelist_payload = {
-                            "addedBy": call.from_user.username or str(call.from_user.id),
-                            "timestamp": int(time.time()),
-                        }
-                        success = await add_whitelist(
-                            normalized_roblox_id, whitelist_payload
-                        )
-                        if not success:
-                            logger.warning(
-                                "Failed to push roblox_id=%s to Firebase whitelist", roblox_id
-                            )
 
         if referrer_notify:
             referred_username = referrer_notify["referred_username"]
