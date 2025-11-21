@@ -13,6 +13,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, User, async_session
@@ -188,10 +189,14 @@ async def _load_banlist_page(page: int, page_size: int = BANLIST_PAGE_SIZE):
         users = (
             await session.scalars(
                 select(User)
-                .where(User.is_blocked.is_(True))
-                .order_by(User.ban_notified_at.desc().nullslast(), User.id.desc())
-                .offset(current_page * page_size)
-                .limit(page_size)
+                    .options(selectinload(User.selected_achievement))
+                    .where(User.is_blocked.is_(True))
+                    .order_by(
+                        User.ban_notified_at.desc().nullslast(),
+                        User.id.desc(),
+                    )
+                    .offset(current_page * page_size)
+                    .limit(page_size)
             )
         ).all()
 
