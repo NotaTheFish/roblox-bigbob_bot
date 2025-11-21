@@ -7,6 +7,7 @@ purchases, referrals or progress updates arriving from Roblox/Firebase.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from sqlalchemy import func, select
@@ -42,6 +43,7 @@ ACHIEVEMENT_DATA_SOURCES: Mapping[str, str] = {
     "promocodes": "internal:services.promocodes",
     "playtime": "firebase:game_progress",
     "messages": "internal:bot.messages",
+    "profile": "internal:bot.profile",
 }
 
 
@@ -345,6 +347,43 @@ async def _check_condition(
                 "threshold": threshold,
                 "observed": observed,
                 "data_sources": [ACHIEVEMENT_DATA_SOURCES["promocodes"]],
+            },
+        )
+
+    if condition_type is AchievementConditionType.PROFILE_PHRASE_STREAK:
+        phrase: str | None = None
+        if isinstance(achievement.metadata_json, dict):
+            value = achievement.metadata_json.get("phrase")
+            if isinstance(value, str):
+                phrase = value.strip()
+
+        threshold_hours = achievement.condition_threshold or 0
+        if not phrase:
+            return False, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["profile"]]}
+
+        about_text = (user.about_text or "").lower()
+        phrase_present = phrase.lower() in about_text
+
+        updated_at = user.about_text_updated_at
+        if not phrase_present or not updated_at:
+            return (
+                False,
+                {
+                    "threshold": threshold_hours,
+                    "observed": 0,
+                    "data_sources": [ACHIEVEMENT_DATA_SOURCES["profile"]],
+                },
+            )
+
+        elapsed = datetime.now(timezone.utc) - updated_at
+        elapsed_hours = elapsed.total_seconds() / 3600
+        meets_threshold = elapsed >= timedelta(hours=threshold_hours)
+        return (
+            meets_threshold,
+            {
+                "threshold": threshold_hours,
+                "observed": elapsed_hours,
+                "data_sources": [ACHIEVEMENT_DATA_SOURCES["profile"]],
             },
         )
 

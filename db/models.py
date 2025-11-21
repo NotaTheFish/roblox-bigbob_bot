@@ -53,6 +53,7 @@ class AchievementConditionType(str, Enum):
     SPENT_SUM_AT_LEAST = "spent_sum_at_least"
     PROMOCODE_REDEMPTION_COUNT_AT_LEAST = "promocode_redemption_count_at_least"
     FIRST_MESSAGE_SENT = "first_message_sent"
+    PROFILE_PHRASE_STREAK = "profile_phrase_streak"
 
 
 class User(Base):
@@ -91,6 +92,7 @@ class User(Base):
     titles = Column(JSONB, nullable=False, server_default="[]")
     selected_title = Column(String(255))
     about_text = Column(Text)
+    about_text_updated_at = Column(DateTime(timezone=True))
     selected_achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=True)
 
     achievements = relationship(

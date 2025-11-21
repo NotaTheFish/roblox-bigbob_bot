@@ -38,6 +38,7 @@ class AchievementsState(StatesGroup):
     waiting_for_description = State()
     waiting_for_reward = State()
     waiting_for_condition_type = State()
+    waiting_for_condition_phrase = State()
     waiting_for_condition_value = State()
     waiting_for_condition_threshold = State()
     waiting_for_visibility = State()

@@ -104,6 +104,13 @@ CONDITION_TYPES: dict[str, dict[str, object]] = {
         "needs_value": False,
         "needs_threshold": True,
     },
+    AchievementConditionType.PROFILE_PHRASE_STREAK.value: {
+        "title": "Фраза в описании профиля",
+        "needs_value": False,
+        "needs_threshold": True,
+        "unit": "часов",
+        "needs_phrase": True,
+    },
 }
 
 CONDITION_ALIASES = {
@@ -132,6 +139,10 @@ CONDITION_ALIASES = {
     "промокоды": AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value,
     "промокод": AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value,
     "promo": AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST.value,
+    "фраза": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
+    "описание": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
+    "phrase": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
+    "profile": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
 }
 
 
@@ -185,6 +196,16 @@ def _describe_condition(achievement: Achievement) -> str:
         value = achievement.condition_value
         label = "любой товар" if value in {None, 0} else value
         return f"{info['title']}: {label}"
+
+    if condition_type == AchievementConditionType.PROFILE_PHRASE_STREAK.value:
+        phrase: str | None = None
+        if isinstance(achievement.metadata_json, dict):
+            value = achievement.metadata_json.get("phrase")
+            if isinstance(value, str):
+                phrase = value.strip()
+        threshold = achievement.condition_threshold or 0
+        phrase_label = f"«{phrase}»" if phrase else "фраза"
+        return f"{info['title']}: {phrase_label} без изменений ≥ {threshold} часов"
 
     if info.get("needs_threshold"):
         threshold = achievement.condition_threshold or 0
@@ -794,8 +815,16 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
         await message.answer("Неизвестный тип условия, попробуйте ещё раз")
         return
 
-    await state.update_data(condition_type=normalized)
+    await state.update_data(
+        condition_type=normalized, condition_phrase=None, condition_value=None
+    )
     info = CONDITION_TYPES[normalized]
+    if info.get("needs_phrase"):
+        await state.set_state(AchievementsState.waiting_for_condition_phrase)
+        await message.answer(
+            "Введите фразу, которая должна присутствовать в описании профиля:"
+        )
+        return
     if info["needs_value"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_value)
         await message.answer(
@@ -805,6 +834,26 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
         await message.answer(_threshold_prompt(normalized))
+        return
+
+    await state.set_state(AchievementsState.waiting_for_visibility)
+    await message.answer("Сделать достижение видимым сразу? (да/нет)")
+
+
+@router.message(StateFilter(AchievementsState.waiting_for_condition_phrase))
+async def ach_set_condition_phrase(message: types.Message, state: FSMContext):
+    phrase = message.text.strip()
+    if not phrase:
+        await message.answer("Фраза не должна быть пустой, попробуйте ещё раз")
+        return
+
+    await state.update_data(condition_phrase=phrase)
+    data = await state.get_data()
+    condition_type = data.get("condition_type")
+    info = CONDITION_TYPES.get(condition_type, {})
+    if info.get("needs_threshold"):
+        await state.set_state(AchievementsState.waiting_for_condition_threshold)
+        await message.answer(_threshold_prompt(condition_type))
         return
 
     await state.set_state(AchievementsState.waiting_for_visibility)
@@ -824,10 +873,11 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
             return
 
     await state.update_data(condition_value=value)
-    info = CONDITION_TYPES[(await state.get_data())["condition_type"]]
-    if info["needs_threshold"]:  # type: ignore[index]
+    data = await state.get_data()
+    condition_type = data.get("condition_type")
+    info = CONDITION_TYPES.get(condition_type, {})
+    if info.get("needs_threshold"):
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
-        condition_type = (await state.get_data())["condition_type"]
         await message.answer(_threshold_prompt(condition_type))
     else:
         await state.set_state(AchievementsState.waiting_for_visibility)
@@ -869,6 +919,7 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
     condition_type = data.get("condition_type", AchievementConditionType.NONE.value)
     condition_value = data.get("condition_value")
     condition_threshold = data.get("condition_threshold")
+    condition_phrase = data.get("condition_phrase")
     description = data.get("description")
     is_visible = data.get("is_visible", True)
     is_hidden = data.get("is_hidden", False)
@@ -876,6 +927,14 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
     cancelled = data.get("cancelled", False)
 
     save_successful = False
+
+    if (
+        condition_type == AchievementConditionType.PROFILE_PHRASE_STREAK.value
+        and not condition_phrase
+    ):
+        await message.answer("Укажите фразу для условия и отправьте её в ответ:")
+        await state.set_state(AchievementsState.waiting_for_condition_phrase)
+        return
 
     async with async_session() as session:
         try:
@@ -885,31 +944,53 @@ async def ach_set_manual_grant(message: types.Message, state: FSMContext):
                     await message.answer("Не удалось найти достижение для обновления")
                     await state.clear()
                     return
+                metadata = dict(achievement.metadata_json or {})
                 achievement.name = data["name"]
                 achievement.description = description
                 achievement.reward = data["reward"]
                 achievement.condition_type = condition_type
-                achievement.condition_value = condition_value
+                achievement.condition_value = (
+                    None
+                    if condition_type
+                    == AchievementConditionType.PROFILE_PHRASE_STREAK.value
+                    else condition_value
+                )
                 achievement.condition_threshold = condition_threshold
                 achievement.is_visible = is_visible
                 achievement.is_hidden = is_hidden
                 achievement.manual_grant_only = manual_grant_only
+                if (
+                    condition_type == AchievementConditionType.PROFILE_PHRASE_STREAK.value
+                ):
+                    metadata["phrase"] = condition_phrase
+                else:
+                    metadata.pop("phrase", None)
+                achievement.metadata_json = metadata or None
                 await session.commit()
                 await message.answer(
                     "Достижение обновлено", reply_markup=admin_achievements_kb()
                 )
                 save_successful = True
             else:
+                metadata: dict[str, object] = {}
+                if condition_type == AchievementConditionType.PROFILE_PHRASE_STREAK.value:
+                    metadata["phrase"] = condition_phrase
                 achievement = Achievement(
                     name=data["name"],
                     description=description,
                     reward=data["reward"],
                     condition_type=condition_type,
-                    condition_value=condition_value,
+                    condition_value=(
+                        None
+                        if condition_type
+                        == AchievementConditionType.PROFILE_PHRASE_STREAK.value
+                        else condition_value
+                    ),
                     condition_threshold=condition_threshold,
                     is_visible=is_visible,
                     is_hidden=is_hidden,
                     manual_grant_only=manual_grant_only,
+                    metadata_json=metadata or None,
                 )
                 session.add(achievement)
                 await session.commit()

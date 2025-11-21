@@ -35,6 +35,7 @@ from bot.states.user_states import (
     PromoInputState,
     TopPlayersSearchState,
 )
+from backend.services.achievements import evaluate_and_grant_achievements
 from bot.utils.referrals import ensure_referral_code
 from bot.utils.roblox import get_roblox_profile
 from bot.utils.time import to_msk
@@ -649,7 +650,17 @@ async def profile_save_about(message: types.Message, state: FSMContext):
             await state.clear()
             return await message.answer("❗ Сначала нажмите /start")
 
+        now = datetime.now(timezone.utc)
         user.about_text = about_value
+        user.about_text_updated_at = now
+
+        await evaluate_and_grant_achievements(
+            session,
+            user=user,
+            trigger="profile_updated",
+            payload={"field": "about_text", "updated_at": now.isoformat()},
+        )
+
         await session.commit()
 
     await _prompt_edit_menu(message, state, "✅ Описание обновлено")

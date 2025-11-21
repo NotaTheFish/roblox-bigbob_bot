@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -399,6 +400,23 @@ def _achievement_progress(
             return None, None
         purchased = 1 if product_id in (metrics.purchased_products or set()) else 0
         return purchased, 1
+    if condition_type is AchievementConditionType.PROFILE_PHRASE_STREAK:
+        phrase: str | None = None
+        if isinstance(achievement.metadata_json, dict):
+            value = achievement.metadata_json.get("phrase")
+            if isinstance(value, str):
+                phrase = value.strip()
+        if not phrase:
+            return None, threshold
+
+        about_text = (context.user.about_text or "").lower()
+        updated_at = context.user.about_text_updated_at
+        if phrase.lower() not in about_text or not updated_at:
+            return 0, threshold
+
+        elapsed = datetime.now(timezone.utc) - updated_at
+        elapsed_hours = int(elapsed.total_seconds() // 3600)
+        return elapsed_hours, threshold
 
     return None, None
 
