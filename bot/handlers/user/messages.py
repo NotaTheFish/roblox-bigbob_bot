@@ -15,7 +15,7 @@ router = Router(name="user_messages")
 @router.message(
     StateFilter(None),
     F.text,
-    ~Command(),
+    ~F.text.startswith("/"),
     ~F.text.regexp(PROMOCODE_PATTERN),
 )
 async def record_user_message(message: types.Message) -> None:
