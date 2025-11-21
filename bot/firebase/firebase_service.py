@@ -324,8 +324,23 @@ async def sync_bans() -> None:
 async def sync_whitelist() -> None:
     whitelist = await fetch_whitelist()
     whitelist_ids = set(whitelist.keys())
+    firebase_bans = await fetch_all_firebase_bans()
+    banned_ids = {str(roblox_id).strip() for roblox_id in firebase_bans.keys() if roblox_id}
 
     async with async_session() as session:
+        db_banned_result = await session.execute(
+            select(BannedRobloxAccount.roblox_id).where(
+                BannedRobloxAccount.roblox_id.isnot(None)
+            )
+        )
+        banned_ids.update(
+            {
+                stripped
+                for roblox_id, in db_banned_result
+                if (stripped := (roblox_id or "").strip())
+            }
+        )
+
         result = await session.execute(
             select(User).where(
                 User.verified.is_(True),
@@ -334,9 +349,14 @@ async def sync_whitelist() -> None:
         )
         verified_users = result.scalars().all()
 
+    banned_whitelist_ids = {roblox_id for roblox_id in whitelist_ids if roblox_id in banned_ids}
+    for roblox_id in banned_whitelist_ids:
+        await remove_whitelist(roblox_id)
+        whitelist_ids.discard(roblox_id)
+
     for user in verified_users:
         roblox_id = (user.roblox_id or "").strip()
-        if not roblox_id or roblox_id in whitelist_ids:
+        if not roblox_id or roblox_id in whitelist_ids or roblox_id in banned_ids:
             continue
 
         payload = {"username": user.username, "user_id": user.id}
