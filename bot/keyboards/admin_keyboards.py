@@ -16,6 +16,8 @@ LOGS_NEXT_BUTTON = "➡️ Следующая"
 LOGS_ACHIEVEMENTS_BUTTON = "🏆 Достижения"
 
 
+USERS_BROADCAST_BUTTON = "📢 Оповестить"
+
 ACHIEVEMENT_VISIBILITY_FILTERS = {
     "all": "Все",
     "visible": "Видимые",
@@ -92,10 +94,18 @@ def admin_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
 
 def admin_users_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton(text="🔁 Обновить список")],
+        [
+            KeyboardButton(text="🔁 Обновить список"),
+            KeyboardButton(text=USERS_BROADCAST_BUTTON),
+        ],
         [KeyboardButton(text="🚫 Бан-лист")],
         [KeyboardButton(text="↩️ Назад")],
     ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def broadcast_cancel_kb() -> ReplyKeyboardMarkup:
+    buttons = [[KeyboardButton(text="✖️ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 

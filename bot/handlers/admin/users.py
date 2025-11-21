@@ -10,7 +10,7 @@ from typing import Sequence
 from aiogram import Bot, F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
@@ -21,6 +21,8 @@ from bot.keyboards.admin_keyboards import (
     admin_demote_confirm_kb,
     admin_main_menu_kb,
     admin_users_menu_kb,
+    broadcast_cancel_kb,
+    USERS_BROADCAST_BUTTON,
 )
 from bot.firebase.firebase_service import (
     add_ban_to_firebase,
@@ -61,6 +63,7 @@ logger = logging.getLogger(__name__)
 
 
 BANLIST_PAGE_SIZE = 1
+BROADCAST_CANCEL_BUTTON = "✖️ Отмена"
 
 
 # -------- Проверка админа --------
@@ -161,6 +164,14 @@ def _banlist_navigation_kb(
     return builder.as_markup() if has_buttons else None
 
 
+def _broadcast_confirm_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Отправить", callback_data="broadcast:confirm")
+    builder.button(text="✖️ Отмена", callback_data="broadcast:cancel")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 async def _load_banlist_page(page: int, page_size: int = BANLIST_PAGE_SIZE):
     async with async_session() as session:
         total_blocked = await session.scalar(
@@ -227,6 +238,27 @@ async def _render_banlist_page(
         await message.answer(text, parse_mode="HTML", reply_markup=reply_markup)
 
     await state.update_data(banlist_page=current_page)
+
+
+async def _broadcast_message(bot: Bot, text: str) -> tuple[int, int]:
+    sent = 0
+    failed = 0
+
+    async with async_session() as session:
+        user_ids = (
+            await session.scalars(select(User.tg_id).where(User.tg_id.is_not(None)))
+        ).all()
+
+    for user_id in user_ids:
+        try:
+            await bot.send_message(user_id, text)
+            sent += 1
+        except Exception as exc:  # pragma: no cover - network errors
+            failed += 1
+            logger.warning("Failed to send broadcast to %s: %s", user_id, exc)
+
+    logger.info("Broadcast finished: sent=%s failed=%s", sent, failed)
+    return sent, failed
 
 
 def _shorten_title_label(text: str, limit: int = 32) -> str:
@@ -491,6 +523,33 @@ async def _send_users_list(message: types.Message):
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
 
 
+@router.message(
+    StateFilter(
+        AdminUsersState.searching,
+        AdminUsersState.banlist,
+        AdminUsersState.banlist_search,
+        AdminUsersState.viewing_user,
+    ),
+    F.text == USERS_BROADCAST_BUTTON,
+)
+async def admin_users_broadcast_start(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    if await state.get_state() == AdminUsersState.viewing_user.state:
+        await _clear_user_card_keyboard(message.bot, message.chat.id, state)
+
+    await state.clear()
+    await state.set_state(AdminUsersState.broadcasting)
+    await message.answer(
+        "📢 Отправьте текст рассылки или нажмите «✖️ Отмена».",
+        reply_markup=broadcast_cancel_kb(),
+    )
+
+
 @router.message(~StateFilter(GiveMoneyState.waiting_for_amount), F.text == "👥 Пользователи")
 async def admin_users_entry(message: types.Message, state: FSMContext):
     if not message.from_user:
@@ -558,6 +617,24 @@ async def admin_user_card_back(message: types.Message, state: FSMContext):
     await _send_users_list(message)
 
 
+@router.message(StateFilter(AdminUsersState.broadcasting), F.text == BROADCAST_CANCEL_BUTTON)
+async def admin_users_broadcast_cancel(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+    await message.answer(
+        "❌ Рассылка отменена.",
+        reply_markup=admin_users_menu_kb(),
+    )
+    await _send_users_list(message)
+
+
 @router.message(
     StateFilter(
         AdminUsersState.searching, AdminUsersState.banlist, AdminUsersState.banlist_search
@@ -590,6 +667,102 @@ async def admin_users_back(message: types.Message, state: FSMContext):
     await message.answer(
         "👑 <b>Админ-панель</b>\nВыберите раздел:",
         reply_markup=admin_main_menu_kb(),
+    )
+
+
+@router.callback_query(F.data == "broadcast:cancel")
+async def admin_users_broadcast_cancel_cb(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+
+    if call.message:
+        await call.message.edit_text("❌ Рассылка отменена")
+        await _send_users_list(call.message)
+    else:
+        await call.bot.send_message(
+            call.from_user.id,
+            "❌ Рассылка отменена",
+            reply_markup=admin_users_menu_kb(),
+        )
+
+    await call.answer()
+
+
+@router.callback_query(F.data == "broadcast:confirm")
+async def admin_users_broadcast_confirm(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    current_state = await state.get_state()
+    if current_state != AdminUsersState.broadcasting.state:
+        return await call.answer("Рассылка не активна", show_alert=True)
+
+    data = await state.get_data()
+    broadcast_text = data.get("broadcast_text")
+    if not broadcast_text:
+        await state.set_state(AdminUsersState.broadcasting)
+        return await call.answer("Текст рассылки потерян, отправьте заново", show_alert=True)
+
+    if call.message:
+        await call.message.edit_text("📢 Рассылка запущена…")
+
+    sent, failed = await _broadcast_message(call.bot, broadcast_text)
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+
+    summary = (
+        "📢 Рассылка завершена.\n"
+        f"✅ Отправлено: {sent}\n"
+        f"⚠️ Ошибок: {failed}"
+    )
+
+    if call.message:
+        await call.message.answer(summary, reply_markup=admin_users_menu_kb())
+        await _send_users_list(call.message)
+    else:
+        await call.bot.send_message(
+            call.from_user.id,
+            summary,
+            reply_markup=admin_users_menu_kb(),
+        )
+
+    await call.answer("Готово")
+
+
+@router.message(StateFilter(AdminUsersState.broadcasting))
+async def admin_users_broadcast_preview(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    broadcast_text = (message.text or "").strip()
+    if not broadcast_text:
+        return await message.reply(
+            "❌ Текст рассылки не может быть пустым.",
+            reply_markup=broadcast_cancel_kb(),
+        )
+
+    await state.update_data(broadcast_text=broadcast_text)
+    await message.answer(
+        (
+            "📢 <b>Проверка текста</b>:\n\n"
+            f"{escape(broadcast_text)}\n\nОтправить всем пользователям?"
+        ),
+        parse_mode="HTML",
+        reply_markup=_broadcast_confirm_kb(),
     )
 
 
@@ -733,7 +906,15 @@ async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
 @router.message(
     StateFilter(AdminUsersState.searching),
     F.text,
-    ~F.text.in_({"👥 Пользователи", "🔁 Обновить список", "↩️ Назад", "↩️ В меню"}),
+    ~F.text.in_(
+        {
+            "👥 Пользователи",
+            "🔁 Обновить список",
+            "↩️ Назад",
+            "↩️ В меню",
+            USERS_BROADCAST_BUTTON,
+        }
+    ),
 )
 async def admin_search_user(message: types.Message, state: FSMContext):
     if not message.from_user:
