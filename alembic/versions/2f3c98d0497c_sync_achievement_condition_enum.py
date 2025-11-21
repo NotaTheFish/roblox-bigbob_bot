@@ -35,23 +35,33 @@ CONDITION_ENUM = postgresql.ENUM(
 def upgrade() -> None:
     bind = op.get_bind()
 
+    # создаём enum если нет
     postgresql.ENUM(*CONDITION_VALUES, name="achievement_condition_type").create(
         bind, checkfirst=True
     )
 
+    # добавляем все значения
     for value in CONDITION_VALUES:
         op.execute(
             f"ALTER TYPE achievement_condition_type ADD VALUE IF NOT EXISTS '{value}'"
         )
 
+    # УБИРАЕМ DEFAULT перед изменением типа
+    op.execute("ALTER TABLE achievements ALTER COLUMN condition_type DROP DEFAULT")
+
+    # изменяем тип на ENUM
     op.alter_column(
         "achievements",
         "condition_type",
         existing_type=sa.String(length=64),
         type_=CONDITION_ENUM,
         nullable=False,
-        server_default="none",
         postgresql_using="condition_type::achievement_condition_type",
+    )
+
+    # ставим корректный default уже ПОСЛЕ изменения типа
+    op.execute(
+        "ALTER TABLE achievements ALTER COLUMN condition_type SET DEFAULT 'none'::achievement_condition_type"
     )
 
 
