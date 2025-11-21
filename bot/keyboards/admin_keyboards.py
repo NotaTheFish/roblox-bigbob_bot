@@ -259,7 +259,10 @@ def achievement_manage_inline(
             )
     else:
         builder.button(text="Нет достижений", callback_data="ach:list:noop")
-    builder.button(text="➕ Создать достижение", callback_data="ach:manage:create")
+    builder.button(
+        text="➕ Создать достижение",
+        callback_data=f"ach:manage:create:{visibility_filter}:{condition_filter}",
+    )
     builder.button(
         text="⬅️ Назад",
         callback_data=f"ach:list:filter:{visibility_filter}:{condition_filter}",

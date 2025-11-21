@@ -422,13 +422,24 @@ async def ach_manage_callback(call: types.CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(F.data == "ach:manage:create")
+@router.callback_query(F.data.startswith("ach:manage:create"))
 async def ach_manage_create_callback(call: types.CallbackQuery, state: FSMContext):
     if not call.from_user or not await is_admin(call.from_user.id):
         await call.answer("Недостаточно прав", show_alert=True)
         return
     if not call.message:
         return
+
+    parts = call.data.split(":")
+    if len(parts) not in (3, 5):
+        await call.answer("Некорректные данные", show_alert=True)
+        return
+
+    visibility_raw = parts[3] if len(parts) == 5 else "all"
+    condition_raw = parts[4] if len(parts) == 5 else "all"
+    _normalize_visibility_filter(visibility_raw)
+    _normalize_condition_filter(condition_raw)
+
     await call.answer()
     await state.set_state(AchievementsState.waiting_for_name)
     await state.update_data(mode="create")
