@@ -21,10 +21,10 @@ routers = [
     banned_router,
     promo_router,
     promocode_use_router,
-    messages_router,
     shop_router,
     balance_router,
     achievements_router,
+    messages_router,
 ]
 
 __all__ = ["routers"]

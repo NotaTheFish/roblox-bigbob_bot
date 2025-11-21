@@ -16,6 +16,7 @@ router = Router(name="user_messages")
     StateFilter(None),
     F.text,
     ~F.text.startswith("/"),
+    ~F.text.in_(("🏆 Достижения игрока", "🛠 Режим админа")),
     ~F.text.regexp(PROMOCODE_PATTERN),
 )
 async def record_user_message(message: types.Message) -> None:
