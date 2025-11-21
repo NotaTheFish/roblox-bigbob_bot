@@ -116,6 +116,24 @@ async def _remove_reply_keyboard(bot: Bot, chat_id: int) -> None:
             await cleanup_message.delete()
 
 
+async def _clear_user_card_keyboard(
+    bot: Bot, chat_id: int, state: FSMContext
+) -> None:
+    state_data = await state.get_data()
+    profile_message_id = state_data.get("profile_message_id")
+    if not profile_message_id:
+        return
+
+    with suppress(Exception):
+        await bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=profile_message_id,
+            reply_markup=None,
+        )
+
+    await state.update_data(profile_message_id=None)
+
+
 def _banlist_navigation_kb(
     *, user_id: int | None, current_page: int, total_pages: int
 ):
@@ -496,6 +514,20 @@ async def admin_users_list(message: types.Message):
     await _send_users_list(message)
 
 
+@router.message(StateFilter(AdminUsersState.viewing_user), F.text == "🔁 Обновить список")
+async def admin_users_refresh_from_user_card(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await _clear_user_card_keyboard(message.bot, message.chat.id, state)
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+    await _send_users_list(message)
+
+
 @router.message(StateFilter(AdminUsersState.banlist), F.text == "🔁 Обновить список")
 async def admin_users_refresh_banlist(message: types.Message, state: FSMContext):
     if not message.from_user:
@@ -518,6 +550,7 @@ async def admin_user_card_back(message: types.Message, state: FSMContext):
         return
 
     await state.clear()
+    await _clear_user_card_keyboard(message.bot, message.chat.id, state)
     await state.set_state(AdminUsersState.searching)
     await _send_users_list(message)
 
@@ -565,6 +598,8 @@ async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
     if not await is_admin(call.from_user.id):
         return await call.answer("Нет доступа", show_alert=True)
 
+    chat_id = call.message.chat.id if call.message else call.from_user.id
+    await _clear_user_card_keyboard(call.bot, chat_id, state)
     await state.clear()
     await state.set_state(AdminUsersState.searching)
 
@@ -635,7 +670,7 @@ async def admin_search_user(message: types.Message, state: FSMContext):
 
     show_demote = await _should_show_demote_button(message.from_user.id, user.tg_id)
 
-    await message.reply(
+        profile_message = await message.reply(
         profile_text,
         parse_mode="HTML",
         reply_markup=user_card_kb(
@@ -645,8 +680,8 @@ async def admin_search_user(message: types.Message, state: FSMContext):
         ),
     )
 
-
     await state.set_state(AdminUsersState.viewing_user)
+    await state.update_data(profile_message_id=profile_message.message_id)
 
 # -------- Управление пользователем: блок/разблок/выдача -------
 @router.callback_query(
