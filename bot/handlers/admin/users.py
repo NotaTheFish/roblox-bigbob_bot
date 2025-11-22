@@ -23,11 +23,7 @@ from bot.keyboards.admin_keyboards import (
     admin_demote_confirm_kb,
     admin_main_menu_kb,
     admin_users_menu_kb,
-    admin_users_status_kb,
     broadcast_cancel_kb,
-    ADMIN_BANLIST_CALLBACK,
-    ADMIN_START_CALLBACK,
-    ADMIN_STOP_CALLBACK,
     USERS_BROADCAST_BUTTON,
 )
 from bot.firebase.firebase_service import (
@@ -86,6 +82,15 @@ async def is_admin(uid: int) -> bool:
 
 def _is_root_admin(user: types.User | None) -> bool:
     return bool(user and user.id == ROOT_ADMIN_ID)
+
+
+async def _admin_users_menu(for_user: types.User | None, *, bot_status: str | None = None):
+    is_root = _is_root_admin(for_user)
+
+    if is_root and bot_status is None:
+        bot_status = await get_current_bot_status()
+
+    return admin_users_menu_kb(bot_status=bot_status, is_root=is_root)
 
 
 # -------- Кнопки карточки пользователя --------
@@ -147,27 +152,6 @@ async def _clear_user_card_keyboard(
         )
 
     await state.update_data(profile_message_id=None)
-
-
-async def _render_admin_status_controls(
-    message: types.Message, *, bot_status: str | None = None
-) -> None:
-    if not message.from_user or not _is_root_admin(message.from_user):
-        return
-
-    current_status = bot_status or await get_current_bot_status()
-    controls_kb = admin_users_status_kb(current_status, is_root=True)
-
-    if not controls_kb:
-        return
-
-    status_icon = "🟢" if current_status == BOT_STATUS_RUNNING else "⏸️"
-    status_label = "Бот работает" if current_status == BOT_STATUS_RUNNING else "Бот остановлен"
-
-    await message.answer(
-        f"{status_icon} {status_label}",
-        reply_markup=controls_kb,
-    )
 
 
 def _banlist_navigation_kb(
@@ -554,7 +538,7 @@ async def _send_users_list(message: types.Message):
     if not users:
         return await message.answer(
             "Пользователей пока нет.",
-            reply_markup=admin_users_menu_kb(),
+            reply_markup=await _admin_users_menu(message.from_user),
         )
 
     text = "👥 <b>ТОП 50 пользователей по орешкам</b>\n\n"
@@ -576,70 +560,64 @@ async def _send_users_list(message: types.Message):
         "\n🔎 Отправьте TG ID, ID бота "
         f"(например, {BOT_USER_ID_PREFIX}12345), ник в боте или username для поиска"
     )
-    await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
-    await _render_admin_status_controls(message)
+    await message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=await _admin_users_menu(message.from_user),
+    )
 
 
 # -------- Управление статусом бота --------
-@router.callback_query(F.data == ADMIN_STOP_CALLBACK)
-async def admin_stop_bot(call: types.CallbackQuery, state: FSMContext):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(
+    StateFilter(
+        AdminUsersState.searching,
+        AdminUsersState.banlist,
+        AdminUsersState.banlist_search,
+        AdminUsersState.viewing_user,
+    ),
+    F.text == "🛑 Остановить",
+)
+async def admin_stop_bot(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
 
-    if not _is_root_admin(call.from_user):
-        return await call.answer("Нет доступа", show_alert=True)
+    if not _is_root_admin(message.from_user):
+        return
 
     await set_current_bot_status(BOT_STATUS_STOPPED)
     await state.clear()
     await state.set_state(AdminUsersState.searching)
 
-    if call.message:
-        await call.message.answer(
-            "🛑 Бот переведён в режим обслуживания.",
-            reply_markup=admin_users_menu_kb(),
-        )
-        await _render_admin_status_controls(call.message, bot_status=BOT_STATUS_STOPPED)
-
-    await call.answer("Бот остановлен")
+    reply_markup = await _admin_users_menu(message.from_user, bot_status=BOT_STATUS_STOPPED)
+    await message.answer(
+        "🛑 Бот переведён в режим обслуживания.",
+        reply_markup=reply_markup,
+    )
 
 
-@router.callback_query(F.data == ADMIN_START_CALLBACK)
-async def admin_start_bot_prompt(call: types.CallbackQuery, state: FSMContext):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
+@router.message(
+    StateFilter(
+        AdminUsersState.searching,
+        AdminUsersState.banlist,
+        AdminUsersState.banlist_search,
+        AdminUsersState.viewing_user,
+    ),
+    F.text == "▶️ Запустить",
+)
+async def admin_start_bot_prompt(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
 
-    if not _is_root_admin(call.from_user):
-        return await call.answer("Нет доступа", show_alert=True)
+    if not _is_root_admin(message.from_user):
+        return
 
     await state.clear()
     await state.set_state(AdminUsersState.starting_bot)
 
-    if call.message:
-        await call.message.answer(
-            "▶️ Отправьте короткий текст уведомления для пользователей перед запуском",
-            reply_markup=broadcast_cancel_kb(),
-        )
-
-    await call.answer()
-
-
-@router.callback_query(F.data == ADMIN_BANLIST_CALLBACK)
-async def admin_users_banlist_cb(call: types.CallbackQuery, state: FSMContext):
-    if not call.from_user:
-        return await call.answer("Нет доступа", show_alert=True)
-
-    if not await is_admin(call.from_user.id):
-        return await call.answer("Нет доступа", show_alert=True)
-
-    if not call.message:
-        return await call.answer("Сообщение недоступно", show_alert=True)
-
-    current_state = await state.get_state()
-    await state.update_data(banlist_return_state=current_state)
-    await state.set_state(AdminUsersState.banlist)
-    await _render_banlist_page(call.message, state, page=0)
-
-    await call.answer()
+    await message.answer(
+        "▶️ Отправьте короткий текст уведомления для пользователей перед запуском",
+        reply_markup=broadcast_cancel_kb(),
+    )
 
 
 @router.message(
@@ -681,9 +659,9 @@ async def admin_users_start_cancel(message: types.Message, state: FSMContext):
     await state.set_state(AdminUsersState.searching)
 
     await message.answer(
-        "⏸️ Запуск отменён.", reply_markup=admin_users_menu_kb()
+        "⏸️ Запуск отменён.",
+        reply_markup=await _admin_users_menu(message.from_user),
     )
-    await _render_admin_status_controls(message)
 
 
 @router.message(~StateFilter(GiveMoneyState.waiting_for_amount), F.text == "👥 Пользователи")
@@ -766,7 +744,7 @@ async def admin_users_broadcast_cancel(message: types.Message, state: FSMContext
     await state.set_state(AdminUsersState.searching)
     await message.answer(
         "❌ Рассылка отменена.",
-        reply_markup=admin_users_menu_kb(),
+        reply_markup=await _admin_users_menu(message.from_user),
     )
     await _send_users_list(message)
 
@@ -824,7 +802,7 @@ async def admin_users_broadcast_cancel_cb(call: types.CallbackQuery, state: FSMC
         await call.bot.send_message(
             call.from_user.id,
             "❌ Рассылка отменена",
-            reply_markup=admin_users_menu_kb(),
+            reply_markup=await _admin_users_menu(call.from_user),
         )
 
     await call.answer()
@@ -862,14 +840,16 @@ async def admin_users_broadcast_confirm(call: types.CallbackQuery, state: FSMCon
         f"⚠️ Ошибок: {failed}"
     )
 
+    reply_markup = await _admin_users_menu(call.from_user)
+
     if call.message:
-        await call.message.answer(summary, reply_markup=admin_users_menu_kb())
+        await call.message.answer(summary, reply_markup=reply_markup)
         await _send_users_list(call.message)
     else:
         await call.bot.send_message(
             call.from_user.id,
             summary,
-            reply_markup=admin_users_menu_kb(),
+            reply_markup=reply_markup,
         )
 
     await call.answer("Готово")
@@ -932,7 +912,11 @@ async def admin_users_start_notice(message: types.Message, state: FSMContext):
         f"⚠️ Ошибок при доставке: {failed}"
     )
 
-    await message.answer(summary, reply_markup=admin_users_menu_kb())
+    reply_markup = await _admin_users_menu(
+        message.from_user, bot_status=BOT_STATUS_RUNNING
+    )
+
+    await message.answer(summary, reply_markup=reply_markup)
     await _send_users_list(message)
 
 
@@ -1066,7 +1050,7 @@ async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
             call.from_user.id,
             "👥 <b>Пользователи</b>",
             parse_mode="HTML",
-            reply_markup=admin_users_menu_kb(),
+            reply_markup=await _admin_users_menu(call.from_user),
         )
 
     await call.answer()
@@ -1100,7 +1084,7 @@ async def admin_search_user(message: types.Message, state: FSMContext):
                 "Введите TG ID, ник в боте, username или ID бота "
                 f"(например, {BOT_USER_ID_PREFIX}12345) для поиска"
             ),
-            reply_markup=admin_users_menu_kb(),
+            reply_markup=await _admin_users_menu(message.from_user),
         )
 
     user = await find_user_by_query(query, include_blocked=True)
@@ -1108,7 +1092,7 @@ async def admin_search_user(message: types.Message, state: FSMContext):
     if not user:
         return await message.reply(
             "❌ Пользователь не найден",
-            reply_markup=admin_users_menu_kb(),
+            reply_markup=await _admin_users_menu(message.from_user),
         )
 
     roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
