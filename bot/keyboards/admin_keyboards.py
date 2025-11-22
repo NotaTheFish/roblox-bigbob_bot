@@ -206,6 +206,7 @@ def achievement_detail_inline(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     toggle_suffix = f":{page}" if page is not None else ""
+    delete_suffix = f":{page}" if page is not None else ""
     builder.button(
         text="👁 Скрыть" if is_visible else "👁 Показать",
         callback_data=(
@@ -215,7 +216,9 @@ def achievement_detail_inline(
     builder.button(text="✏️ Редактировать", callback_data=f"ach:edit:{achievement_id}")
     builder.button(
         text="🗑 Удалить",
-        callback_data=f"ach:delete:{achievement_id}:{visibility_filter}:{condition_filter}",
+        callback_data=(
+            f"ach:delete:{achievement_id}:{visibility_filter}:{condition_filter}{delete_suffix}"
+        ),
     )
     builder.button(
         text="👥 Получившие",

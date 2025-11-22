@@ -10,7 +10,7 @@ import logging
 from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.services.nuts import add_nuts
@@ -704,10 +704,10 @@ async def ach_delete_callback(call: types.CallbackQuery):
     if not call.message:
         return
     parts = call.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         await call.answer("Некорректные данные", show_alert=True)
         return
-    _, _, ach_id_str, visibility_raw, condition_raw = parts
+    _, _, ach_id_str, visibility_raw, condition_raw, *page_raw = parts
     try:
         ach_id = int(ach_id_str)
     except ValueError:
@@ -715,22 +715,33 @@ async def ach_delete_callback(call: types.CallbackQuery):
         return
     visibility = _normalize_visibility_filter(visibility_raw)
     condition = _normalize_condition_filter(condition_raw)
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw[0]))
+        except ValueError:
+            await call.answer("Некорректные данные", show_alert=True)
+            return
 
     async with async_session() as session:
-        achievement = await session.get(Achievement, ach_id)
-        if not achievement:
-            await call.answer("Достижение не найдено", show_alert=True)
-            return
-        await session.delete(achievement)
-        await session.commit()
+        async with session.begin():
+            achievement = await session.get(Achievement, ach_id)
+            if not achievement:
+                await call.answer("Достижение не найдено", show_alert=True)
+                return
+            await session.execute(
+                delete(UserAchievement).where(UserAchievement.achievement_id == ach_id)
+            )
+            await session.delete(achievement)
 
-    await call.message.edit_text(
-        "Достижение удалено.",
-        reply_markup=achievement_history_inline(
-            f"ach:list:filter:{visibility}:{condition}"
-        ),
+    await _send_achievement_management(
+        call.message,
+        visibility_filter=visibility,
+        condition_filter=condition,
+        page=page,
+        as_edit=True,
     )
-    await call.answer("Удалено")
+    await call.answer("Достижение удалено успешно")
 
 
 @router.callback_query(F.data.startswith("ach:users:"))
