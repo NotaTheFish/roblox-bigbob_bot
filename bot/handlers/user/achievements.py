@@ -163,10 +163,19 @@ async def achievements_view_category(call: types.CallbackQuery):
         return await call.answer("Категория не найдена", show_alert=True)
 
     text = _render_category(context, slug, category_name)
+    new_markup = _achievements_categories_keyboard(categories)
+
+    current_text = call.message.text
+    current_markup = call.message.reply_markup
+
+    if current_text == text and current_markup == new_markup:
+        await call.answer("Вы уже находитесь в этой категории.")
+        return
+
     await call.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=_achievements_categories_keyboard(categories),
+        reply_markup=new_markup,
     )
     await call.answer()
 
