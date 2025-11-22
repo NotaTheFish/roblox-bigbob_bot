@@ -346,7 +346,7 @@ def _group_by_category(context: AchievementContext) -> list[tuple[str, str]]:
 
 def _render_achievement_list(context: AchievementContext) -> str:
     lines = ["🏆 <b>Все достижения</b>\n"]
-    for achievement in sorted(context.achievements, key=lambda a: a.name.lower()):
+    for achievement in _sorted_achievements(context, context.achievements):
         lines.append(_format_achievement_line(achievement, context))
     return "\n\n".join(lines)
 
@@ -354,9 +354,22 @@ def _render_achievement_list(context: AchievementContext) -> str:
 def _render_category(context: AchievementContext, slug: str, title: str) -> str:
     items = _achievements_by_category(context, slug)
     lines = [f"📂 <b>{html.escape(title)}</b>\n"]
-    for achievement in sorted(items, key=lambda a: a.name.lower()):
+    for achievement in _sorted_achievements(context, items):
         lines.append(_format_achievement_line(achievement, context))
     return "\n\n".join(lines)
+
+
+def _sorted_achievements(
+    context: AchievementContext, achievements: Iterable[Achievement]
+) -> list[Achievement]:
+    def sort_key(achievement: Achievement) -> tuple[int, float, str]:
+        owned = context.owned.get(achievement.id)
+        if owned:
+            earned_at = owned.earned_at or datetime.fromtimestamp(0, tz=timezone.utc)
+            return (0, -earned_at.timestamp(), achievement.name.lower())
+        return (1, 0.0, achievement.name.lower())
+
+    return sorted(achievements, key=sort_key)
 
 
 def _format_achievement_line(achievement: Achievement, context: AchievementContext) -> str:
