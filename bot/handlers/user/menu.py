@@ -19,6 +19,7 @@ from bot.db import (
     async_session,
 )
 from bot.handlers.user.shop import user_shop
+from bot.handlers.user.balance import topup_start
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu
 from bot.keyboards.top_players import TOP_MENU_CALLBACK_PREFIX, top_players_keyboard
 from bot.services.profile_renderer import ProfileView, render_profile
@@ -385,7 +386,7 @@ async def profile_promo(message: types.Message, state: FSMContext):
 @router.message(F.text == "💳 Пополнить баланс")
 async def profile_topup(message: types.Message, state: FSMContext):
     await _set_profile_mode(state, True)
-    await message.answer("💳 Пополнение: используйте /topup")
+    await topup_start(message, state)
 
 
 @router.message(F.text == "🏆 Топ игроков")
