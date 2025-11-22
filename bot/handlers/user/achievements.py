@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Iterable
@@ -62,12 +61,11 @@ def _achievements_entry_keyboard() -> InlineKeyboardMarkup:
 
 
 def _achievements_categories_keyboard(
-    categories: Iterable[tuple[str, str, int, int]]
+    categories: Iterable[tuple[str, str]]
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for slug, name, completed, total in categories:
-        suffix = f" ({completed}/{total})" if total else ""
-        builder.button(text=f"{name}{suffix}", callback_data=f"achievements:category:{slug}")
+    for slug, name in categories:
+        builder.button(text=name, callback_data=f"achievements:category:{slug}")
     builder.button(text="📜 Все достижения", callback_data="achievements:view:all")
     builder.button(text="⬅️ К выбору", callback_data="achievements:view:menu")
     builder.adjust(1)
@@ -136,10 +134,9 @@ async def achievements_view_categories(call: types.CallbackQuery):
         return await call.answer("Сначала нажмите /start", show_alert=True)
 
     categories = _group_by_category(context)
-    text_lines = ["📂 <b>Категории достижений</b>"]
-    for _, name, completed, total in categories:
-        suffix = f" ({completed}/{total})" if total else ""
-        text_lines.append(f"• {html.escape(name)}{suffix}")
+    text_lines = ["📂 <b>Категории достижений:</b>"]
+    for _, name in categories:
+        text_lines.append(f"• {html.escape(name)}")
 
     await call.message.edit_text(
         "\n".join(text_lines),
@@ -160,7 +157,7 @@ async def achievements_view_category(call: types.CallbackQuery):
         return await call.answer("Сначала нажмите /start", show_alert=True)
 
     categories = _group_by_category(context)
-    category_map = {cat_slug: name for cat_slug, name, _, _ in categories}
+    category_map = {cat_slug: name for cat_slug, name in categories}
     category_name = category_map.get(slug)
     if not category_name:
         return await call.answer("Категория не найдена", show_alert=True)
@@ -298,25 +295,53 @@ async def _load_playtime_minutes(session, user: User) -> int | None:
     return None
 
 
-def _group_by_category(context: AchievementContext) -> list[tuple[str, str, int, int]]:
-    groups: dict[str, list[Achievement]] = {}
-    titles: dict[str, str] = {}
-    for achievement in context.achievements:
-        raw_name = "Без категории"
-        if isinstance(achievement.metadata_json, dict):
-            raw_name = achievement.metadata_json.get("category") or raw_name
-        slug = _slugify_category(raw_name)
-        groups.setdefault(slug, []).append(achievement)
-        titles[slug] = raw_name or "Без категории"
+def _normalize_condition_type(
+    condition_type: AchievementConditionType | str | None,
+) -> AchievementConditionType:
+    if isinstance(condition_type, AchievementConditionType):
+        return condition_type
+    if isinstance(condition_type, str):
+        try:
+            return AchievementConditionType(condition_type)
+        except ValueError:
+            return AchievementConditionType.NONE
+    return AchievementConditionType.NONE
 
-    result: list[tuple[str, str, int, int]] = []
-    for slug, items in groups.items():
-        total = len(items)
-        completed = sum(1 for item in items if item.id in context.owned)
-        result.append((slug, titles[slug], completed, total))
 
-    result.sort(key=lambda row: row[1].lower())
-    return result
+def _categorize_achievement(achievement: Achievement) -> str | None:
+    if achievement.is_hidden:
+        return "hidden"
+
+    condition_type = _normalize_condition_type(achievement.condition_type)
+    if condition_type is AchievementConditionType.NONE and not achievement.manual_grant_only:
+        return "none"
+
+    return "public"
+
+
+def _achievements_by_category(
+    context: AchievementContext, slug: str
+) -> list[Achievement]:
+    return [
+        achievement
+        for achievement in context.achievements
+        if _categorize_achievement(achievement) == slug
+    ]
+
+
+def _group_by_category(context: AchievementContext) -> list[tuple[str, str]]:
+    categories: list[tuple[str, str]] = []
+    for slug, name in (
+        ("public", "Публичные"),
+        ("hidden", "Скрытые"),
+        ("none", "Без условия"),
+    ):
+        items = _achievements_by_category(context, slug)
+        if not items:
+            continue
+        categories.append((slug, name))
+
+    return categories
 
 
 def _render_achievement_list(context: AchievementContext) -> str:
@@ -327,11 +352,7 @@ def _render_achievement_list(context: AchievementContext) -> str:
 
 
 def _render_category(context: AchievementContext, slug: str, title: str) -> str:
-    items = [
-        ach
-        for ach in context.achievements
-        if _slugify_category(_category_name(ach)) == slug
-    ]
+    items = _achievements_by_category(context, slug)
     lines = [f"📂 <b>{html.escape(title)}</b>\n"]
     for achievement in sorted(items, key=lambda a: a.name.lower()):
         lines.append(_format_achievement_line(achievement, context))
@@ -458,14 +479,3 @@ def _achievement_progress(
 
     return None, None
 
-
-def _slugify_category(raw: str) -> str:
-    value = (raw or "").strip().lower()
-    value = re.sub(r"[^a-z0-9а-яё]+", "-", value, flags=re.IGNORECASE).strip("-")
-    return value or "category"
-
-
-def _category_name(achievement: Achievement) -> str:
-    if isinstance(achievement.metadata_json, dict):
-        return achievement.metadata_json.get("category") or "Без категории"
-    return "Без категории"
