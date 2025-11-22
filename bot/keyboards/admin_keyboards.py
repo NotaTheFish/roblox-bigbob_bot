@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.services.admin_logs import LogCategory
@@ -197,12 +202,15 @@ def achievement_detail_inline(
     return_callback: str = "ach:list:filter:all:all",
     visibility_filter: str = "all",
     condition_filter: str = "all",
+    page: int | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    toggle_suffix = f":{page}" if page is not None else ""
     builder.button(
         text="👁 Скрыть" if is_visible else "👁 Показать",
-        callback_data=
-        f"ach:toggle:{achievement_id}:{visibility_filter}:{condition_filter}",
+        callback_data=(
+            f"ach:toggle:{achievement_id}:{visibility_filter}:{condition_filter}{toggle_suffix}"
+        ),
     )
     builder.button(text="✏️ Редактировать", callback_data=f"ach:edit:{achievement_id}")
     builder.button(
@@ -249,25 +257,55 @@ def achievement_manage_inline(
     achievement_rows: list[tuple[int, str]],
     visibility_filter: str,
     condition_filter: str,
+    *,
+    page: int,
+    has_prev: bool,
+    has_next: bool,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if achievement_rows:
         for ach_id, name in achievement_rows:
-            builder.button(
-                text=f"#{ach_id} {name[:18]}",
-                callback_data=f"ach:details:{ach_id}:{visibility_filter}:{condition_filter}",
+            builder.row(
+                InlineKeyboardButton(
+                    text=name[:18],
+                    callback_data=(
+                        f"ach:details:{ach_id}:{visibility_filter}:{condition_filter}:{page}"
+                    ),
+                )
             )
     else:
-        builder.button(text="Нет достижений", callback_data="ach:list:noop")
-    builder.button(
-        text="➕ Создать достижение",
-        callback_data=f"ach:manage:create:{visibility_filter}:{condition_filter}",
+        builder.row(
+            InlineKeyboardButton(text="Нет достижений", callback_data="ach:list:noop")
+        )
+
+    navigation_buttons: list[InlineKeyboardButton] = []
+    if has_prev:
+        navigation_buttons.append(
+            InlineKeyboardButton(
+                text="⬅", callback_data=f"ach:manage:{visibility_filter}:{condition_filter}:{page - 1}"
+            )
+        )
+    if has_next:
+        navigation_buttons.append(
+            InlineKeyboardButton(
+                text="➡", callback_data=f"ach:manage:{visibility_filter}:{condition_filter}:{page + 1}"
+            )
+        )
+    if navigation_buttons:
+        builder.row(*navigation_buttons)
+
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Создать достижение",
+            callback_data=f"ach:manage:create:{visibility_filter}:{condition_filter}",
+        )
     )
-    builder.button(
-        text="⬅️ Назад",
-        callback_data=f"ach:list:filter:{visibility_filter}:{condition_filter}",
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=f"ach:list:filter:{visibility_filter}:{condition_filter}",
+        )
     )
-    builder.adjust(1)
     return builder.as_markup()
 
 

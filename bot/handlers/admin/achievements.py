@@ -424,12 +424,25 @@ async def _send_achievement_management(
     *,
     visibility_filter: str = DEFAULT_VISIBILITY_FILTER,
     condition_filter: str = DEFAULT_CONDITION_FILTER,
+    page: int = 1,
     as_edit: bool = False,
 ) -> None:
     achievements = await _load_achievements(visibility_filter, condition_filter)
-    rows = [(ach.id, ach.name) for ach in achievements]
+    page_size = 10
+    total_pages = max(1, (len(achievements) + page_size - 1) // page_size)
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * page_size
+    end = start + page_size
+    rows = [(ach.id, ach.name) for ach in achievements[start:end]]
     text = "Выберите достижение для управления"
-    markup = achievement_manage_inline(rows[:25], visibility_filter, condition_filter)
+    markup = achievement_manage_inline(
+        rows,
+        visibility_filter,
+        condition_filter,
+        page=page,
+        has_prev=page > 1,
+        has_next=end < len(achievements),
+    )
     if as_edit:
         await target.edit_text(text, reply_markup=markup)
     else:
@@ -530,16 +543,24 @@ async def ach_manage_callback(call: types.CallbackQuery):
     if not call.message:
         return
     parts = call.data.split(":")
-    if len(parts) != 4:
+    if len(parts) not in (4, 5):
         await call.answer("Некорректные данные", show_alert=True)
         return
-    _, _, visibility_raw, condition_raw = parts
+    _, _, visibility_raw, condition_raw, *page_raw = parts
     visibility = _normalize_visibility_filter(visibility_raw)
     condition = _normalize_condition_filter(condition_raw)
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw[0]))
+        except ValueError:
+            await call.answer("Некорректные данные", show_alert=True)
+            return
     await _send_achievement_management(
         call.message,
         visibility_filter=visibility,
         condition_filter=condition,
+        page=page,
         as_edit=True,
     )
     await call.answer()
@@ -577,10 +598,10 @@ async def ach_details_callback(call: types.CallbackQuery):
     if not call.message:
         return
     parts = call.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         await call.answer("Некорректный идентификатор", show_alert=True)
         return
-    _, _, ach_id_str, visibility_raw, condition_raw = parts
+    _, _, ach_id_str, visibility_raw, condition_raw, *page_raw = parts
     try:
         ach_id_int = int(ach_id_str)
     except ValueError:
@@ -588,6 +609,13 @@ async def ach_details_callback(call: types.CallbackQuery):
         return
     visibility = _normalize_visibility_filter(visibility_raw)
     condition = _normalize_condition_filter(condition_raw)
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw[0]))
+        except ValueError:
+            await call.answer("Некорректный идентификатор", show_alert=True)
+            return
 
     async with async_session() as session:
         achievement = await session.get(Achievement, ach_id_int)
@@ -599,13 +627,14 @@ async def ach_details_callback(call: types.CallbackQuery):
         )
 
     text = _build_detail_text(achievement, total)
-    return_callback = f"ach:manage:{visibility}:{condition}"
+    return_callback = f"ach:manage:{visibility}:{condition}:{page}"
     markup = achievement_detail_inline(
         achievement.id,
         achievement.is_visible,
         return_callback,
         visibility,
         condition,
+        page=page,
     )
     await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     await call.answer()
@@ -624,10 +653,10 @@ async def ach_toggle_visibility(call: types.CallbackQuery):
     if not call.message:
         return
     parts = call.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         await call.answer("Некорректные данные", show_alert=True)
         return
-    _, _, ach_id_str, visibility_raw, condition_raw = parts
+    _, _, ach_id_str, visibility_raw, condition_raw, *page_raw = parts
     try:
         ach_id = int(ach_id_str)
     except ValueError:
@@ -635,6 +664,13 @@ async def ach_toggle_visibility(call: types.CallbackQuery):
         return
     visibility = _normalize_visibility_filter(visibility_raw)
     condition = _normalize_condition_filter(condition_raw)
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw[0]))
+        except ValueError:
+            await call.answer("Некорректные данные", show_alert=True)
+            return
 
     async with async_session() as session:
         achievement = await session.get(Achievement, ach_id)
@@ -651,9 +687,10 @@ async def ach_toggle_visibility(call: types.CallbackQuery):
     markup = achievement_detail_inline(
         ach_id,
         achievement.is_visible,
-        f"ach:manage:{visibility}:{condition}",
+        f"ach:manage:{visibility}:{condition}:{page}",
         visibility,
         condition,
+        page=page,
     )
     await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     await call.answer("Видимость обновлена")
