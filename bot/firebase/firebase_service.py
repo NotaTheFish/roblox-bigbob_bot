@@ -22,11 +22,8 @@ logger = logging.getLogger(__name__)
 # Firebase Settings
 # -------------------------------
 
-DEFAULT_DATABASE_URL = (
-    "https://moderation-ad9f6-default-rtdb.europe-west1.firebasedatabase.app"
-)
-
 FIREBASE_ENV_VAR = "FIREBASE_SERVICE_ACCOUNT"
+FIREBASE_DATABASE_URL_ENV = "FIREBASE_DATABASE_URL"
 
 
 def load_credentials() -> credentials.Certificate:
@@ -69,7 +66,12 @@ def init_firebase() -> firebase_admin.App:
         return _firebase_app
 
     cred = load_credentials()
-    db_url = os.getenv("FIREBASE_DATABASE_URL", DEFAULT_DATABASE_URL)
+    db_url = os.getenv(FIREBASE_DATABASE_URL_ENV)
+
+    if not db_url:
+        raise RuntimeError(
+            f"❌ {FIREBASE_DATABASE_URL_ENV} environment variable is required for Firebase"
+        )
 
     _firebase_app = firebase_admin.initialize_app(
         cred, {"databaseURL": db_url}
