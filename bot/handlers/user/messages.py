@@ -1,5 +1,7 @@
 """Message handler for secret word achievements."""
 
+import logging
+
 from aiogram import Router, types
 from sqlalchemy import select
 
@@ -15,19 +17,40 @@ async def _matches_secret_word(message: types.Message) -> bool:
     if not message.from_user:
         return False
 
-    text = (message.text or "").strip()
-    if not text:
+    normalized_text = (message.text or "").strip().lower()
+    if not normalized_text:
         return False
 
     async with async_session() as session:
-        secret_words = await session.scalars(
-            select(Achievement.condition_value).where(Achievement.condition_type == "secret_word")
-        )
+        secret_words = (
+            await session.scalars(
+                select(Achievement.condition_value).where(Achievement.condition_type == "secret_word")
+            )
+        ).all()
 
-        lowered_text = text.lower()
+        compared_values = []
         for value in secret_words:
-            if isinstance(value, str) and lowered_text == value.strip().lower():
+            if not isinstance(value, str):
+                continue
+
+            normalized_value = value.strip().lower()
+            compared_values.append(normalized_value)
+
+            if normalized_text == normalized_value:
+                logging.info(
+                    "Secret word match for user %s: user_text=%r matched_value=%r",
+                    message.from_user.id,
+                    normalized_text,
+                    normalized_value,
+                )
                 return True
+
+    logging.info(
+        "No secret word match for user %s: user_text=%r compared_values=%r",
+        message.from_user.id,
+        normalized_text,
+        compared_values,
+    )
 
     return False
 
