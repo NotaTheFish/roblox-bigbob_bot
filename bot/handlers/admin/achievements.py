@@ -896,7 +896,14 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
 
     if condition_type == AchievementConditionType.SECRET_WORD.value:
         if raw_value == "-":
-            value = None
+            await state.update_data(
+                condition_type=AchievementConditionType.NONE.value,
+                condition_value=None,
+                condition_threshold=None,
+            )
+            await state.set_state(AchievementsState.waiting_for_visibility)
+            await message.answer("Сделать достижение видимым сразу? (да/нет)")
+            return
         elif not raw_value:
             await message.answer("Секретная фраза не должна быть пустой")
             return
