@@ -45,7 +45,7 @@ async def handle_secret_word_message(message: types.Message) -> None:
             session,
             user=user,
             trigger="secret_word",
-            payload={"message_id": message.message_id},
+            payload={"message_id": message.message_id, "text": message.text or ""},
         )
 
         await session.commit()

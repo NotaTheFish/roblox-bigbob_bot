@@ -90,7 +90,22 @@ async def evaluate_and_grant_achievements(
         if achievement.id in owned or achievement.manual_grant_only:
             continue
 
-        condition_met, condition_details = await _check_condition(session, achievement, user)
+        if achievement.condition_type:
+            try:
+                condition_type = AchievementConditionType(achievement.condition_type)
+            except ValueError:
+                continue
+            if condition_type is AchievementConditionType.SECRET_WORD and trigger != "secret_word":
+                # Skip secret word achievements for non-message triggers
+                continue
+
+        condition_met, condition_details = await _check_condition(
+            session,
+            achievement,
+            user,
+            trigger=trigger,
+            payload=payload,
+        )
         if not condition_met:
             continue
 
@@ -214,7 +229,12 @@ async def run_periodic_recalculation(stop_event: asyncio.Event | None = None) ->
 
 
 async def _check_condition(
-    session: AsyncSession, achievement: Achievement, user: User
+    session: AsyncSession,
+    achievement: Achievement,
+    user: User,
+    *,
+    trigger: str,
+    payload: Mapping[str, Any] | None = None,
 ) -> tuple[bool, Mapping[str, Any]]:
     condition_type = achievement.condition_type or AchievementConditionType.NONE
     if isinstance(condition_type, str):
@@ -225,6 +245,27 @@ async def _check_condition(
 
     if condition_type is AchievementConditionType.NONE:
         return True, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["balance"]]}
+
+    if condition_type is AchievementConditionType.SECRET_WORD:
+        if trigger != AchievementConditionType.SECRET_WORD.value:
+            return False, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["messages"]]}
+
+        message_text: str | None = None
+        if isinstance(payload, Mapping):
+            raw_message = payload.get("text")
+            if isinstance(raw_message, str):
+                message_text = raw_message.strip()
+
+        condition_value = achievement.condition_value
+        if not message_text or not isinstance(condition_value, str):
+            return False, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["messages"]]}
+
+        matches = message_text.lower() == condition_value.strip().lower()
+        return matches, {
+            "threshold": condition_value,
+            "observed": message_text,
+            "data_sources": [ACHIEVEMENT_DATA_SOURCES["messages"]],
+        }
 
     if condition_type is AchievementConditionType.FIRST_MESSAGE_SENT:
         has_message = bool(
