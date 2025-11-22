@@ -370,16 +370,74 @@ def _format_achievement_line(achievement: Achievement, context: AchievementConte
     if achievement.description:
         lines.append(f"<i>{html.escape(achievement.description)}</i>")
 
+    category = _categorize_achievement(achievement)
+
+    if category == "public":
+        condition_text = _describe_condition(achievement)
+        if condition_text:
+            lines.append(condition_text)
+
     if owned_entry and owned_entry.earned_at:
         lines.append(f"Получено: {to_msk(owned_entry.earned_at):%d.%m.%Y %H:%M} МСК")
     else:
         lines.append("Не получено")
 
-    progress_text = _format_progress(achievement, context)
-    if progress_text:
-        lines.append(progress_text)
+        if category == "public":
+        progress_text = _format_progress(achievement, context)
+        if progress_text:
+            lines.append(progress_text)
 
     return "\n".join(lines)
+
+
+def _describe_condition(achievement: Achievement) -> str | None:
+    condition_type = _normalize_condition_type(achievement.condition_type)
+    threshold = achievement.condition_threshold or 0
+
+    if condition_type is AchievementConditionType.NONE:
+        if achievement.manual_grant_only:
+            return "Условие: выдаётся вручную"
+        return "Условие: без условий"
+
+    if condition_type is AchievementConditionType.BALANCE_AT_LEAST:
+        return f"Условие: баланс монет ≥ {threshold}"
+    if condition_type is AchievementConditionType.NUTS_AT_LEAST:
+        return f"Условие: баланс орешков ≥ {threshold}"
+    if condition_type is AchievementConditionType.PURCHASE_COUNT_AT_LEAST:
+        return f"Условие: завершённых покупок ≥ {threshold}"
+    if condition_type is AchievementConditionType.PAYMENTS_SUM_AT_LEAST:
+        return f"Условие: сумма пополнений ≥ {threshold} монет"
+    if condition_type is AchievementConditionType.REFERRAL_COUNT_AT_LEAST:
+        return f"Условие: приглашённых друзей ≥ {threshold}"
+    if condition_type is AchievementConditionType.TIME_IN_GAME_AT_LEAST:
+        return f"Условие: время в игре ≥ {threshold} минут"
+    if condition_type is AchievementConditionType.SPENT_SUM_AT_LEAST:
+        return f"Условие: сумма трат ≥ {threshold} монет"
+    if condition_type is AchievementConditionType.PROMOCODE_REDEMPTION_COUNT_AT_LEAST:
+        return f"Условие: активаций промокодов ≥ {threshold}"
+    if condition_type is AchievementConditionType.PRODUCT_PURCHASE:
+        product_id, product_slug = _normalize_product_condition_value(
+            achievement.condition_value
+        )
+        if product_id is None and not product_slug:
+            return "Условие: покупка товара"
+        label = str(product_id) if product_id is not None else product_slug or ""
+        return f"Условие: покупка товара {html.escape(label)}"
+    if condition_type is AchievementConditionType.PROFILE_PHRASE_STREAK:
+        phrase: str | None = None
+        if isinstance(achievement.metadata_json, dict):
+            value = achievement.metadata_json.get("phrase")
+            if isinstance(value, str):
+                phrase = value.strip()
+        phrase_label = f"«{html.escape(phrase)}»" if phrase else "фраза"
+        return f"Условие: {phrase_label} без изменений ≥ {threshold} часов"
+    if condition_type is AchievementConditionType.SECRET_WORD:
+        label = achievement.condition_value if achievement.condition_value else "—"
+        if isinstance(label, str):
+            label = html.escape(label)
+        return f"Условие: секретное слово — {label}"
+
+    return None
 
 
 def _format_progress(achievement: Achievement, context: AchievementContext) -> str | None:
