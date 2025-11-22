@@ -112,6 +112,11 @@ CONDITION_TYPES: dict[str, dict[str, object]] = {
         "unit": "часов",
         "needs_phrase": True,
     },
+    AchievementConditionType.SECRET_WORD.value: {
+        "title": "Секретное слово",
+        "needs_value": True,
+        "needs_threshold": False,
+    },
 }
 
 CONDITION_ALIASES = {
@@ -144,6 +149,11 @@ CONDITION_ALIASES = {
     "описание": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
     "phrase": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
     "profile": AchievementConditionType.PROFILE_PHRASE_STREAK.value,
+    "секрет": AchievementConditionType.SECRET_WORD.value,
+    "секретное": AchievementConditionType.SECRET_WORD.value,
+    "слово": AchievementConditionType.SECRET_WORD.value,
+    "secret": AchievementConditionType.SECRET_WORD.value,
+    "secret_word": AchievementConditionType.SECRET_WORD.value,
 }
 
 
@@ -185,6 +195,14 @@ def _threshold_prompt(condition_type: str) -> str:
     return f"Введите числовой порог условия{suffix}:"
 
 
+def _value_prompt(condition_type: str) -> str:
+    if condition_type == AchievementConditionType.PRODUCT_PURCHASE.value:
+        return "Введите ID или slug товара (например, 42, starter-pack или 0 для любых):"
+    if condition_type == AchievementConditionType.SECRET_WORD.value:
+        return "Введите секретное слово или фразу (регистр не важен):"
+    return "Введите значение условия:"
+
+
 def _describe_condition(achievement: Achievement) -> str:
     condition_type = _condition_key(achievement.condition_type)
     info = CONDITION_TYPES.get(condition_type)
@@ -196,6 +214,11 @@ def _describe_condition(achievement: Achievement) -> str:
     if condition_type == AchievementConditionType.PRODUCT_PURCHASE.value:
         value = achievement.condition_value
         label = "любой товар" if value in {None, 0} else value
+        return f"{info['title']}: {label}"
+
+    if condition_type == AchievementConditionType.SECRET_WORD.value:
+        value = achievement.condition_value
+        label = value if value else "—"
         return f"{info['title']}: {label}"
 
     if condition_type == AchievementConditionType.PROFILE_PHRASE_STREAK.value:
@@ -828,9 +851,7 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
         return
     if info["needs_value"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_value)
-        await message.answer(
-            "Введите ID или slug товара (например, 42, starter-pack или 0 для любых):"
-        )
+        await message.answer(_value_prompt(normalized))
         return
     if info["needs_threshold"]:  # type: ignore[index]
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
@@ -864,7 +885,15 @@ async def ach_set_condition_phrase(message: types.Message, state: FSMContext):
 @router.message(StateFilter(AchievementsState.waiting_for_condition_value))
 async def ach_set_condition_value(message: types.Message, state: FSMContext):
     raw_value = message.text.strip()
-    if raw_value == "-":
+    data = await state.get_data()
+    condition_type = data.get("condition_type")
+
+    if condition_type == AchievementConditionType.SECRET_WORD.value:
+        if not raw_value:
+            await message.answer("Секретное слово не должно быть пустым")
+            return
+        value = raw_value
+    elif raw_value == "-":
         value: int | None = None
     else:
         normalized = raw_value.strip().lower()
@@ -879,8 +908,6 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
             return
 
     await state.update_data(condition_value=value)
-    data = await state.get_data()
-    condition_type = data.get("condition_type")
     info = CONDITION_TYPES.get(condition_type, {})
     if info.get("needs_threshold"):
         await state.set_state(AchievementsState.waiting_for_condition_threshold)
