@@ -395,7 +395,7 @@ def _format_achievement_line(achievement: Achievement, context: AchievementConte
     else:
         lines.append("Не получено")
 
-        if category == "public":
+    if category == "public":
         progress_text = _format_progress(achievement, context)
         if progress_text:
             lines.append(progress_text)
