@@ -24,6 +24,7 @@ class AdminUsersState(StatesGroup):
     banlist = State()
     banlist_search = State()
     viewing_user = State()
+    starting_bot = State()
     broadcasting = State()
 
 
