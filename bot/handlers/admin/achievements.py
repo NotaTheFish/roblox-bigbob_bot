@@ -843,6 +843,12 @@ async def ach_set_condition_type(message: types.Message, state: FSMContext):
         condition_type=normalized, condition_phrase=None, condition_value=None
     )
     info = CONDITION_TYPES[normalized]
+    if normalized == AchievementConditionType.SECRET_WORD.value:
+        await state.set_state(AchievementsState.waiting_for_condition_value)
+        await message.answer(
+            "Введите секретную фразу (оставьте '-' для пропуска проверки):"
+        )
+        return
     if info.get("needs_phrase"):
         await state.set_state(AchievementsState.waiting_for_condition_phrase)
         await message.answer(
@@ -889,10 +895,13 @@ async def ach_set_condition_value(message: types.Message, state: FSMContext):
     condition_type = data.get("condition_type")
 
     if condition_type == AchievementConditionType.SECRET_WORD.value:
-        if not raw_value:
-            await message.answer("Секретное слово не должно быть пустым")
+        if raw_value == "-":
+            value = None
+        elif not raw_value:
+            await message.answer("Секретная фраза не должна быть пустой")
             return
-        value = raw_value
+        else:
+            value = raw_value
     elif raw_value == "-":
         value: int | None = None
     else:
