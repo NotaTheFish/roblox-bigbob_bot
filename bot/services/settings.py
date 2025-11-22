@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db import Setting
 
 TON_RATE_SETTING_KEY = "ton_to_nuts_rate"
+BOT_STATUS_SETTING_KEY = "bot_status"
+BOT_STATUS_RUNNING = "running"
+BOT_STATUS_STOPPED = "stopped"
+DEFAULT_BOT_STATUS = BOT_STATUS_RUNNING
 
 
 async def get_setting(session: AsyncSession, key: str) -> Setting | None:
@@ -57,6 +61,25 @@ def _extract_decimal(value: Any) -> Decimal:
         raise ValueError("Cannot parse numeric setting value") from exc
 
 
+def _extract_bot_status(value: Any) -> str:
+    if isinstance(value, Mapping) and "value" in value:
+        value = value["value"]
+    if isinstance(value, str):
+        normalized = value.lower()
+        if normalized in {BOT_STATUS_RUNNING, BOT_STATUS_STOPPED}:
+            return normalized
+    return DEFAULT_BOT_STATUS
+
+
+async def get_bot_status(session: AsyncSession) -> str:
+    """Return the current bot status or the default when unset."""
+
+    setting = await get_setting(session, BOT_STATUS_SETTING_KEY)
+    if not setting or setting.value is None:
+        return DEFAULT_BOT_STATUS
+    return _extract_bot_status(setting.value)
+
+
 async def get_ton_rate(session: AsyncSession) -> Decimal | None:
     """Return the TON→nuts exchange rate or ``None`` when unavailable."""
 
@@ -86,7 +109,32 @@ async def set_ton_rate(
     )
 
 
+async def set_bot_status(
+    session: AsyncSession,
+    *,
+    status: str,
+    description: str | None = None,
+) -> Setting:
+    """Persist the bot availability status."""
+
+    normalized = status.lower()
+    if normalized not in {BOT_STATUS_RUNNING, BOT_STATUS_STOPPED}:
+        raise ValueError("Unsupported bot status")
+    return await upsert_setting(
+        session,
+        key=BOT_STATUS_SETTING_KEY,
+        value={"value": normalized},
+        description=description,
+    )
+
+
 __all__ = [
+    "BOT_STATUS_SETTING_KEY",
+    "BOT_STATUS_RUNNING",
+    "BOT_STATUS_STOPPED",
+    "DEFAULT_BOT_STATUS",
+    "get_bot_status",
+    "set_bot_status",
     "TON_RATE_SETTING_KEY",
     "get_setting",
     "get_ton_rate",
