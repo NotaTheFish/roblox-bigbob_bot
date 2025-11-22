@@ -35,6 +35,27 @@ router = Router(name="user_balance")
 logger = logging.getLogger(__name__)
 
 TON_DECIMAL_QUANT = Decimal("0.000000001")
+TOPUP_UNAVAILABLE_TEXT = (
+    "Этот способ пополнения временно недоступен. Пожалуйста, попробуйте позже."
+)
+
+
+async def _deny_topup(
+    call: types.CallbackQuery,
+    state: FSMContext,
+    *,
+    alert: bool = False,
+    close_keyboard: bool = False,
+) -> None:
+    if close_keyboard and call.message:
+        await call.message.edit_reply_markup(reply_markup=None)
+
+    await state.clear()
+
+    if call.message:
+        await call.message.answer(TOPUP_UNAVAILABLE_TEXT)
+
+    await call.answer(TOPUP_UNAVAILABLE_TEXT if alert else None, show_alert=alert)
 
 
 def _build_payment_keyboard(
@@ -120,9 +141,7 @@ async def topup_choose_stars(call: types.CallbackQuery, state: FSMContext):
     if not call.message:
         return await call.answer()
 
-    await state.set_state(TopUpState.waiting_for_package)
-    await call.message.edit_text("Выберите пакет пополнения:", reply_markup=stars_packages_kb())
-    await call.answer()
+    await _deny_topup(call, state, alert=True, close_keyboard=True)
 
 
 @router.callback_query(F.data == "topup:ton", StateFilter(TopUpState.choosing_method))
@@ -130,27 +149,7 @@ async def topup_choose_ton(call: types.CallbackQuery, state: FSMContext):
     if not call.message:
         return await call.answer()
 
-    async with async_session() as session:
-        ton_rate = await get_ton_rate(session)
-
-    if not ton_rate:
-        await call.answer("Оплата в TON временно недоступна", show_alert=True)
-        return
-
-    display_amounts = {}
-    for package in STARS_PACKAGES:
-        try:
-            ton_amount = _calculate_ton_amount(package.nuts_amount, ton_rate)
-            display_amounts[package.code] = _format_ton_amount(ton_amount)
-        except ValueError:
-            display_amounts[package.code] = "—"
-
-    await state.set_state(TopUpState.waiting_for_ton_package)
-    await call.message.edit_text(
-        "⚡ Оплата через @wallet — выберите пакет:",
-        reply_markup=ton_packages_kb(display_amounts),
-    )
-    await call.answer()
+    await _deny_topup(call, state, alert=True, close_keyboard=True)
 
 
 @router.callback_query(
@@ -160,6 +159,9 @@ async def topup_create_stars_invoice(call: types.CallbackQuery, state: FSMContex
     if not call.from_user:
         await call.answer("Ошибка — перезапустите бота", show_alert=True)
         return
+
+    await _deny_topup(call, state, alert=True, close_keyboard=True)
+    return  # Логика ниже сохранена для будущего включения платежей
 
     package_code = call.data.split(":", maxsplit=1)[1]
     package = STARS_PACKAGES_BY_CODE.get(package_code)
@@ -221,6 +223,9 @@ async def topup_create_ton_invoice(call: types.CallbackQuery, state: FSMContext)
     if not call.from_user:
         await call.answer("Ошибка — перезапустите бота", show_alert=True)
         return
+
+    await _deny_topup(call, state, alert=True, close_keyboard=True)
+    return  # Логика ниже сохранена для будущего включения платежей
 
     package_code = call.data.split(":", maxsplit=1)[1]
     package = STARS_PACKAGES_BY_CODE.get(package_code)
