@@ -369,7 +369,9 @@ def _format_progress(achievement: Achievement, context: AchievementContext) -> s
     if target <= 0:
         return None
 
-    return f"Прогресс: {current}/{target}"
+    displayed_current = min(current, target)
+
+    return f"Прогресс: {displayed_current}/{target}"
 
 
 def _normalize_product_condition_value(
