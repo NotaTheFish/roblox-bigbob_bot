@@ -1,6 +1,7 @@
 """Message handler for secret word achievements."""
 
 import logging
+import unicodedata
 
 from aiogram import Router, types
 from sqlalchemy import select
@@ -11,13 +12,31 @@ from backend.services.achievements import evaluate_and_grant_achievements
 router = Router(name="user_messages")
 
 
+def _normalize_text(text: str) -> str:
+    """Normalize text for comparison using Unicode NFC and casefolding."""
+
+    return unicodedata.normalize("NFC", text).casefold().strip()
+
+
 async def _matches_secret_word(message: types.Message) -> bool:
     """Check whether the incoming message matches a secret word condition."""
 
     if not message.from_user:
         return False
 
-    normalized_text = (message.text or "").strip().lower()
+    if getattr(message, "is_service", False):
+        return False
+
+    if message.content_type != types.ContentType.TEXT:
+        return False
+
+    if message.text is None:
+        return False
+
+    if message.text.startswith("/"):
+        return False
+
+    normalized_text = _normalize_text(message.text)
     if not normalized_text:
         return False
 
@@ -33,7 +52,7 @@ async def _matches_secret_word(message: types.Message) -> bool:
             if not isinstance(value, str):
                 continue
 
-            normalized_value = value.strip().lower()
+            normalized_value = _normalize_text(value)
             compared_values.append(normalized_value)
 
             if normalized_text == normalized_value:
