@@ -23,7 +23,11 @@ from bot.keyboards.admin_keyboards import (
     admin_demote_confirm_kb,
     admin_main_menu_kb,
     admin_users_menu_kb,
+    admin_users_status_kb,
     broadcast_cancel_kb,
+    ADMIN_BANLIST_CALLBACK,
+    ADMIN_START_CALLBACK,
+    ADMIN_STOP_CALLBACK,
     USERS_BROADCAST_BUTTON,
 )
 from bot.firebase.firebase_service import (
@@ -45,6 +49,12 @@ from bot.services.user_search import (
     render_search_profile,
 )
 from bot.services.user_titles import normalize_titles
+from bot.services.settings import (
+    BOT_STATUS_RUNNING,
+    BOT_STATUS_STOPPED,
+    get_current_bot_status,
+    set_current_bot_status,
+)
 from bot.states.admin_states import (
     AdminUsersState,
     GiveMoneyState,
@@ -137,6 +147,27 @@ async def _clear_user_card_keyboard(
         )
 
     await state.update_data(profile_message_id=None)
+
+
+async def _render_admin_status_controls(
+    message: types.Message, *, bot_status: str | None = None
+) -> None:
+    if not message.from_user or not _is_root_admin(message.from_user):
+        return
+
+    current_status = bot_status or await get_current_bot_status()
+    controls_kb = admin_users_status_kb(current_status, is_root=True)
+
+    if not controls_kb:
+        return
+
+    status_icon = "🟢" if current_status == BOT_STATUS_RUNNING else "⏸️"
+    status_label = "Бот работает" if current_status == BOT_STATUS_RUNNING else "Бот остановлен"
+
+    await message.answer(
+        f"{status_icon} {status_label}",
+        reply_markup=controls_kb,
+    )
 
 
 def _banlist_navigation_kb(
@@ -546,6 +577,69 @@ async def _send_users_list(message: types.Message):
         f"(например, {BOT_USER_ID_PREFIX}12345), ник в боте или username для поиска"
     )
     await message.answer(text, parse_mode="HTML", reply_markup=admin_users_menu_kb())
+    await _render_admin_status_controls(message)
+
+
+# -------- Управление статусом бота --------
+@router.callback_query(F.data == ADMIN_STOP_CALLBACK)
+async def admin_stop_bot(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not _is_root_admin(call.from_user):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    await set_current_bot_status(BOT_STATUS_STOPPED)
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+
+    if call.message:
+        await call.message.answer(
+            "🛑 Бот переведён в режим обслуживания.",
+            reply_markup=admin_users_menu_kb(),
+        )
+        await _render_admin_status_controls(call.message, bot_status=BOT_STATUS_STOPPED)
+
+    await call.answer("Бот остановлен")
+
+
+@router.callback_query(F.data == ADMIN_START_CALLBACK)
+async def admin_start_bot_prompt(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not _is_root_admin(call.from_user):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    await state.clear()
+    await state.set_state(AdminUsersState.starting_bot)
+
+    if call.message:
+        await call.message.answer(
+            "▶️ Отправьте короткий текст уведомления для пользователей перед запуском",
+            reply_markup=broadcast_cancel_kb(),
+        )
+
+    await call.answer()
+
+
+@router.callback_query(F.data == ADMIN_BANLIST_CALLBACK)
+async def admin_users_banlist_cb(call: types.CallbackQuery, state: FSMContext):
+    if not call.from_user:
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not await is_admin(call.from_user.id):
+        return await call.answer("Нет доступа", show_alert=True)
+
+    if not call.message:
+        return await call.answer("Сообщение недоступно", show_alert=True)
+
+    current_state = await state.get_state()
+    await state.update_data(banlist_return_state=current_state)
+    await state.set_state(AdminUsersState.banlist)
+    await _render_banlist_page(call.message, state, page=0)
+
+    await call.answer()
 
 
 @router.message(
@@ -573,6 +667,23 @@ async def admin_users_broadcast_start(message: types.Message, state: FSMContext)
         "📢 Отправьте текст рассылки или нажмите «✖️ Отмена».",
         reply_markup=broadcast_cancel_kb(),
     )
+
+
+@router.message(StateFilter(AdminUsersState.starting_bot), F.text == BROADCAST_CANCEL_BUTTON)
+async def admin_users_start_cancel(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not _is_root_admin(message.from_user):
+        return
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+
+    await message.answer(
+        "⏸️ Запуск отменён.", reply_markup=admin_users_menu_kb()
+    )
+    await _render_admin_status_controls(message)
 
 
 @router.message(~StateFilter(GiveMoneyState.waiting_for_amount), F.text == "👥 Пользователи")
@@ -789,6 +900,40 @@ async def admin_users_broadcast_preview(message: types.Message, state: FSMContex
         parse_mode="HTML",
         reply_markup=_broadcast_confirm_kb(),
     )
+
+
+@router.message(StateFilter(AdminUsersState.starting_bot))
+async def admin_users_start_notice(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        await state.clear()
+        return
+
+    if not _is_root_admin(message.from_user):
+        return
+
+    start_text = (message.text or "").strip()
+    if not start_text:
+        return await message.reply(
+            "❌ Текст уведомления не может быть пустым.",
+            reply_markup=broadcast_cancel_kb(),
+        )
+
+    await message.answer("📢 Рассылаю уведомление…")
+    sent, failed = await _broadcast_message(message.bot, start_text)
+
+    await set_current_bot_status(BOT_STATUS_RUNNING)
+
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
+
+    summary = (
+        "▶️ Бот запущен.\n"
+        f"✅ Уведомление отправлено: {sent}\n"
+        f"⚠️ Ошибок при доставке: {failed}"
+    )
+
+    await message.answer(summary, reply_markup=admin_users_menu_kb())
+    await _send_users_list(message)
 
 
 @router.message(

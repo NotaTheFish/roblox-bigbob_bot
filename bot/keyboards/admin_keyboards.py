@@ -11,6 +11,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.services.admin_logs import LogCategory
+from bot.services.settings import BOT_STATUS_STOPPED
 
 
 LOGS_REFRESH_BUTTON = "🔄 Обновить"
@@ -22,6 +23,10 @@ LOGS_ACHIEVEMENTS_BUTTON = "🏆 Достижения"
 
 
 USERS_BROADCAST_BUTTON = "📢 Оповестить"
+
+ADMIN_BANLIST_CALLBACK = "admin_users:banlist"
+ADMIN_STOP_CALLBACK = "bot_status:stop"
+ADMIN_START_CALLBACK = "bot_status:start"
 
 ACHIEVEMENT_VISIBILITY_FILTERS = {
     "all": "Все",
@@ -113,6 +118,22 @@ def admin_users_menu_kb() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="↩️ Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def admin_users_status_kb(bot_status: str, *, is_root: bool = False):
+    if not is_root:
+        return None
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚫 Бан-лист", callback_data=ADMIN_BANLIST_CALLBACK)
+
+    if bot_status == BOT_STATUS_STOPPED:
+        builder.button(text="▶️ Запустить", callback_data=ADMIN_START_CALLBACK)
+    else:
+        builder.button(text="🛑 Остановить", callback_data=ADMIN_STOP_CALLBACK)
+
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 def broadcast_cancel_kb() -> ReplyKeyboardMarkup:

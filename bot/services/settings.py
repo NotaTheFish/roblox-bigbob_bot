@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db import Setting
+from bot.db import Setting, async_session
 
 TON_RATE_SETTING_KEY = "ton_to_nuts_rate"
 BOT_STATUS_SETTING_KEY = "bot_status"
@@ -128,13 +128,35 @@ async def set_bot_status(
     )
 
 
+async def get_current_bot_status() -> str:
+    """Fetch the persisted bot status using a managed session."""
+
+    async with async_session() as session:
+        return await get_bot_status(session)
+
+
+async def set_current_bot_status(
+    status: str, *, description: str | None = None
+) -> Setting:
+    """Persist the bot status using a managed session and commit changes."""
+
+    async with async_session() as session:
+        setting = await set_bot_status(
+            session, status=status, description=description
+        )
+        await session.commit()
+        return setting
+
+
 __all__ = [
     "BOT_STATUS_SETTING_KEY",
     "BOT_STATUS_RUNNING",
     "BOT_STATUS_STOPPED",
     "DEFAULT_BOT_STATUS",
     "get_bot_status",
+    "get_current_bot_status",
     "set_bot_status",
+    "set_current_bot_status",
     "TON_RATE_SETTING_KEY",
     "get_setting",
     "get_ton_rate",
