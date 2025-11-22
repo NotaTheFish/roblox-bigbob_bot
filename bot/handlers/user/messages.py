@@ -1,15 +1,19 @@
 """Message handler for secret word achievements."""
 
 import logging
+import time
 import unicodedata
 
 from aiogram import Router, types
 from sqlalchemy import select
 
+from bot import config
 from bot.db import Achievement, User, async_session
 from backend.services.achievements import evaluate_and_grant_achievements
 
 router = Router(name="user_messages")
+
+last_secret_word_use: dict[int, float] = {}
 
 
 def _normalize_text(text: str) -> str:
@@ -34,6 +38,10 @@ async def _matches_secret_word(message: types.Message) -> bool:
         return False
 
     if message.text.startswith("/"):
+        return False
+
+    if _should_throttle_secret_word(message.from_user.id):
+        logging.info("Secret word throttle: user %s attempted too fast", message.from_user.id)
         return False
 
     normalized_text = _normalize_text(message.text)
@@ -71,6 +79,19 @@ async def _matches_secret_word(message: types.Message) -> bool:
         compared_values,
     )
 
+    return False
+
+
+def _should_throttle_secret_word(user_id: int, *, now: float | None = None) -> bool:
+    """Return True when the user has triggered the secret word too recently."""
+
+    current_time = time.monotonic() if now is None else now
+    last_time = last_secret_word_use.get(user_id)
+
+    if last_time is not None and current_time - last_time < config.SECRET_WORD_THROTTLE_SECONDS:
+        return True
+
+    last_secret_word_use[user_id] = current_time
     return False
 
 
