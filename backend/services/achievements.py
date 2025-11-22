@@ -31,6 +31,7 @@ from ..config import get_settings
 from ..database import session_scope
 from ..logging import get_logger
 from .nuts import add_nuts
+from .telegram import send_message
 
 logger = get_logger(__name__)
 
@@ -45,6 +46,36 @@ ACHIEVEMENT_DATA_SOURCES: Mapping[str, str] = {
     "messages": "internal:bot.messages",
     "profile": "internal:bot.profile",
 }
+
+
+def _escape_markdown(text: str) -> str:
+    """Escape characters that have special meaning in Markdown."""
+
+    markdown_chars = "\\`*_{}[]()#+-.!|>"
+    return "".join(f"\\{char}" if char in markdown_chars else char for char in text)
+
+
+async def notify_user_achievement_granted(*, user: User, achievement: Achievement) -> None:
+    """Send a Telegram DM informing the user about a newly granted achievement."""
+
+    if not user.tg_id:
+        return
+
+    name = _escape_markdown(achievement.name)
+    description = _escape_markdown(achievement.description or "")
+    reward = achievement.reward or 0
+
+    lines = [f"🏆 *{name}*"]
+    if reward > 0:
+        lines.append(f"Награда: {reward}🥜")
+    if description:
+        lines.append(description)
+
+    await send_message(
+        chat_id=user.tg_id,
+        text="\n".join(lines),
+        parse_mode="Markdown",
+    )
 
 
 def _normalize_product_condition_value(
@@ -132,6 +163,8 @@ async def evaluate_and_grant_achievements(
             reason=achievement.name,
             metadata={"achievement_id": achievement.id, "trigger": trigger},
         )
+
+        await notify_user_achievement_granted(user=user, achievement=achievement)
 
         log_payload = {
             "achievement_id": achievement.id,
@@ -492,4 +525,5 @@ __all__ = [
     "evaluate_and_grant_achievements",
     "evaluate_user_by_id",
     "run_periodic_recalculation",
+    "notify_user_achievement_granted",
 ]
