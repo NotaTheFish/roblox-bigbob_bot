@@ -30,6 +30,7 @@ from bot.firebase.firebase_service import (
     add_ban_to_firebase,
     remove_ban_from_firebase,
 )
+from bot.handlers.admin.achievements import admin_achievements_menu
 from bot.handlers.user.menu import _fetch_roblox_id, _get_cached_roblox_id
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.ban_appeal import ban_appeal_keyboard
@@ -72,6 +73,13 @@ logger = logging.getLogger(__name__)
 
 BANLIST_PAGE_SIZE = 1
 BROADCAST_CANCEL_BUTTON = "✖️ Отмена"
+ACHIEVEMENTS_MENU_BUTTONS = {
+    "🏆 Достижения",
+    "📃 Список",
+    "⚙️ Управление",
+    "📚 История",
+    "🎁 Выдать награду",
+}
 
 
 # -------- Проверка админа --------
@@ -687,6 +695,28 @@ async def admin_users_list(message: types.Message):
     await _send_users_list(message)
 
 
+@router.message(
+    StateFilter(
+        AdminUsersState.searching,
+        AdminUsersState.banlist,
+        AdminUsersState.banlist_search,
+        AdminUsersState.viewing_user,
+    ),
+    F.text == "🏆 Достижения",
+)
+async def admin_users_to_achievements(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
+
+    if not await is_admin(message.from_user.id):
+        return
+
+    await _clear_user_card_keyboard(message.bot, message.chat.id, state)
+    await state.clear()
+
+    await admin_achievements_menu(message)
+
+
 @router.message(StateFilter(AdminUsersState.viewing_user), F.text == "🔁 Обновить список")
 async def admin_users_refresh_from_user_card(message: types.Message, state: FSMContext):
     if not message.from_user:
@@ -1067,12 +1097,8 @@ async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
             "↩️ Назад",
             "↩️ В меню",
             USERS_BROADCAST_BUTTON,
-            "🏆 Достижения",
-            "📃 Список",
-            ⚙️ Управление",
-            "📚 История",
-            "🎁 Выдать награду",
         }
+        | ACHIEVEMENTS_MENU_BUTTONS,
     ),
 )
 async def admin_search_user(message: types.Message, state: FSMContext):
