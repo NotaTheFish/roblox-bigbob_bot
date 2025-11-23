@@ -261,16 +261,19 @@ async def _handle_search_input(
     query_text = (message.text or "").strip()
     if not query_text:
         await message.answer("Введите непустой поисковый запрос")
+        await state.set_state(AdminLogsState.browsing)
         return
 
     user = await find_user_by_query(query_text)
     if not user:
         await message.answer("Пользователь не найден")
+        await state.set_state(AdminLogsState.browsing)
         return
 
     is_target_admin = await is_admin(user.tg_id)
     if require_admin and not is_target_admin:
         await message.answer("Этот пользователь не является администратором")
+        await state.set_state(AdminLogsState.browsing)
         return
 
     await state.update_data(
