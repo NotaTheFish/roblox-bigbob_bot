@@ -51,8 +51,6 @@ MAX_ABOUT_LENGTH = 500
 NICKNAME_MIN_LENGTH = 3
 NICKNAME_MAX_LENGTH = 32
 NICKNAME_CHANGE_COOLDOWN = timedelta(days=7)
-TOP_SEARCH_TIMEOUT = timedelta(minutes=3)
-TOP_SEARCH_CANCEL = {"отмена", "cancel", "назад"}
 ROBLOX_ID_CACHE_TTL = timedelta(hours=1)
 ROBLOX_ID_CACHE: dict[str, tuple[str, datetime]] = {}
 
@@ -152,7 +150,7 @@ async def _set_profile_mode(state: FSMContext, active: bool) -> None:
             ProfileEditState.editing_nickname.state,
             ProfileEditState.choosing_title.state,
             ProfileEditState.choosing_achievement.state,
-            UserSearchState.waiting_for_query.state,
+            UserSearchState.query.state,
         }
         if current_state in profile_states:
             await state.clear()
@@ -415,26 +413,16 @@ async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
     if not call.message or not call.from_user:
         return await call.answer()
 
-    current_state = await state.get_state()
-    if current_state == UserSearchState.waiting_for_query.state:
-        data = await state.get_data()
-        expires_at = data.get("top_search_expires_at")
-        now_ts = datetime.now().timestamp()
-        if not expires_at or expires_at <= now_ts:
-            await state.clear()
-        else:
-            return await call.answer("Мы уже ждём ник", show_alert=True)
-
-    await state.set_state(UserSearchState.waiting_for_query)
-    expires_at = (datetime.now() + TOP_SEARCH_TIMEOUT).timestamp()
-    await state.update_data(top_search_expires_at=expires_at)
-    await call.message.answer(
-        (
-            "🔍 Отправьте ник в боте, Roblox ник, Telegram @username "
-            f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).\n"
-            "Напишите «Отмена», чтобы выйти из поиска."
-        )
+    top_users = await get_top_users(limit=15)
+    search_prompt = (
+        "🔍 Отправьте ник в боте, Roblox ник, Telegram @username "
+        f"или ID бота (например, {BOT_USER_ID_PREFIX}12345)."
     )
+
+    await call.message.answer(
+        f"{format_top_users(top_users)}\n\n{search_prompt}"
+    )
+    await state.set_state(UserSearchState.query)
     await call.answer()
 
 
@@ -443,7 +431,7 @@ async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
     if not call.message:
         return await call.answer()
 
-    if await state.get_state() == UserSearchState.waiting_for_query.state:
+    if await state.get_state() == UserSearchState.query.state:
         await state.clear()
 
     await _set_profile_mode(state, True)
@@ -451,54 +439,33 @@ async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-@router.message(UserSearchState.waiting_for_query, F.text == "Отмена")
-async def cancel_top_player_search(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Поиск отменён", reply_markup=profile_menu())
-
-
-@router.message(UserSearchState.waiting_for_query, F.text)
-async def handle_top_player_search(message: types.Message, state: FSMContext):
-    query = message.text.strip()
+@router.message(UserSearchState.query, F.text)
+async def handle_user_search(message: types.Message, state: FSMContext):
+    query = message.text.strip().lstrip("@")
     if not query:
         return await message.answer(
-            (
-                "Введите ник в боте, Roblox ник, Telegram @username "
-                f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).\n"
-                "Для выхода напишите «Отмена»."
-            )
+            "Введите ник в боте, Roblox ник, Telegram @username "
+            f"или ID бота (например, {BOT_USER_ID_PREFIX}12345).",
         )
-
-    data = await state.get_data()
-    expires_at = data.get("top_search_expires_at")
-    now_ts = datetime.now().timestamp()
-    if not expires_at or expires_at <= now_ts:
-        await state.clear()
-        await message.answer(
-            "⏳ Поиск истёк. Нажмите «Топ игроков» и начните поиск заново.",
-            reply_markup=profile_menu(),
-        )
-        return
-
-    if query.casefold() in TOP_SEARCH_CANCEL:
-        await state.clear()
-        await message.answer("Поиск отменён", reply_markup=profile_menu())
-        return
 
     user = await find_user_by_query(query, include_blocked=False)
     if not user:
         return await message.answer("❌ Игрок не найден. Попробуйте другой запрос.")
+
+    roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
+    if not roblox_id and user.username:
+        roblox_id = await _fetch_roblox_id(user.username, user.id)
 
     profile_text = render_search_profile(
         user,
         SearchRenderOptions(
             heading="🔎 <b>Игрок найден</b>",
             include_private_fields=False,
+            roblox_id=roblox_id,
         ),
     )
 
     await message.answer(profile_text, parse_mode="HTML")
-    await state.clear()
 
 
 @router.callback_query(F.data == "profile_edit:nickname")

@@ -28,4 +28,4 @@ class ProfileEditState(StatesGroup):
 
 
 class UserSearchState(StatesGroup):
-    waiting_for_query = State()
+    query = State()
