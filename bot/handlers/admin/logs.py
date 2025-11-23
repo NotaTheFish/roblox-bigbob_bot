@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from aiogram import F, Router, types
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
