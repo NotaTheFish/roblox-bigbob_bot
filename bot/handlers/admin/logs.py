@@ -11,14 +11,12 @@ from sqlalchemy import select
 from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
-    LOGS_ACHIEVEMENTS_BUTTON,
-    LOGS_ADMIN_PICK_BUTTON,
-    LOGS_NEXT_BUTTON,
-    LOGS_PREV_BUTTON,
-    LOGS_REFRESH_BUTTON,
-    LOGS_SEARCH_BUTTON,
-    admin_logs_filters_inline,
-    admin_logs_menu_kb,
+    LOGS_ADMIN_PICK_CALLBACK,
+    LOGS_NEXT_CALLBACK,
+    LOGS_PREV_CALLBACK,
+    LOGS_REFRESH_CALLBACK,
+    LOGS_SEARCH_CALLBACK,
+    admin_logs_controls_inline,
     admin_main_menu_kb,
 )
 from bot.keyboards.main_menu import main_menu
@@ -123,61 +121,7 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
         user_id=None,
         telegram_id=None,
         search_label=None,
-        reply_keyboard_sent=False,
     )
-    await _send_logs_message(message, state)
-
-
-@router.message(AdminLogsState.browsing, F.text == LOGS_REFRESH_BUTTON)
-async def refresh_logs(message: types.Message, state: FSMContext):
-    if await _require_admin_message(message):
-        await _send_logs_message(message, state)
-
-
-@router.message(AdminLogsState.browsing, F.text == LOGS_NEXT_BUTTON)
-async def next_page(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    data = await state.get_data()
-    current = int(data.get("page", 1))
-    await state.update_data(page=current + 1)
-    await _send_logs_message(message, state)
-
-
-@router.message(AdminLogsState.browsing, F.text == LOGS_PREV_BUTTON)
-async def previous_page(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    data = await state.get_data()
-    current = max(1, int(data.get("page", 1)) - 1)
-    await state.update_data(page=current)
-    await _send_logs_message(message, state)
-
-
-@router.message(AdminLogsState.browsing, F.text == LOGS_SEARCH_BUTTON)
-async def prompt_search(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    await state.set_state(AdminLogsState.waiting_for_query)
-    await message.answer("Введите ник в боте/username/ID/tg_username пользователя для поиска:")
-
-
-@router.message(AdminLogsState.browsing, F.text == LOGS_ADMIN_PICK_BUTTON)
-async def prompt_admin_search(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    if not message.from_user or message.from_user.id != ROOT_ADMIN_ID:
-        await message.answer("Только root-админ может выбирать администраторов")
-        return
-
-    await state.set_state(AdminLogsState.waiting_for_admin)
-    await message.answer("Введите ник в боте/username/ID/tg_username администратора:")
-
-
 @router.message(AdminLogsState.waiting_for_query)
 async def handle_search_query(message: types.Message, state: FSMContext):
     await _handle_search_input(message, state, require_admin=False)
@@ -188,19 +132,7 @@ async def handle_admin_search(message: types.Message, state: FSMContext):
     await _handle_search_input(message, state, require_admin=True)
 
 
-@router.message(AdminLogsState.browsing, F.text == LOGS_ACHIEVEMENTS_BUTTON)
-async def show_achievement_logs(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    await state.update_data(
-        category=LogCategory.ACHIEVEMENTS.value,
-        page=1,
-    )
-    await _send_logs_message(message, state)
-
-
-@router.callback_query(F.data.startswith("logs:category:"))
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data.startswith("logs:category:"))
 async def category_callback(call: types.CallbackQuery, state: FSMContext):
     if not await _require_admin_callback(call):
         return
@@ -212,8 +144,6 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("Неизвестная категория", show_alert=True)
 
     await call.answer()
-    await state.set_state(AdminLogsState.browsing)
-
     await state.update_data(category=category.value, page=1)
 
     if call.message:
@@ -246,6 +176,74 @@ async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(search_is_admin=False)
     await _send_logs_callback(call, state)
     await call.answer("Администратор разжалован")
+
+
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_REFRESH_CALLBACK)
+async def refresh_logs(call: types.CallbackQuery, state: FSMContext):
+    if not await _require_admin_callback(call):
+        return
+
+    await call.answer()
+    await _send_logs_callback(call, state)
+
+
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_NEXT_CALLBACK)
+async def next_page(call: types.CallbackQuery, state: FSMContext):
+    if not await _require_admin_callback(call):
+        return
+
+    data = await state.get_data()
+    current = int(data.get("page", 1))
+    await state.update_data(page=current + 1)
+    await call.answer()
+    await _send_logs_callback(call, state)
+
+
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_PREV_CALLBACK)
+async def previous_page(call: types.CallbackQuery, state: FSMContext):
+    if not await _require_admin_callback(call):
+        return
+
+    data = await state.get_data()
+    current = max(1, int(data.get("page", 1)) - 1)
+    await state.update_data(page=current)
+    await call.answer()
+    await _send_logs_callback(call, state)
+
+
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_SEARCH_CALLBACK)
+async def prompt_search(call: types.CallbackQuery, state: FSMContext):
+    if not await _require_admin_callback(call):
+        return
+
+    await call.answer()
+    await state.set_state(AdminLogsState.waiting_for_query)
+    if call.message:
+        await call.message.answer(
+            "Введите ник в боте/username/ID/tg_username пользователя для поиска:"
+        )
+
+
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_ADMIN_PICK_CALLBACK)
+async def prompt_admin_search(call: types.CallbackQuery, state: FSMContext):
+    if not await _require_admin_callback(call):
+        return
+
+    if not call.from_user or call.from_user.id != ROOT_ADMIN_ID:
+        await call.answer("Только root-админ может выбирать администраторов", show_alert=True)
+        return
+
+    await call.answer()
+    await state.set_state(AdminLogsState.waiting_for_admin)
+    if call.message:
+        await call.message.answer(
+            "Введите ник в боте/username/ID/tg_username администратора:"
+        )
+
+
+@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == "logs:noop")
+async def logs_noop(call: types.CallbackQuery):
+    await call.answer("Недоступно", show_alert=True)
 
 
 
@@ -309,7 +307,6 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
         return
 
     await state.set_state(AdminLogsState.browsing)
-    await _ensure_reply_keyboard(message, state)
     text, markup, _ = await _prepare_logs_view(state, message.from_user.id)
     await message.answer(text, parse_mode="HTML", reply_markup=markup)
 
@@ -341,23 +338,13 @@ async def _prepare_logs_view(
     )
     page = await fetch_logs_page(query)
     text = _format_logs_text(page, category, data)
-    markup = admin_logs_filters_inline(category)
-    return text, markup, page
-
-
-async def _ensure_reply_keyboard(message: types.Message, state: FSMContext) -> None:
-    if not message.from_user:
-        return
-
-    data = await state.get_data()
-    if data.get("reply_keyboard_sent"):
-        return
-
-    await message.answer(
-        "Используйте клавиатуру ниже для навигации по логам.",
-        reply_markup=admin_logs_menu_kb(is_root=message.from_user.id == ROOT_ADMIN_ID),
+    markup = admin_logs_controls_inline(
+        selected=category,
+        has_prev=page.has_prev,
+        has_next=page.has_next,
+        is_root=viewer_id == ROOT_ADMIN_ID,
     )
-    await state.update_data(reply_keyboard_sent=True)
+    return text, markup, page
 
 
 def _category_from_state(data: dict) -> LogCategory:

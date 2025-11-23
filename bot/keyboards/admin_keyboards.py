@@ -21,6 +21,12 @@ LOGS_PREV_BUTTON = "⬅️ Предыдущая"
 LOGS_NEXT_BUTTON = "➡️ Следующая"
 LOGS_ACHIEVEMENTS_BUTTON = "🏆 Достижения"
 
+LOGS_REFRESH_CALLBACK = "logs:refresh"
+LOGS_SEARCH_CALLBACK = "logs:search"
+LOGS_ADMIN_PICK_CALLBACK = "logs:pick_admin"
+LOGS_PREV_CALLBACK = "logs:prev"
+LOGS_NEXT_CALLBACK = "logs:next"
+
 
 USERS_BROADCAST_BUTTON = "📢 Оповестить"
 
@@ -92,6 +98,48 @@ def admin_logs_filters_inline(selected: LogCategory) -> InlineKeyboardMarkup:
             callback_data=f"logs:category:{category.value}",
         )
     builder.adjust(2, 2, 1)
+
+    return builder.as_markup()
+
+
+def admin_logs_controls_inline(
+    *,
+    selected: LogCategory,
+    has_prev: bool,
+    has_next: bool,
+    is_root: bool,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    for category in _LOG_CATEGORY_ORDER:
+        label = _LOG_CATEGORY_LABELS[category]
+        suffix = " ✅" if category == selected else ""
+        builder.button(
+            text=f"{label}{suffix}",
+            callback_data=f"logs:category:{category.value}",
+        )
+
+    builder.adjust(2, 2, 1)
+
+    builder.row(
+        InlineKeyboardButton(text=LOGS_REFRESH_BUTTON, callback_data=LOGS_REFRESH_CALLBACK),
+        InlineKeyboardButton(text=LOGS_SEARCH_BUTTON, callback_data=LOGS_SEARCH_CALLBACK),
+    )
+
+    if is_root:
+        builder.row(
+            InlineKeyboardButton(
+                text=LOGS_ADMIN_PICK_BUTTON, callback_data=LOGS_ADMIN_PICK_CALLBACK
+            )
+        )
+
+    prev_callback = LOGS_PREV_CALLBACK if has_prev else "logs:noop"
+    next_callback = LOGS_NEXT_CALLBACK if has_next else "logs:noop"
+
+    builder.row(
+        InlineKeyboardButton(text=LOGS_PREV_BUTTON, callback_data=prev_callback),
+        InlineKeyboardButton(text=LOGS_NEXT_BUTTON, callback_data=next_callback),
+    )
 
     return builder.as_markup()
 
