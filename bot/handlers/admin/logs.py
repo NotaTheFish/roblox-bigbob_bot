@@ -12,13 +12,19 @@ from sqlalchemy import select
 from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
+    LOGS_ADMIN_PICK_BUTTON,
     LOGS_ADMIN_PICK_CALLBACK,
+    LOGS_NEXT_BUTTON,
     LOGS_NEXT_CALLBACK,
+    LOGS_PREV_BUTTON,
     LOGS_PREV_CALLBACK,
+    LOGS_REFRESH_BUTTON,
     LOGS_REFRESH_CALLBACK,
+    LOGS_SEARCH_BUTTON,
     LOGS_SEARCH_CALLBACK,
-    admin_logs_controls_inline,
+    admin_logs_filters_inline,
     admin_main_menu_kb,
+    admin_logs_menu_kb,
 )
 from bot.keyboards.main_menu import main_menu
 from bot.services.admin_logs import (
@@ -244,6 +250,58 @@ async def prompt_admin_search(call: types.CallbackQuery, state: FSMContext):
         )
 
 
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_REFRESH_BUTTON)
+async def refresh_logs_message(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    await _send_logs_message(message, state)
+
+
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_NEXT_BUTTON)
+async def next_page_message(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    data = await state.get_data()
+    current = int(data.get("page", 1))
+    await state.update_data(page=current + 1)
+    await _send_logs_message(message, state)
+
+
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_PREV_BUTTON)
+async def previous_page_message(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    data = await state.get_data()
+    current = max(1, int(data.get("page", 1)) - 1)
+    await state.update_data(page=current)
+    await _send_logs_message(message, state)
+
+
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_SEARCH_BUTTON)
+async def prompt_search_message(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    await state.set_state(AdminLogsState.waiting_for_query)
+    await message.answer("Введите ник в боте/username/ID/tg_username пользователя для поиска:")
+
+
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_ADMIN_PICK_BUTTON)
+async def prompt_admin_search_message(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    if not message.from_user or message.from_user.id != ROOT_ADMIN_ID:
+        await message.answer("Только root-админ может выбирать администраторов")
+        return
+
+    await state.set_state(AdminLogsState.waiting_for_admin)
+    await message.answer("Введите ник в боте/username/ID/tg_username администратора:")
+
+
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == "logs:noop")
 async def logs_noop(call: types.CallbackQuery):
     await call.answer("Недоступно", show_alert=True)
@@ -310,15 +368,23 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
         return
 
     await state.set_state(AdminLogsState.browsing)
-    text, markup, _ = await _prepare_logs_view(state, message.from_user.id)
-    await message.answer(text, parse_mode="HTML", reply_markup=markup)
+    text, inline_markup, reply_markup, _ = await _prepare_logs_view(
+        state, message.from_user.id
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=inline_markup)
+    await message.answer(
+        "Используйте клавиатуру ниже для управления логами.",
+        reply_markup=reply_markup,
+    )
 
 
 async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> None:
     if not call.message or not call.from_user:
         return
 
-    text, markup, _ = await _prepare_logs_view(state, call.from_user.id)
+    text, markup, _reply_markup, _ = await _prepare_logs_view(
+        state, call.from_user.id
+    )
     await send_chunked_html(
         call.message,
         text,
@@ -329,7 +395,9 @@ async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> N
 
 async def _prepare_logs_view(
     state: FSMContext, viewer_id: int
-) -> tuple[str, types.InlineKeyboardMarkup, LogPage]:
+) -> tuple[
+    str, types.InlineKeyboardMarkup, types.ReplyKeyboardMarkup, LogPage
+]:
     data = await state.get_data()
     category = _category_from_state(data)
     page_number = max(1, int(data.get("page", 1)))
@@ -341,13 +409,9 @@ async def _prepare_logs_view(
     )
     page = await fetch_logs_page(query)
     text = _format_logs_text(page, category, data)
-    markup = admin_logs_controls_inline(
-        selected=category,
-        has_prev=page.has_prev,
-        has_next=page.has_next,
-        is_root=viewer_id == ROOT_ADMIN_ID,
-    )
-    return text, markup, page
+    inline_markup = admin_logs_filters_inline(selected=category)
+    reply_markup = admin_logs_menu_kb(is_root=viewer_id == ROOT_ADMIN_ID)
+    return text, inline_markup, reply_markup, page
 
 
 def _category_from_state(data: dict) -> LogCategory:

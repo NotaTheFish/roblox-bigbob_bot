@@ -67,6 +67,8 @@ def admin_logs_menu_kb(*, is_root: bool = False) -> ReplyKeyboardMarkup:
         [KeyboardButton(text=LOGS_REFRESH_BUTTON), KeyboardButton(text=LOGS_SEARCH_BUTTON)],
         [KeyboardButton(text=LOGS_PREV_BUTTON), KeyboardButton(text=LOGS_NEXT_BUTTON)],
     ]
+    if is_root:
+        buttons.append([KeyboardButton(text=LOGS_ADMIN_PICK_BUTTON)])
     buttons.append([KeyboardButton(text="↩️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -109,39 +111,7 @@ def admin_logs_controls_inline(
     has_next: bool,
     is_root: bool,
 ) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-
-    for category in _LOG_CATEGORY_ORDER:
-        label = _LOG_CATEGORY_LABELS[category]
-        suffix = " ✅" if category == selected else ""
-        builder.button(
-            text=f"{label}{suffix}",
-            callback_data=f"logs:category:{category.value}",
-        )
-
-    builder.adjust(2, 2, 1)
-
-    builder.row(
-        InlineKeyboardButton(text=LOGS_REFRESH_BUTTON, callback_data=LOGS_REFRESH_CALLBACK),
-        InlineKeyboardButton(text=LOGS_SEARCH_BUTTON, callback_data=LOGS_SEARCH_CALLBACK),
-    )
-
-    if is_root:
-        builder.row(
-            InlineKeyboardButton(
-                text=LOGS_ADMIN_PICK_BUTTON, callback_data=LOGS_ADMIN_PICK_CALLBACK
-            )
-        )
-
-    prev_callback = LOGS_PREV_CALLBACK if has_prev else "logs:noop"
-    next_callback = LOGS_NEXT_CALLBACK if has_next else "logs:noop"
-
-    builder.row(
-        InlineKeyboardButton(text=LOGS_PREV_BUTTON, callback_data=prev_callback),
-        InlineKeyboardButton(text=LOGS_NEXT_BUTTON, callback_data=next_callback),
-    )
-
-    return builder.as_markup()
+return admin_logs_filters_inline(selected)
 
 
 def admin_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
