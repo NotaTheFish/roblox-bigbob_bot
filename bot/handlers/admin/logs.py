@@ -22,9 +22,8 @@ from bot.keyboards.admin_keyboards import (
     LOGS_REFRESH_CALLBACK,
     LOGS_SEARCH_BUTTON,
     LOGS_SEARCH_CALLBACK,
-    admin_logs_filters_inline,
+    admin_logs_controls_inline,
     admin_main_menu_kb,
-    admin_logs_menu_kb,
 )
 from bot.keyboards.main_menu import main_menu
 from bot.services.admin_logs import (
@@ -372,8 +371,7 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
         return
 
     await state.set_state(AdminLogsState.browsing)
-    data = await state.get_data()
-    text, inline_markup, reply_markup, _ = await _prepare_logs_view(
+    text, inline_markup, _ = await _prepare_logs_view(
         state, message.from_user.id
     )
 
@@ -387,18 +385,12 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
     for chunk in chunks[1:]:
         await message.answer(chunk, parse_mode="HTML")
 
-    if reply_markup and not data.get("reply_keyboard_sent"):
-        await message.answer("Навигация по логам", reply_markup=reply_markup)
-        await state.update_data(reply_keyboard_sent=True)
-
 
 async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> None:
     if not call.message or not call.from_user:
         return
 
-    text, markup, _reply_markup, _ = await _prepare_logs_view(
-        state, call.from_user.id
-    )
+    text, markup, _ = await _prepare_logs_view(state, call.from_user.id)
     await send_chunked_html(
         call.message,
         text,
@@ -410,7 +402,7 @@ async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> N
 async def _prepare_logs_view(
     state: FSMContext, viewer_id: int
 ) -> tuple[
-    str, types.InlineKeyboardMarkup, types.ReplyKeyboardMarkup, LogPage
+    str, types.InlineKeyboardMarkup, LogPage
 ]:
     data = await state.get_data()
     category = _category_from_state(data)
@@ -433,11 +425,15 @@ async def _prepare_logs_view(
         first_page=page.first_page,
     )
     text = _format_logs_text(page, category, data)
-    inline_markup = admin_logs_filters_inline(selected=category)
-    reply_markup = admin_logs_menu_kb(
-        has_prev=page.has_prev, has_next=page.next_offset is not None
+    inline_markup = admin_logs_controls_inline(
+        selected=category,
+        has_prev=page.has_prev,
+        has_next=page.next_offset is not None,
+        current_page=page.page,
+        total_pages=page.total_pages,
+        is_root=viewer_id == ROOT_ADMIN_ID,
     )
-    return text, inline_markup, reply_markup, page
+    return text, inline_markup, page
 
 
 def _category_from_state(data: dict) -> LogCategory:

@@ -114,9 +114,47 @@ def admin_logs_controls_inline(
     selected: LogCategory,
     has_prev: bool,
     has_next: bool,
+    current_page: int,
+    total_pages: int,
     is_root: bool,
 ) -> InlineKeyboardMarkup:
-    return admin_logs_filters_inline(selected)
+    builder = InlineKeyboardBuilder()
+
+    page_total = max(total_pages, 1)
+    page_indicator = InlineKeyboardButton(
+        text=f"📄 Стр. {current_page}/{page_total}", callback_data="logs:noop"
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️", callback_data=LOGS_PREV_CALLBACK if has_prev else "logs:noop"
+        ),
+        page_indicator,
+        InlineKeyboardButton(
+            text="➡️", callback_data=LOGS_NEXT_CALLBACK if has_next else "logs:noop"
+        ),
+    )
+
+    builder.row(
+        InlineKeyboardButton(text="🔄", callback_data=LOGS_REFRESH_CALLBACK),
+        InlineKeyboardButton(text="🔍", callback_data=LOGS_SEARCH_CALLBACK),
+    )
+
+    filter_buttons: list[InlineKeyboardButton] = []
+    for category in _LOG_CATEGORY_ORDER:
+        label = _LOG_CATEGORY_LABELS[category]
+        suffix = " ✅" if category == selected else ""
+        filter_buttons.append(
+            InlineKeyboardButton(
+                text=f"{label}{suffix}",
+                callback_data=f"logs:category:{category.value}",
+            )
+        )
+
+    builder.row(*filter_buttons[:2])
+    builder.row(*filter_buttons[2:4])
+    builder.row(*filter_buttons[4:])
+
+    return builder.as_markup()
 
 
 def admin_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
