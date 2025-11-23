@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import unicodedata
 from typing import Any, Mapping
 
 from sqlalchemy import func, select
@@ -46,6 +47,12 @@ ACHIEVEMENT_DATA_SOURCES: Mapping[str, str] = {
     "messages": "internal:bot.messages",
     "profile": "internal:bot.profile",
 }
+
+
+def _normalize_secret_word_text(text: str) -> str:
+    """Normalize secret word text using NFC and casefolding."""
+
+    return unicodedata.normalize("NFC", text).casefold().strip()
 
 
 def _escape_markdown(text: str) -> str:
@@ -110,7 +117,7 @@ async def evaluate_and_grant_achievements(
     """Recalculate user progress and grant achievements when thresholds are met."""
 
     owned_result = await session.scalars(
-        select(UserAchievement.achievement_id).where(UserAchievement.tg_id == user.tg_id)
+        select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)
     )
     owned = set(owned_result.all())
 
@@ -293,7 +300,12 @@ async def _check_condition(
         if not message_text or not isinstance(condition_value, str):
             return False, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["messages"]]}
 
-        matches = message_text.lower() == condition_value.strip().lower()
+        normalized_message = _normalize_secret_word_text(message_text)
+        normalized_value = _normalize_secret_word_text(condition_value)
+        if not normalized_message or not normalized_value:
+            return False, {"data_sources": [ACHIEVEMENT_DATA_SOURCES["messages"]]}
+
+        matches = normalized_message == normalized_value
         return matches, {
             "threshold": condition_value,
             "observed": message_text,
