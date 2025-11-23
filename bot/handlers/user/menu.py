@@ -34,7 +34,7 @@ from bot.services.user_titles import normalize_titles
 from bot.states.user_states import (
     ProfileEditState,
     PromoInputState,
-    TopPlayersSearchState,
+    UserSearchState,
 )
 from backend.services.achievements import evaluate_and_grant_achievements
 from bot.utils.referrals import ensure_referral_code
@@ -152,7 +152,7 @@ async def _set_profile_mode(state: FSMContext, active: bool) -> None:
             ProfileEditState.editing_nickname.state,
             ProfileEditState.choosing_title.state,
             ProfileEditState.choosing_achievement.state,
-            TopPlayersSearchState.waiting_for_query.state,
+            UserSearchState.waiting_for_query.state,
         }
         if current_state in profile_states:
             await state.clear()
@@ -416,7 +416,7 @@ async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
         return await call.answer()
 
     current_state = await state.get_state()
-    if current_state == TopPlayersSearchState.waiting_for_query.state:
+    if current_state == UserSearchState.waiting_for_query.state:
         data = await state.get_data()
         expires_at = data.get("top_search_expires_at")
         now_ts = datetime.now().timestamp()
@@ -425,7 +425,7 @@ async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
         else:
             return await call.answer("Мы уже ждём ник", show_alert=True)
 
-    await state.set_state(TopPlayersSearchState.waiting_for_query)
+    await state.set_state(UserSearchState.waiting_for_query)
     expires_at = (datetime.now() + TOP_SEARCH_TIMEOUT).timestamp()
     await state.update_data(top_search_expires_at=expires_at)
     await call.message.answer(
@@ -443,7 +443,7 @@ async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
     if not call.message:
         return await call.answer()
 
-    if await state.get_state() == TopPlayersSearchState.waiting_for_query.state:
+    if await state.get_state() == UserSearchState.waiting_for_query.state:
         await state.clear()
 
     await _set_profile_mode(state, True)
@@ -451,7 +451,7 @@ async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-@router.message(StateFilter(TopPlayersSearchState.waiting_for_query), F.text)
+@router.message(StateFilter(UserSearchState.waiting_for_query), F.text)
 async def handle_top_player_search(message: types.Message, state: FSMContext):
     query = message.text.strip()
     if not query:

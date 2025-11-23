@@ -27,5 +27,5 @@ class ProfileEditState(StatesGroup):
     choosing_achievement = State()
 
 
-class TopPlayersSearchState(StatesGroup):
+class UserSearchState(StatesGroup):
     waiting_for_query = State()
