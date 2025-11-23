@@ -20,7 +20,7 @@ from bot.states.user_states import SupportRequestState
 router = Router(name="user_support")
 
 
-@router.message(F.text == "🆘 Поддержка")
+@router.message(StateFilter(None), F.text == "🆘 Поддержка")
 async def open_support_menu(message: types.Message):
     await message.answer(
         "🆘 Поддержка\nНапишите ваш вопрос, нажав «✍️ Написать в поддержку».",

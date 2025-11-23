@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from aiogram import F, Router, types
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
@@ -80,8 +80,8 @@ def _achievements_view_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-@router.message(Command("achievements"))
-@router.message(F.text == "🏆 Достижения игрока")
+@router.message(StateFilter(None), Command("achievements"))
+@router.message(StateFilter(None), F.text == "🏆 Достижения игрока")
 async def achievements_entry(message: types.Message):
     if not message.from_user:
         return
