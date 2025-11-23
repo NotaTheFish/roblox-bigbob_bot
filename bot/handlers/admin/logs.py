@@ -443,25 +443,133 @@ def _format_record_line(position: int, record: LogRecord) -> str:
     timestamp = to_msk(record.created_at).strftime("%d.%m %H:%M")
     title = html.escape(record.message or record.event_type)
 
-    user_bits: list[str] = []
+    user_line = _format_user_line(record)
+    meta_line = (
+        f"    Событие: #{record.id} • {html.escape(record.event_type)}"
+    )
+    details = _format_data_details(record)
+
+    parts = [
+        f"{position}. <b>{timestamp}</b> — {title}",
+        user_line,
+        meta_line,
+        *details,
+    ]
+    return "\n".join(parts)
+
+
+def _format_user_line(record: LogRecord) -> str:
+    details: list[str] = []
+    data = record.data if isinstance(record.data, dict) else {}
+
+    for key in ("username", "tg_username", "redeemed_by_username"):
+        username = data.get(key)
+        if username:
+            username = str(username)
+            prefix = "" if username.startswith("@") else "@"
+            details.append(f"{prefix}{html.escape(username)}")
+
+    full_name = data.get("full_name")
+    if full_name:
+        details.append(html.escape(str(full_name)))
+
     if record.telegram_id:
-        user_bits.append(f"tg:<code>{record.telegram_id}</code>")
+        details.append(f"tg:<code>{record.telegram_id}</code>")
     if record.user_id:
-        user_bits.append(f"id:{record.user_id}")
-    suffix = f" ({' '.join(user_bits)})" if user_bits else ""
+        details.append(f"id:{record.user_id}")
 
-    data_preview = _format_data_preview(record.data)
-    preview_line = f"\n    <i>{data_preview}</i>" if data_preview else ""
-
-    return f"{position}. <b>{timestamp}</b> — {title}{suffix}{preview_line}"
+    summary = "; ".join(details) if details else "—"
+    return f"    Пользователь: {summary}"
 
 
-def _format_data_preview(data: object) -> str:
-    if not isinstance(data, dict) or not data:
-        return ""
-    items = list(data.items())[:2]
-    formatted = [f"{html.escape(str(k))}={html.escape(str(v))}" for k, v in items]
-    return ", ".join(formatted)
+def _format_data_details(record: LogRecord) -> list[str]:
+    if not isinstance(record.data, dict) or not record.data:
+        return []
+
+    allowed_keys = _EVENT_DATA_KEYS.get(record.event_type)
+    payload = record.data
+
+    if allowed_keys is None:
+        keys = [key for key in _DATA_LABELS if key in payload]
+    else:
+        keys = [key for key in allowed_keys if key in payload]
+
+    lines: list[str] = []
+    for key in keys:
+        value = payload.get(key)
+        if value in (None, ""):
+            continue
+        label = _DATA_LABELS.get(key, key)
+        lines.append(f"    • {label}: {html.escape(str(value))}")
+
+    return ["    Детали:", *lines] if lines else []
+
+
+_DATA_LABELS: dict[str, str] = {
+    "achievement_id": "ID достижения",
+    "amount": "Сумма",
+    "closed_message": "Сообщение",
+    "demoted_by": "Разжалован",
+    "full_name": "Имя",
+    "limit": "Лимит на пользователя",
+    "message_id": "ID сообщения",
+    "observed": "Наблюдаемое значение",
+    "payment_id": "ID платежа",
+    "product_id": "ID товара",
+    "promo_code": "Промокод",
+    "promo_id": "ID промокода",
+    "promo_type": "Тип",
+    "promo_type_label": "Тип",
+    "provider": "Провайдер",
+    "redeemed_by_username": "Username",
+    "referral_code": "Реферальный код",
+    "referral_id": "ID реферала",
+    "referral_bonus": "Реферальный бонус",
+    "referred_id": "ID приглашённого",
+    "referrer_id": "ID реферера",
+    "reward_amount": "Награда",
+    "reward_effect": "Эффект",
+    "reward_text": "Описание награды",
+    "reward_type": "Тип награды",
+    "server_id": "ID сервера",
+    "server_name": "Сервер",
+    "slug": "Slug",
+    "status": "Статус",
+    "thread_id": "Тред",
+    "threshold": "Порог",
+    "to": "Получатель",
+    "trigger": "Триггер",
+    "url": "URL",
+    "username": "Username",
+}
+
+
+_EVENT_DATA_KEYS: dict[str, list[str]] = {
+    "achievement_granted": ["achievement_id", "trigger", "observed", "threshold"],
+    "achievement_manual_granted": ["achievement_id", "trigger"],
+    "admin_demoted": ["demoted_by"],
+    "ban_appeal": ["full_name", "username", "message_id"],
+    "payment_applied": ["payment_id", "amount"],
+    "payment_received": ["payment_id", "provider"],
+    "product_created": ["product_id", "slug", "limit", "referral_bonus"],
+    "product_deleted": ["product_id"],
+    "promocode_redeemed": [
+        "promo_code",
+        "promo_type_label",
+        "reward_text",
+        "reward_amount",
+    ],
+    "purchase_created": ["product_id", "status"],
+    "referral_attached": ["referred_id", "referral_code"],
+    "referred_signup": ["referrer_id", "referral_code"],
+    "server_created": ["slug", "url"],
+    "server_deleted": ["server_id", "server_name"],
+    "server_link_removed": ["closed_message"],
+    "server_link_updated": ["url"],
+    "support_close": ["thread_id"],
+    "support_reply": ["thread_id", "to"],
+    "user_registered": ["referral_code"],
+}
 
 
 def _describe_user(user) -> str:
