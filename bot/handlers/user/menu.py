@@ -105,6 +105,12 @@ def _cache_roblox_id(username: str, roblox_id: str) -> None:
     ROBLOX_ID_CACHE[username.lower()] = (roblox_id, datetime.now(timezone.utc))
 
 
+async def _prompt_top_menu(message: types.Message) -> None:
+    await message.answer(
+        "🏆 Топ игроков — выберите действие:", reply_markup=top_players_keyboard()
+    )
+
+
 async def _fetch_roblox_id(username: str, user_id: int | None) -> str | None:
     username = username.strip()
     if not username:
@@ -392,10 +398,7 @@ async def profile_top(message: types.Message, state: FSMContext):
     await _set_profile_mode(state, True)
     top_users = await get_top_users(limit=15)
     await message.answer(format_top_users(top_users))
-    await message.answer(
-        "🏆 Топ игроков — выберите действие:",
-        reply_markup=top_players_keyboard(),
-    )
+    await _prompt_top_menu(message)
 
 
 @router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:top15")
@@ -450,7 +453,10 @@ async def handle_user_search(message: types.Message, state: FSMContext):
 
     user = await find_user_by_query(query, include_blocked=False)
     if not user:
-        return await message.answer("❌ Игрок не найден. Попробуйте другой запрос.")
+        await state.clear()
+        await message.answer("❌ Игрок не найден. Попробуйте другой запрос.")
+        await _prompt_top_menu(message)
+        return
 
     roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
     if not roblox_id and user.username:
@@ -466,6 +472,8 @@ async def handle_user_search(message: types.Message, state: FSMContext):
     )
 
     await message.answer(profile_text, parse_mode="HTML")
+    await state.clear()
+    await _prompt_top_menu(message)
 
 
 @router.callback_query(F.data == "profile_edit:nickname")
