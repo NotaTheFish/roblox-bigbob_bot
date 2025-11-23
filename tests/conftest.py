@@ -57,7 +57,9 @@ class MockMessage:
         self.answers: list[tuple[str, dict]] = []
         self.replies: list[tuple[str, dict]] = []
 
-    async def answer(self, text: str, **kwargs):
+    async def answer(self, text: str, *args, **kwargs):
+        if args:
+            text = "".join([text, *map(str, args)])
         self.answers.append((text, kwargs))
         return text
 

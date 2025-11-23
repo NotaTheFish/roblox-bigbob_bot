@@ -16,6 +16,30 @@ router = Router(name="user_start")
 logger = logging.getLogger(__name__)
 
 
+def _extract_referral_argument(
+    message: types.Message, command: CommandStart | None
+) -> str:
+    """Safely derive referral argument even if CommandStart is missing."""
+
+    if command and getattr(command, "args", None):
+        return (command.args or "").strip()
+
+    get_args = getattr(message, "get_args", None)
+    if callable(get_args):
+        try:
+            return (get_args() or "").strip()
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+    text = (message.text or "") if hasattr(message, "text") else ""
+    if text:
+        parts = text.split(maxsplit=1)
+        if parts and parts[0].startswith("/start") and len(parts) > 1:
+            return parts[1].strip()
+
+    return ""
+
+
 async def _generate_bot_user_id(session) -> str:
     """Reserve the next bot-specific user identifier."""
 
@@ -27,13 +51,13 @@ async def _generate_bot_user_id(session) -> str:
 
 
 @router.message(CommandStartFilter())
-async def start_cmd(message: types.Message, command: CommandStart):
+async def start_cmd(message: types.Message, command: CommandStart | None = None):
     if not message.from_user:
         return
 
     tg_id = message.from_user.id
     tg_username = normalize_tg_username(message.from_user.username)
-    referral_code = (command.args or "").strip()  # ✅ Aiogram v3 способ
+    referral_code = _extract_referral_argument(message, command)
     branch = "unknown"
 
     try:
