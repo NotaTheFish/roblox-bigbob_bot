@@ -49,6 +49,22 @@ async def send_message(
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
+    except httpx.HTTPStatusError as exc:  # pragma: no cover - network issues
+        status_code = exc.response.status_code if exc.response else None
+        if status_code == 403:
+            logger.warning(
+                "Telegram API request forbidden",
+                extra={"chat_id": chat_id},
+                exc_info=True,
+            )
+            return
+
+        logger.warning(
+            "Telegram API request failed",
+            extra={"chat_id": chat_id},
+            exc_info=True,
+        )
+        raise TelegramNotificationError("Telegram API request failed") from exc
     except httpx.HTTPError as exc:  # pragma: no cover - network issues
         logger.warning(
             "Telegram API request failed",
