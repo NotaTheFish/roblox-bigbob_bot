@@ -464,7 +464,8 @@ async def handle_user_search(message: types.Message, state: FSMContext):
     user = await find_user_by_query(query, include_blocked=False)
     if not user:
         await message.answer("❌ Игрок не найден. Попробуйте другой запрос.")
-        await _send_top_with_search_prompt(message, state)
+        await state.set_state(UserSearchState.query)
+        await message.answer(SEARCH_PROMPT)
         return
 
     roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
@@ -481,7 +482,8 @@ async def handle_user_search(message: types.Message, state: FSMContext):
     )
 
     await message.answer(profile_text, parse_mode="HTML")
-    await _send_top_with_search_prompt(message, state)
+    await state.set_state(UserSearchState.query)
+    await message.answer(SEARCH_PROMPT)
 
 
 @router.callback_query(F.data == "profile_edit:nickname")
