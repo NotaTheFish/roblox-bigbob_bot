@@ -78,7 +78,10 @@ class LogPage:
 
     entries: Sequence[LogRecord]
     page: int
+    total_pages: int
+    first_page: int
     offset: int
+    pages_offsets: Sequence[int]
     next_offset: int | None
     has_prev: bool
 

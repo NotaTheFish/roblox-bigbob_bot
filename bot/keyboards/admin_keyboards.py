@@ -60,11 +60,20 @@ def admin_main_menu_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def admin_logs_menu_kb() -> ReplyKeyboardMarkup:
+def admin_logs_menu_kb(
+    *, has_prev: bool = True, has_next: bool = True
+) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text=LOGS_REFRESH_BUTTON), KeyboardButton(text=LOGS_SEARCH_BUTTON)],
-        [KeyboardButton(text=LOGS_PREV_BUTTON), KeyboardButton(text=LOGS_NEXT_BUTTON)],
     ]
+    navigation_row: list[KeyboardButton] = []
+    if has_prev:
+        navigation_row.append(KeyboardButton(text=LOGS_PREV_BUTTON))
+    if has_next:
+        navigation_row.append(KeyboardButton(text=LOGS_NEXT_BUTTON))
+
+    if navigation_row:
+        buttons.append(navigation_row)
     buttons.append([KeyboardButton(text="↩️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 

@@ -55,8 +55,10 @@ async def is_admin(uid: int) -> bool:
 
 def _extract_offsets(data: dict) -> list[int]:
     offsets = data.get("offsets")
-    if isinstance(offsets, list) and all(isinstance(item, int) for item in offsets):
-        return offsets or [0]
+    if isinstance(offsets, (list, tuple)) and all(
+        isinstance(item, int) for item in offsets
+    ):
+        return list(offsets) or [0]
     return [0]
 
 
@@ -313,13 +315,16 @@ async def _update_page(state: FSMContext, delta: int) -> None:
     data = await state.get_data()
     current = int(data.get("page", 1))
     offsets = _extract_offsets(data)
+    first_page = int(data.get("first_page", 1))
+    total_pages = int(data.get("total_pages", len(offsets))) or len(offsets)
 
     if delta < 0:
-        await state.update_data(page=max(1, current + delta))
+        await state.update_data(page=max(first_page, current + delta))
         return
 
-    if delta > 0 and len(offsets) > current:
-        await state.update_data(page=current + 1)
+    max_page = total_pages if total_pages > 0 else len(offsets)
+    if delta > 0 and current < max_page:
+        await state.update_data(page=min(max_page, current + 1))
 
 
 async def _handle_search_prompt(
@@ -409,24 +414,29 @@ async def _prepare_logs_view(
 ]:
     data = await state.get_data()
     category = _category_from_state(data)
-    page_number = max(1, int(data.get("page", 1)))
+    requested_page = max(int(data.get("page", 1)), int(data.get("first_page", 1)))
     offsets = _extract_offsets(data)
-    start_offset = offsets[min(page_number - 1, len(offsets) - 1)]
+    start_offset = offsets[min(requested_page - 1, len(offsets) - 1)]
     query = LogQuery(
         category=category,
-        page=page_number,
+        page=requested_page,
         offset=start_offset,
         user_id=data.get("user_id"),
         telegram_id=data.get("telegram_id"),
     )
     page = await _collect_logs_page(query, category, data)
-    updated_offsets = offsets[: page_number - 1] + [start_offset]
-    if page.next_offset is not None:
-        updated_offsets.append(page.next_offset)
-    await state.update_data(offsets=updated_offsets, page=page_number)
+    updated_offsets = list(page.pages_offsets) or offsets
+    await state.update_data(
+        offsets=updated_offsets,
+        page=page.page,
+        total_pages=page.total_pages,
+        first_page=page.first_page,
+    )
     text = _format_logs_text(page, category, data)
     inline_markup = admin_logs_filters_inline(selected=category)
-    reply_markup = admin_logs_menu_kb()
+    reply_markup = admin_logs_menu_kb(
+        has_prev=page.has_prev, has_next=page.next_offset is not None
+    )
     return text, inline_markup, reply_markup, page
 
 
@@ -439,6 +449,58 @@ def _category_from_state(data: dict) -> LogCategory:
 
 
 async def _collect_logs_page(
+    query: LogQuery, category: LogCategory, data: dict
+) -> LogPage:
+    offsets, pages = await _paginate_logs(query, category, data)
+    total_pages = len(offsets) or 1
+    first_page = 1 if total_pages <= 10 else total_pages - 9
+    target_page = min(max(query.page, first_page), total_pages)
+
+    page = pages.get(target_page)
+    if page is None:
+        target_offset = offsets[target_page - 1] if offsets else 0
+        page = await _build_log_page(
+            replace(query, page=target_page, offset=target_offset), category, data
+        )
+
+    has_prev = target_page > first_page
+    next_offset = page.next_offset if target_page < total_pages else None
+
+    return replace(
+        page,
+        page=target_page,
+        total_pages=total_pages,
+        first_page=first_page,
+        pages_offsets=tuple(offsets),
+        next_offset=next_offset,
+        has_prev=has_prev,
+    )
+
+
+async def _paginate_logs(
+    query: LogQuery, category: LogCategory, data: dict
+) -> tuple[list[int], dict[int, LogPage]]:
+    offsets: list[int] = []
+    pages: dict[int, LogPage] = {}
+    current_offset = 0
+    page_number = 1
+
+    while True:
+        page_query = replace(query, page=page_number, offset=current_offset)
+        page = await _build_log_page(page_query, category, data)
+        pages[page_number] = page
+        offsets.append(current_offset)
+
+        if page.next_offset is None:
+            break
+
+        current_offset = page.next_offset
+        page_number += 1
+
+    return offsets, pages
+
+
+async def _build_log_page(
     query: LogQuery, category: LogCategory, data: dict
 ) -> LogPage:
     start_offset = max(0, query.offset)
@@ -459,7 +521,10 @@ async def _collect_logs_page(
             candidate_page = LogPage(
                 entries=candidate_entries,
                 page=query.page,
+                total_pages=query.page,
+                first_page=1,
                 offset=start_offset,
+                pages_offsets=(),
                 next_offset=(start_offset + len(candidate_entries)) if more_ahead else None,
                 has_prev=query.page > 1,
             )
@@ -468,7 +533,10 @@ async def _collect_logs_page(
                 return LogPage(
                     entries=entries,
                     page=query.page,
+                    total_pages=query.page,
+                    first_page=1,
                     offset=start_offset,
+                    pages_offsets=(),
                     next_offset=next_offset,
                     has_prev=query.page > 1,
                 )
@@ -484,7 +552,10 @@ async def _collect_logs_page(
     return LogPage(
         entries=entries,
         page=query.page,
+        total_pages=query.page,
+        first_page=1,
         offset=start_offset,
+        pages_offsets=(),
         next_offset=next_offset,
         has_prev=query.page > 1,
     )
@@ -494,7 +565,7 @@ def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
     lines = [
         f"📜 <b>{_CATEGORY_TITLES[category]}</b>",
         f"Период: последние {DEFAULT_LOGS_RANGE_HOURS} ч.",
-        f"Страница {page.page}",
+        f"Страница {page.page}/{page.total_pages}",
     ]
     search_label = data.get("search_label")
     if search_label:
@@ -506,16 +577,6 @@ def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
     else:
         for idx, record in enumerate(page.entries, start=1):
             lines.append(_format_record_line(idx, record))
-
-    hints = []
-    if page.has_prev:
-        hints.append("Есть предыдущая страница")
-
-    if page.next_offset is not None:
-        hints.append("Есть следующая страница")
-
-    if hints:
-        lines.extend(("", " / ".join(hints)))
 
     return "\n".join(lines)
 

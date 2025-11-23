@@ -48,7 +48,10 @@ async def test_next_page_updates_query(monkeypatch, message_factory, mock_state)
         return LogPage(
             entries=[],
             page=query.page,
+            total_pages=query.page + 1,
+            first_page=1,
             offset=query.offset,
+            pages_offsets=(query.offset, query.offset + 1),
             next_offset=query.offset + 1,
             has_prev=query.page > 1,
         )
@@ -72,7 +75,7 @@ async def test_next_page_updates_query(monkeypatch, message_factory, mock_state)
 
     assert captured and captured[-1].page == 2
     assert captured[-1].offset == 10
-    assert any("Страница 2" in text for text, _ in message.answers)
+    assert any("Страница 2/" in text for text, _ in message.answers)
 
 
 @pytest.mark.anyio("asyncio")
@@ -84,7 +87,10 @@ async def test_search_filters_logs(monkeypatch, message_factory, mock_state):
         return LogPage(
             entries=[],
             page=query.page,
+            total_pages=query.page,
+            first_page=1,
             offset=query.offset,
+            pages_offsets=(query.offset,),
             next_offset=None,
             has_prev=False,
         )
@@ -124,7 +130,10 @@ async def test_category_callback_switches_filter(monkeypatch, callback_query_fac
         return LogPage(
             entries=[],
             page=query.page,
+            total_pages=query.page,
+            first_page=1,
             offset=query.offset,
+            pages_offsets=(query.offset,),
             next_offset=None,
             has_prev=False,
         )
@@ -154,7 +163,10 @@ async def test_achievement_button_switches_category(monkeypatch, message_factory
         return LogPage(
             entries=[],
             page=query.page,
+            total_pages=query.page,
+            first_page=1,
             offset=query.offset,
+            pages_offsets=(query.offset,),
             next_offset=None,
             has_prev=False,
         )
@@ -191,7 +203,10 @@ async def test_demote_confirm_removes_admin(monkeypatch, callback_query_factory,
         return LogPage(
             entries=[],
             page=query.page,
+            total_pages=query.page,
+            first_page=1,
             offset=query.offset,
+            pages_offsets=(query.offset,),
             next_offset=None,
             has_prev=False,
         )
