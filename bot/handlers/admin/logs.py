@@ -39,9 +39,73 @@ router = Router(name="admin_logs")
 logger = logging.getLogger(__name__)
 
 
+MAX_MESSAGE_LENGTH = 4096
+
+
 async def is_admin(uid: int) -> bool:
     async with async_session() as session:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
+
+
+def _split_html_text(text: str, limit: int = MAX_MESSAGE_LENGTH) -> list[str]:
+    if limit <= 0:
+        return [text]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for line in text.splitlines():
+        line_length = len(line)
+        separator_len = 1 if current else 0
+        if current_len + separator_len + line_length <= limit:
+            if current:
+                current_len += separator_len
+            current.append(line)
+            current_len += line_length
+            continue
+
+        if current:
+            chunks.append("\n".join(current))
+            current = []
+            current_len = 0
+
+        while line_length > limit:
+            chunks.append(line[:limit])
+            line = line[limit:]
+            line_length = len(line)
+
+        if line:
+            current = [line]
+            current_len = line_length
+
+    if current:
+        chunks.append("\n".join(current))
+
+    return chunks or [""]
+
+
+async def send_chunked_html(
+    message: types.Message,
+    text: str,
+    *,
+    parse_mode: str | None = None,
+    reply_markup: types.InlineKeyboardMarkup | None = None,
+) -> None:
+    chunks = _split_html_text(text)
+    if not chunks:
+        return
+
+    if len(chunks) == 1:
+        await message.edit_text(chunks[0], parse_mode=parse_mode, reply_markup=reply_markup)
+        return
+
+    await message.edit_text(chunks[0], parse_mode=parse_mode)
+
+    for chunk in chunks[1:-1]:
+        await message.answer(chunk, parse_mode=parse_mode)
+
+    await message.answer(chunks[-1], parse_mode=parse_mode, reply_markup=reply_markup)
 
 
 @router.message(F.text == "📜 Логи")
@@ -244,7 +308,12 @@ async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> N
         return
 
     text, markup, _ = await _prepare_logs_view(state, call.from_user.id)
-    await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    await send_chunked_html(
+        call.message,
+        text,
+        parse_mode="HTML",
+        reply_markup=markup,
+    )
 
 
 async def _prepare_logs_view(
