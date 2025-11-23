@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 
 BANLIST_PAGE_SIZE = 1
 BROADCAST_CANCEL_BUTTON = "✖️ Отмена"
-ACHIEVEMENTS_MENU_BUTTONS = {
+ACHIEVEMENTS_MENU_BUTTONS: set[str] = {
     "🏆 Достижения",
     "📃 Список",
     "⚙️ Управление",
