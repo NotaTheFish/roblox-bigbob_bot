@@ -211,7 +211,15 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
     except ValueError:
         return await call.answer("Неизвестная категория", show_alert=True)
 
+    await call.answer()
+    await state.set_state(AdminLogsState.browsing)
+
     await state.update_data(category=category.value, page=1)
+
+    if call.message:
+        call.message.text = None
+        call.message.reply_markup = None
+
     await _send_logs_callback(call, state)
 
 
