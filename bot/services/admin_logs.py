@@ -14,7 +14,7 @@ from bot.db import LogEntry, async_session
 
 
 DEFAULT_LOGS_RANGE_HOURS = 24
-LOGS_PAGE_SIZE = 20
+LOGS_BATCH_SIZE = 20
 
 
 class LogCategory(str, Enum):
@@ -52,6 +52,7 @@ class LogQuery:
 
     category: LogCategory
     page: int = 1
+    offset: int = 0
     start_at: datetime | None = None
     end_at: datetime | None = None
     user_id: int | None = None
@@ -77,8 +78,18 @@ class LogPage:
 
     entries: Sequence[LogRecord]
     page: int
+    offset: int
+    next_offset: int | None
     has_prev: bool
-    has_next: bool
+
+
+@dataclass(slots=True, frozen=True)
+class LogBatch:
+    """A batch of log records loaded from the database."""
+
+    entries: Sequence[LogRecord]
+    offset: int
+    next_offset: int | None
 
 
 class LogsRepository:
@@ -87,8 +98,8 @@ class LogsRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def fetch(self, query: LogQuery) -> LogPage:
-        normalized_page = max(1, query.page)
+    async def fetch(self, query: LogQuery) -> LogBatch:
+        normalized_offset = max(0, query.offset)
         end_at = query.end_at or datetime.now(tz=timezone.utc)
         start_at = query.start_at or end_at - timedelta(hours=DEFAULT_LOGS_RANGE_HOURS)
 
@@ -108,14 +119,14 @@ class LogsRepository:
             stmt = stmt.where(LogEntry.telegram_id == query.telegram_id)
 
         stmt = stmt.order_by(LogEntry.created_at.desc())
-        stmt = stmt.offset((normalized_page - 1) * LOGS_PAGE_SIZE).limit(LOGS_PAGE_SIZE + 1)
+        stmt = stmt.offset(normalized_offset).limit(LOGS_BATCH_SIZE + 1)
 
         result = await self._session.scalars(stmt)
         rows = list(result.all())
 
-        has_next = len(rows) > LOGS_PAGE_SIZE
-        if has_next:
-            rows = rows[:LOGS_PAGE_SIZE]
+        has_more = len(rows) > LOGS_BATCH_SIZE
+        if has_more:
+            rows = rows[:LOGS_BATCH_SIZE]
 
         records = [
             LogRecord(
@@ -130,16 +141,13 @@ class LogsRepository:
             for row in rows
         ]
 
-        return LogPage(
-            entries=records,
-            page=normalized_page,
-            has_prev=normalized_page > 1,
-            has_next=has_next,
-        )
+        next_offset = normalized_offset + len(records) if has_more else None
+
+        return LogBatch(entries=records, offset=normalized_offset, next_offset=next_offset)
 
 
-async def fetch_logs_page(query: LogQuery) -> LogPage:
-    """Fetch a page of logs using the shared async session factory."""
+async def fetch_logs_page(query: LogQuery) -> LogBatch:
+    """Fetch a batch of logs using the shared async session factory."""
 
     async with async_session() as session:
         repository = LogsRepository(session)
@@ -148,7 +156,8 @@ async def fetch_logs_page(query: LogQuery) -> LogPage:
 
 __all__ = [
     "DEFAULT_LOGS_RANGE_HOURS",
-    "LOGS_PAGE_SIZE",
+    "LOGS_BATCH_SIZE",
+    "LogBatch",
     "LogCategory",
     "LogPage",
     "LogQuery",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+from dataclasses import replace
 from datetime import datetime
 
 from aiogram import F, Router, types
@@ -44,11 +45,19 @@ logger = logging.getLogger(__name__)
 
 
 MAX_MESSAGE_LENGTH = 4096
+LOGS_PAGE_TEXT_LIMIT = 3900
 
 
 async def is_admin(uid: int) -> bool:
     async with async_session() as session:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
+
+
+def _extract_offsets(data: dict) -> list[int]:
+    offsets = data.get("offsets")
+    if isinstance(offsets, list) and all(isinstance(item, int) for item in offsets):
+        return offsets or [0]
+    return [0]
 
 
 def _split_html_text(text: str, limit: int = MAX_MESSAGE_LENGTH) -> list[str]:
@@ -124,6 +133,7 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
     await state.update_data(
         category=LogCategory.TOPUPS.value,
         page=1,
+        offsets=[0],
         user_id=None,
         telegram_id=None,
         search_label=None,
@@ -149,7 +159,7 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("Неизвестная категория", show_alert=True)
 
     await call.answer()
-    await state.update_data(category=category.value, page=1)
+    await state.update_data(category=category.value, page=1, offsets=[0])
 
     await _send_logs_callback(call, state)
 
@@ -203,7 +213,9 @@ async def show_achievement_logs(message: types.Message, state: FSMContext):
     if not await _require_admin_message(message):
         return
 
-    await state.update_data(category=LogCategory.ACHIEVEMENTS.value, page=1)
+    await state.update_data(
+        category=LogCategory.ACHIEVEMENTS.value, page=1, offsets=[0]
+    )
     await _send_logs_message(message, state)
 
 
@@ -257,6 +269,7 @@ async def _handle_search_input(
         telegram_id=user.tg_id,
         search_label=_describe_user(user),
         page=1,
+        offsets=[0],
     )
     await state.set_state(AdminLogsState.browsing)
     await _send_logs_message(message, state)
@@ -299,7 +312,14 @@ async def _handle_page_change(
 async def _update_page(state: FSMContext, delta: int) -> None:
     data = await state.get_data()
     current = int(data.get("page", 1))
-    await state.update_data(page=max(1, current + delta))
+    offsets = _extract_offsets(data)
+
+    if delta < 0:
+        await state.update_data(page=max(1, current + delta))
+        return
+
+    if delta > 0 and len(offsets) > current:
+        await state.update_data(page=current + 1)
 
 
 async def _handle_search_prompt(
@@ -390,13 +410,20 @@ async def _prepare_logs_view(
     data = await state.get_data()
     category = _category_from_state(data)
     page_number = max(1, int(data.get("page", 1)))
+    offsets = _extract_offsets(data)
+    start_offset = offsets[min(page_number - 1, len(offsets) - 1)]
     query = LogQuery(
         category=category,
         page=page_number,
+        offset=start_offset,
         user_id=data.get("user_id"),
         telegram_id=data.get("telegram_id"),
     )
-    page = await fetch_logs_page(query)
+    page = await _collect_logs_page(query, category, data)
+    updated_offsets = offsets[: page_number - 1] + [start_offset]
+    if page.next_offset is not None:
+        updated_offsets.append(page.next_offset)
+    await state.update_data(offsets=updated_offsets, page=page_number)
     text = _format_logs_text(page, category, data)
     inline_markup = admin_logs_filters_inline(selected=category)
     reply_markup = admin_logs_menu_kb()
@@ -409,6 +436,58 @@ def _category_from_state(data: dict) -> LogCategory:
         return LogCategory(value)
     except ValueError:
         return LogCategory.TOPUPS
+
+
+async def _collect_logs_page(
+    query: LogQuery, category: LogCategory, data: dict
+) -> LogPage:
+    start_offset = max(0, query.offset)
+    entries: list[LogRecord] = []
+    current_offset = start_offset
+
+    while True:
+        batch = await fetch_logs_page(replace(query, offset=current_offset))
+
+        if not batch.entries:
+            next_offset = batch.next_offset
+            break
+
+        for idx, record in enumerate(batch.entries):
+            candidate_entries = [*entries, record]
+            more_ahead = idx < len(batch.entries) - 1 or batch.next_offset is not None
+
+            candidate_page = LogPage(
+                entries=candidate_entries,
+                page=query.page,
+                offset=start_offset,
+                next_offset=(start_offset + len(candidate_entries)) if more_ahead else None,
+                has_prev=query.page > 1,
+            )
+            if len(_format_logs_text(candidate_page, category, data)) > LOGS_PAGE_TEXT_LIMIT:
+                next_offset = start_offset + len(entries)
+                return LogPage(
+                    entries=entries,
+                    page=query.page,
+                    offset=start_offset,
+                    next_offset=next_offset,
+                    has_prev=query.page > 1,
+                )
+
+            entries.append(record)
+
+        if batch.next_offset is None:
+            next_offset = None
+            break
+
+        current_offset = batch.next_offset
+
+    return LogPage(
+        entries=entries,
+        page=query.page,
+        offset=start_offset,
+        next_offset=next_offset,
+        has_prev=query.page > 1,
+    )
 
 
 def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
@@ -431,7 +510,7 @@ def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
     hints = []
     if page.has_prev:
         hints.append("Есть предыдущая страница")
-    if page.has_next:
+        if page.next_offset is not None:
         hints.append("Есть следующая страница")
     if hints:
         lines.extend(("", " / ".join(hints)))

@@ -32,31 +32,38 @@ async def test_logs_repository_limits_page_size():
     session = FakeAsyncSession(scalars_results=[rows])
     repo = LogsRepository(session)
 
-    page = await repo.fetch(LogQuery(category=LogCategory.TOPUPS, page=1))
+    batch = await repo.fetch(LogQuery(category=LogCategory.TOPUPS, offset=0))
 
-    assert len(page.entries) == 20
-    assert page.has_next is True
-    assert page.has_prev is False
+    assert len(batch.entries) == 20
+    assert batch.next_offset == 20
+    assert batch.offset == 0
 
 
 @pytest.mark.anyio("asyncio")
 async def test_next_page_updates_query(monkeypatch, message_factory, mock_state):
     captured: list[LogQuery] = []
 
-    async def fake_fetch(query: LogQuery) -> LogPage:
+    async def fake_collect(query: LogQuery, *_args, **_kwargs) -> LogPage:
         captured.append(query)
-        return LogPage(entries=[], page=query.page, has_prev=query.page > 1, has_next=False)
+        return LogPage(
+            entries=[],
+            page=query.page,
+            offset=query.offset,
+            next_offset=query.offset + 1,
+            has_prev=query.page > 1,
+        )
 
     async def fake_is_admin(*_args, **_kwargs) -> bool:
         return True
 
-    monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
+    monkeypatch.setattr(logs, "_collect_logs_page", fake_collect)
     monkeypatch.setattr(logs, "is_admin", fake_is_admin)
 
     await mock_state.set_state(AdminLogsState.browsing)
     await mock_state.update_data(
         category=LogCategory.TOPUPS.value,
         page=1,
+        offsets=[0, 10],
         reply_keyboard_sent=True,
     )
 
@@ -64,6 +71,7 @@ async def test_next_page_updates_query(monkeypatch, message_factory, mock_state)
     await logs.next_page(message, mock_state)
 
     assert captured and captured[-1].page == 2
+    assert captured[-1].offset == 10
     assert any("Страница 2" in text for text, _ in message.answers)
 
 
@@ -71,9 +79,15 @@ async def test_next_page_updates_query(monkeypatch, message_factory, mock_state)
 async def test_search_filters_logs(monkeypatch, message_factory, mock_state):
     captured: list[LogQuery] = []
 
-    async def fake_fetch(query: LogQuery) -> LogPage:
+    async def fake_collect(query: LogQuery, *_args, **_kwargs) -> LogPage:
         captured.append(query)
-        return LogPage(entries=[], page=query.page, has_prev=False, has_next=False)
+        return LogPage(
+            entries=[],
+            page=query.page,
+            offset=query.offset,
+            next_offset=None,
+            has_prev=False,
+        )
 
     async def fake_is_admin(*_args, **_kwargs) -> bool:
         return True
@@ -87,7 +101,7 @@ async def test_search_filters_logs(monkeypatch, message_factory, mock_state):
             bot_nickname="TesterBot",
         )
 
-    monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
+    monkeypatch.setattr(logs, "_collect_logs_page", fake_collect)
     monkeypatch.setattr(logs, "is_admin", fake_is_admin)
     monkeypatch.setattr(logs, "find_user_by_query", fake_find_user)
 
@@ -105,14 +119,20 @@ async def test_search_filters_logs(monkeypatch, message_factory, mock_state):
 async def test_category_callback_switches_filter(monkeypatch, callback_query_factory, mock_state):
     captured: list[LogQuery] = []
 
-    async def fake_fetch(query: LogQuery) -> LogPage:
+    async def fake_collect(query: LogQuery, *_args, **_kwargs) -> LogPage:
         captured.append(query)
-        return LogPage(entries=[], page=query.page, has_prev=False, has_next=False)
+        return LogPage(
+            entries=[],
+            page=query.page,
+            offset=query.offset,
+            next_offset=None,
+            has_prev=False,
+        )
 
     async def fake_is_admin(*_args, **_kwargs) -> bool:
         return True
 
-    monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
+    monkeypatch.setattr(logs, "_collect_logs_page", fake_collect)
     monkeypatch.setattr(logs, "is_admin", fake_is_admin)
 
     await mock_state.set_state(AdminLogsState.browsing)
@@ -129,14 +149,20 @@ async def test_category_callback_switches_filter(monkeypatch, callback_query_fac
 async def test_achievement_button_switches_category(monkeypatch, message_factory, mock_state):
     captured: list[LogQuery] = []
 
-    async def fake_fetch(query: LogQuery) -> LogPage:
+    async def fake_collect(query: LogQuery, *_args, **_kwargs) -> LogPage:
         captured.append(query)
-        return LogPage(entries=[], page=query.page, has_prev=False, has_next=False)
+        return LogPage(
+            entries=[],
+            page=query.page,
+            offset=query.offset,
+            next_offset=None,
+            has_prev=False,
+        )
 
     async def fake_is_admin(*_args, **_kwargs) -> bool:
         return True
 
-    monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
+    monkeypatch.setattr(logs, "_collect_logs_page", fake_collect)
     monkeypatch.setattr(logs, "is_admin", fake_is_admin)
 
     await mock_state.set_state(AdminLogsState.browsing)
@@ -161,13 +187,19 @@ async def test_demote_confirm_removes_admin(monkeypatch, callback_query_factory,
     session = FakeAsyncSession(scalar_results=[admin])
     monkeypatch.setattr(logs, "async_session", make_async_session_stub(session))
 
-    async def fake_fetch(query: LogQuery) -> LogPage:
-        return LogPage(entries=[], page=query.page, has_prev=False, has_next=False)
+    async def fake_collect(query: LogQuery, *_args, **_kwargs) -> LogPage:
+        return LogPage(
+            entries=[],
+            page=query.page,
+            offset=query.offset,
+            next_offset=None,
+            has_prev=False,
+        )
 
     async def fake_is_admin(*_args, **_kwargs) -> bool:
         return True
 
-    monkeypatch.setattr(logs, "fetch_logs_page", fake_fetch)
+    monkeypatch.setattr(logs, "_collect_logs_page", fake_collect)
     monkeypatch.setattr(logs, "is_admin", fake_is_admin)
     monkeypatch.setattr(logs, "ROOT_ADMIN_ID", 1)
 
