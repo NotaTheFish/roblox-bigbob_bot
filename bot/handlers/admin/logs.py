@@ -510,8 +510,10 @@ def _format_logs_text(page: LogPage, category: LogCategory, data: dict) -> str:
     hints = []
     if page.has_prev:
         hints.append("Есть предыдущая страница")
-        if page.next_offset is not None:
+
+    if page.next_offset is not None:
         hints.append("Есть следующая страница")
+
     if hints:
         lines.extend(("", " / ".join(hints)))
 
