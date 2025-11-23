@@ -179,7 +179,7 @@ async def test_demote_confirm_removes_admin(monkeypatch, callback_query_factory,
         telegram_id=77,
     )
 
-    call = callback_query_factory("logs:demote_confirm:77", from_user_id=1)
+    call = callback_query_factory("demote_admin_confirm:77", from_user_id=1)
     await logs.demote_confirm(call, mock_state)
 
     assert session.deleted and session.deleted[0] is admin

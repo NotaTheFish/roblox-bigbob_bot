@@ -223,7 +223,7 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
     await _send_logs_callback(call, state)
 
 
-@router.callback_query(F.data.startswith("logs:demote_confirm:"))
+@router.callback_query(F.data.startswith("demote_admin_confirm:"))
 async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
     if not call.from_user:
         return await call.answer()
@@ -231,9 +231,9 @@ async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
         return await call.answer("Недостаточно прав", show_alert=True)
 
     try:
-        _, _, target_raw = (call.data or "").split(":", 2)
+        _, target_raw = (call.data or "").split(":", 1)
         target_id = int(target_raw)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return await call.answer("Некорректные данные", show_alert=True)
 
     if target_id == ROOT_ADMIN_ID:
