@@ -23,7 +23,6 @@ from bot.handlers.user.achievements import achievements_entry
 from bot.handlers.user.shop import user_shop
 from bot.handlers.user.balance import topup_start
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu
-from bot.keyboards.top_players import TOP_MENU_CALLBACK_PREFIX, top_players_keyboard
 from bot.services.profile_renderer import ProfileView, render_profile
 from bot.services.servers import get_ordered_servers, get_server_by_id
 from bot.services.stats import format_top_users, get_top_users
@@ -58,6 +57,10 @@ ROBLOX_ID_CACHE: dict[str, tuple[str, datetime]] = {}
 SEARCH_STATE_NAVIGATION_HANDLERS: dict[
     str, Callable[[types.Message, FSMContext], Awaitable[None]]
 ] = {}
+SEARCH_PROMPT = (
+    "🔍 Отправьте ник в боте, Roblox ник, Telegram @username "
+    f"или ID бота (например, {BOT_USER_ID_PREFIX}12345)."
+)
 
 
 def _profile_edit_keyboard() -> InlineKeyboardMarkup:
@@ -108,12 +111,6 @@ def _get_cached_roblox_id(username: str | None) -> str | None:
 
 def _cache_roblox_id(username: str, roblox_id: str) -> None:
     ROBLOX_ID_CACHE[username.lower()] = (roblox_id, datetime.now(timezone.utc))
-
-
-async def _prompt_top_menu(message: types.Message) -> None:
-    await message.answer(
-        "🏆 Топ игроков — выберите действие:", reply_markup=top_players_keyboard()
-    )
 
 
 async def profile_achievements(message: types.Message, state: FSMContext) -> None:
@@ -173,6 +170,14 @@ async def _set_profile_mode(state: FSMContext, active: bool) -> None:
         return
 
     await state.update_data(in_profile=True)
+
+
+async def _send_top_with_search_prompt(
+    message: types.Message, state: FSMContext
+) -> None:
+    top_users = await get_top_users(limit=15)
+    await message.answer(f"{format_top_users(top_users)}\n\n{SEARCH_PROMPT}")
+    await state.set_state(UserSearchState.query)
 
 
 async def _is_admin(uid: int) -> bool:
@@ -416,9 +421,7 @@ async def profile_topup(message: types.Message, state: FSMContext):
 async def profile_top(message: types.Message, state: FSMContext):
     await state.clear()
     await _set_profile_mode(state, True)
-    top_users = await get_top_users(limit=15)
-    await message.answer(format_top_users(top_users))
-    await _prompt_top_menu(message)
+    await _send_top_with_search_prompt(message, state)
 
 
 SEARCH_STATE_NAVIGATION_HANDLERS.update(
@@ -449,47 +452,6 @@ async def clear_search_state_on_navigation(message: types.Message, state: FSMCon
         await handler(message, state)
 
 
-@router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:top15")
-async def profile_top_fifteen(call: types.CallbackQuery):
-    if not call.message:
-        return await call.answer()
-
-    top_users = await get_top_users(limit=15)
-    await call.message.answer(format_top_users(top_users))
-    await call.answer()
-
-
-@router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:search")
-async def profile_top_search(call: types.CallbackQuery, state: FSMContext):
-    if not call.message or not call.from_user:
-        return await call.answer()
-
-    top_users = await get_top_users(limit=15)
-    search_prompt = (
-        "🔍 Отправьте ник в боте, Roblox ник, Telegram @username "
-        f"или ID бота (например, {BOT_USER_ID_PREFIX}12345)."
-    )
-
-    await call.message.answer(
-        f"{format_top_users(top_users)}\n\n{search_prompt}"
-    )
-    await state.set_state(UserSearchState.query)
-    await call.answer()
-
-
-@router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:back")
-async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
-    if not call.message:
-        return await call.answer()
-
-    if await state.get_state() == UserSearchState.query.state:
-        await state.clear()
-
-    await _set_profile_mode(state, True)
-    await call.message.answer("↩ Главное меню профиля", reply_markup=profile_menu())
-    await call.answer()
-
-
 @router.message(UserSearchState.query, F.text)
 async def handle_user_search(message: types.Message, state: FSMContext):
     query = message.text.strip().lstrip("@")
@@ -501,9 +463,8 @@ async def handle_user_search(message: types.Message, state: FSMContext):
 
     user = await find_user_by_query(query, include_blocked=False)
     if not user:
-        await state.clear()
         await message.answer("❌ Игрок не найден. Попробуйте другой запрос.")
-        await _prompt_top_menu(message)
+        await _send_top_with_search_prompt(message, state)
         return
 
     roblox_id = user.roblox_id or _get_cached_roblox_id(user.username)
@@ -520,8 +481,7 @@ async def handle_user_search(message: types.Message, state: FSMContext):
     )
 
     await message.answer(profile_text, parse_mode="HTML")
-    await state.clear()
-    await _prompt_top_menu(message)
+    await _send_top_with_search_prompt(message, state)
 
 
 @router.callback_query(F.data == "profile_edit:nickname")
