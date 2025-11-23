@@ -157,10 +157,6 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     await state.update_data(category=category.value, page=1)
 
-    if call.message:
-        call.message.text = None
-        call.message.reply_markup = None
-
     await _send_logs_callback(call, state)
 
 
