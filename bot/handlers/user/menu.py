@@ -205,8 +205,9 @@ def _nickname_cooldown_message(next_change_at: datetime, now: datetime) -> str:
 
 # --- Открыть подменю ---
 
-@router.message(StateFilter(None), F.text == "👤 Профиль")
+@router.message(F.text == "👤 Профиль")
 async def open_profile_menu(message: types.Message, state: FSMContext):
+    await state.clear()
     if not message.from_user:
         return
     await _set_profile_mode(state, True)
@@ -245,14 +246,16 @@ async def open_profile_menu(message: types.Message, state: FSMContext):
     await message.answer(profile_text, parse_mode="HTML", reply_markup=profile_menu())
 
 
-@router.message(StateFilter(None), F.text == "🛒 Магазин")
+@router.message(F.text == "🛒 Магазин")
 async def open_shop_menu(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, False)
     await message.answer("🛒 Магазин", reply_markup=shop_menu())
 
 
-@router.message(StateFilter(None), F.text == "🎮 Играть")
+@router.message(F.text == "🎮 Играть")
 async def open_play_menu(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, False)
 
     servers = await get_ordered_servers()
@@ -300,28 +303,32 @@ async def handle_server_closed(callback: types.CallbackQuery) -> None:
     await callback.answer(message, show_alert=True)
 
 
-@router.message(StateFilter(None), F.text == "🎁 Предметы")
+@router.message(F.text == "🎁 Предметы")
 async def open_shop_items(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, False)
     await user_shop(message, "item")
 
 
-@router.message(StateFilter(None), F.text == "🛡 Привилегии")
+@router.message(F.text == "🛡 Привилегии")
 async def open_shop_privileges(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, False)
     await user_shop(message, "privilege")
 
 
-@router.message(StateFilter(None), F.text == "💰 Кеш")
+@router.message(F.text == "💰 Кеш")
 async def open_shop_currency(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, False)
     await user_shop(message, "money")
 
 
 # --- Назад в главное меню ---
 
-@router.message(StateFilter(None), F.text == "⬅️ Назад")
+@router.message(F.text == "⬅️ Назад")
 async def back_to_main(message: types.Message, state: FSMContext):
+    await state.clear()
     if not message.from_user:
         return
     await _set_profile_mode(state, False)
@@ -331,8 +338,9 @@ async def back_to_main(message: types.Message, state: FSMContext):
 
 # --- Профиль / Рефералка ---
 
-@router.message(StateFilter(None), F.text == "🔗 Реферальная ссылка")
+@router.message(F.text == "🔗 Реферальная ссылка")
 async def profile_ref_link(message: types.Message, state: FSMContext):
+    await state.clear()
     if not message.from_user:
         return
 
@@ -380,21 +388,24 @@ async def profile_ref_link(message: types.Message, state: FSMContext):
     )
 
 
-@router.message(StateFilter(None), F.text == "🎟 Промокод")
+@router.message(F.text == "🎟 Промокод")
 async def profile_promo(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, True)
     await state.set_state(PromoInputState.waiting_for_code)
     await message.answer("🎟 Введите код прямо в чат")
 
 
-@router.message(StateFilter(None), F.text == "💳 Пополнить баланс")
+@router.message(F.text == "💳 Пополнить баланс")
 async def profile_topup(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, True)
     await topup_start(message, state)
 
 
-@router.message(StateFilter(None), F.text == "🏆 Топ игроков")
+@router.message(F.text == "🏆 Топ игроков")
 async def profile_top(message: types.Message, state: FSMContext):
+    await state.clear()
     await _set_profile_mode(state, True)
     top_users = await get_top_users(limit=15)
     await message.answer(format_top_users(top_users))
