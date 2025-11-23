@@ -1058,7 +1058,7 @@ async def admin_banlist_search_user(message: types.Message, state: FSMContext):
 
 
 @router.callback_query(
-    StateFilter(AdminUsersState.viewing_user),
+    StateFilter(AdminUsersState.searching, AdminUsersState.viewing_user),
     F.data == "admin_users",
 )
 async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
@@ -1158,8 +1158,8 @@ async def admin_search_user(message: types.Message, state: FSMContext):
             show_demote=show_demote,
         ),
     )
-
-    await state.set_state(AdminUsersState.viewing_user)
+    await state.clear()
+    await state.set_state(AdminUsersState.searching)
     await state.update_data(profile_message_id=profile_message.message_id)
 
 # -------- Управление пользователем: блок/разблок/выдача -------
