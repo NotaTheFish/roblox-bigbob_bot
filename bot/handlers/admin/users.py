@@ -1649,12 +1649,13 @@ async def process_money_amount(message: types.Message, state: FSMContext):
     await check_achievements(user)
 
     await message.reply(
-        f"✅ Выдано <b>{amount}</b> монет пользователю <code>{user_id}</code>", parse_mode="HTML"
+        f"✅ Выдано <b>{amount}</b> орешков пользователю <code>{user_id}</code>",
+        parse_mode="HTML",
     )
 
     try:
         await message.bot.send_message(
-            user_id, f"🎁 Вам выдано <b>{amount}</b> монет администратором!"
+            user_id, f"🎁 Вам выдано <b>{amount}</b> орешков администратором!"
         )
     except Exception:
         pass
