@@ -12,8 +12,7 @@ from sqlalchemy import select
 from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
-    LOGS_ADMIN_PICK_BUTTON,
-    LOGS_ADMIN_PICK_CALLBACK,
+    LOGS_ACHIEVEMENTS_BUTTON,
     LOGS_NEXT_BUTTON,
     LOGS_NEXT_CALLBACK,
     LOGS_PREV_BUTTON,
@@ -135,12 +134,7 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
 
 @router.message(AdminLogsState.waiting_for_query)
 async def handle_search_query(message: types.Message, state: FSMContext):
-    await _handle_search_input(message, state, require_admin=False)
-
-
-@router.message(AdminLogsState.waiting_for_admin)
-async def handle_admin_search(message: types.Message, state: FSMContext):
-    await _handle_search_input(message, state, require_admin=True)
+    await _handle_search_input(message, state)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data.startswith("logs:category:"))
@@ -180,7 +174,6 @@ async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
     if not success:
         return await call.answer("Не удалось разжаловать администратора", show_alert=True)
 
-    await state.update_data(search_is_admin=False)
     await _send_logs_callback(call, state)
     await call.answer("Администратор разжалован")
 
@@ -205,9 +198,13 @@ async def prompt_search(call: types.CallbackQuery, state: FSMContext):
     await _handle_search_prompt(call, state)
 
 
-@router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_ADMIN_PICK_CALLBACK)
-async def prompt_admin_search(call: types.CallbackQuery, state: FSMContext):
-    await _handle_admin_pick_prompt(call, state)
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_ACHIEVEMENTS_BUTTON)
+async def show_achievement_logs(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    await state.update_data(category=LogCategory.ACHIEVEMENTS.value, page=1)
+    await _send_logs_message(message, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_REFRESH_BUTTON)
@@ -230,11 +227,6 @@ async def prompt_search_message(message: types.Message, state: FSMContext):
     await _handle_search_prompt(message, state)
 
 
-@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_ADMIN_PICK_BUTTON)
-async def prompt_admin_search_message(message: types.Message, state: FSMContext):
-    await _handle_admin_pick_prompt(message, state)
-
-
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == "logs:noop")
 async def logs_noop(call: types.CallbackQuery):
     await call.answer("Недоступно", show_alert=True)
@@ -244,8 +236,6 @@ async def logs_noop(call: types.CallbackQuery):
 async def _handle_search_input(
     message: types.Message,
     state: FSMContext,
-    *,
-    require_admin: bool,
 ) -> None:
     if not await _require_admin_message(message):
         return
@@ -259,12 +249,6 @@ async def _handle_search_input(
     user = await find_user_by_query(query_text)
     if not user:
         await message.answer("Пользователь не найден")
-        await state.set_state(AdminLogsState.browsing)
-        return
-
-    is_target_admin = await is_admin(user.tg_id)
-    if require_admin and not is_target_admin:
-        await message.answer("Этот пользователь не является администратором")
         await state.set_state(AdminLogsState.browsing)
         return
 
@@ -340,42 +324,6 @@ async def _handle_search_prompt(
         )
 
 
-async def _handle_admin_pick_prompt(
-    trigger: types.CallbackQuery | types.Message, state: FSMContext
-) -> None:
-    if isinstance(trigger, types.CallbackQuery):
-        if not await _require_admin_callback(trigger):
-            return
-
-        if not _is_root_admin(trigger.from_user):
-            await trigger.answer(
-                "Только root-админ может выбирать администраторов", show_alert=True
-            )
-            return
-
-        await trigger.answer()
-        target_message = trigger.message
-    else:
-        if not await _require_admin_message(trigger):
-            return
-
-        if not _is_root_admin(trigger.from_user):
-            await trigger.answer("Только root-админ может выбирать администраторов")
-            return
-
-        target_message = trigger
-
-    await state.set_state(AdminLogsState.waiting_for_admin)
-    if target_message:
-        await target_message.answer(
-            "Введите ник в боте/username/ID/tg_username администратора:"
-        )
-
-
-def _is_root_admin(user: types.User | None) -> bool:
-    return bool(user and user.id == ROOT_ADMIN_ID)
-
-
 async def _require_admin_message(message: types.Message) -> bool:
     if not message.from_user:
         return False
@@ -399,9 +347,24 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
         return
 
     await state.set_state(AdminLogsState.browsing)
-    text, inline_markup, _, _ = await _prepare_logs_view(
+    data = await state.get_data()
+    text, inline_markup, reply_markup, _ = await _prepare_logs_view(
         state, message.from_user.id
     )
+
+    chunks = _split_html_text(text)
+    if not chunks:
+        return
+
+    await message.answer(
+        chunks[0], parse_mode="HTML", reply_markup=inline_markup
+    )
+    for chunk in chunks[1:]:
+        await message.answer(chunk, parse_mode="HTML")
+
+    if reply_markup and not data.get("reply_keyboard_sent"):
+        await message.answer("Навигация по логам", reply_markup=reply_markup)
+        await state.update_data(reply_keyboard_sent=True)
 
 
 async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> None:
@@ -436,7 +399,7 @@ async def _prepare_logs_view(
     page = await fetch_logs_page(query)
     text = _format_logs_text(page, category, data)
     inline_markup = admin_logs_filters_inline(selected=category)
-    reply_markup = admin_logs_menu_kb(is_root=viewer_id == ROOT_ADMIN_ID)
+    reply_markup = admin_logs_menu_kb()
     return text, inline_markup, reply_markup, page
 
 

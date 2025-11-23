@@ -175,7 +175,6 @@ async def test_demote_confirm_removes_admin(monkeypatch, callback_query_factory,
     await mock_state.update_data(
         category=LogCategory.TOPUPS.value,
         page=1,
-        search_is_admin=True,
         telegram_id=77,
     )
 
@@ -186,4 +185,3 @@ async def test_demote_confirm_removes_admin(monkeypatch, callback_query_factory,
     log_entry = next(obj for obj in session.added if isinstance(obj, LogEntry))
     assert log_entry.event_type == "admin_demoted"
     assert call.bot.sent_messages, "Ожидалось уведомление демотируемому администратору"
-    assert (await mock_state.get_data()).get("search_is_admin") is False

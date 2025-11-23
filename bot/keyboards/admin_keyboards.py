@@ -16,14 +16,12 @@ from bot.services.settings import BOT_STATUS_STOPPED
 
 LOGS_REFRESH_BUTTON = "🔄 Обновить"
 LOGS_SEARCH_BUTTON = "🔍 Поиск по пользователю"
-LOGS_ADMIN_PICK_BUTTON = "👮 Выбрать админа"
 LOGS_PREV_BUTTON = "⬅️ Предыдущая"
 LOGS_NEXT_BUTTON = "➡️ Следующая"
 LOGS_ACHIEVEMENTS_BUTTON = "🏆 Достижения"
 
 LOGS_REFRESH_CALLBACK = "logs:refresh"
 LOGS_SEARCH_CALLBACK = "logs:search"
-LOGS_ADMIN_PICK_CALLBACK = "logs:pick_admin"
 LOGS_PREV_CALLBACK = "logs:prev"
 LOGS_NEXT_CALLBACK = "logs:next"
 
@@ -62,13 +60,11 @@ def admin_main_menu_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def admin_logs_menu_kb(*, is_root: bool = False) -> ReplyKeyboardMarkup:
+def admin_logs_menu_kb() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text=LOGS_REFRESH_BUTTON), KeyboardButton(text=LOGS_SEARCH_BUTTON)],
         [KeyboardButton(text=LOGS_PREV_BUTTON), KeyboardButton(text=LOGS_NEXT_BUTTON)],
     ]
-    if is_root:
-        buttons.append([KeyboardButton(text=LOGS_ADMIN_PICK_BUTTON)])
     buttons.append([KeyboardButton(text="↩️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 

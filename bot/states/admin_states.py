@@ -31,7 +31,6 @@ class AdminUsersState(StatesGroup):
 class AdminLogsState(StatesGroup):
     browsing = State()
     waiting_for_query = State()
-    waiting_for_admin = State()
 
 
 class AchievementsState(StatesGroup):
