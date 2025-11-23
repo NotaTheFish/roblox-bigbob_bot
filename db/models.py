@@ -94,7 +94,11 @@ class User(Base):
     selected_title = Column(String(255))
     about_text = Column(Text)
     about_text_updated_at = Column(DateTime(timezone=True))
-    selected_achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=True)
+    selected_achievement_id = Column(
+        Integer,
+        ForeignKey("achievements.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     achievements = relationship(
         "UserAchievement",
