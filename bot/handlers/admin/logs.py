@@ -123,6 +123,8 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
         telegram_id=None,
         search_label=None,
     )
+
+    await _send_logs_message(message, state)
 @router.message(AdminLogsState.waiting_for_query)
 async def handle_search_query(message: types.Message, state: FSMContext):
     await _handle_search_input(message, state, require_admin=False)
