@@ -131,6 +131,8 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
     )
 
     await _send_logs_message(message, state)
+
+
 @router.message(AdminLogsState.waiting_for_query)
 async def handle_search_query(message: types.Message, state: FSMContext):
     await _handle_search_input(message, state, require_admin=False)
@@ -189,117 +191,52 @@ async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_REFRESH_CALLBACK)
 async def refresh_logs(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    await call.answer()
-    await _send_logs_callback(call, state)
+    await _handle_refresh(call, state)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_NEXT_CALLBACK)
 async def next_page(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    data = await state.get_data()
-    current = int(data.get("page", 1))
-    await state.update_data(page=current + 1)
-    await call.answer()
-    await _send_logs_callback(call, state)
+    await _handle_page_change(call, state, delta=1)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_PREV_CALLBACK)
 async def previous_page(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    data = await state.get_data()
-    current = max(1, int(data.get("page", 1)) - 1)
-    await state.update_data(page=current)
-    await call.answer()
-    await _send_logs_callback(call, state)
+    await _handle_page_change(call, state, delta=-1)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_SEARCH_CALLBACK)
 async def prompt_search(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    await call.answer()
-    await state.set_state(AdminLogsState.waiting_for_query)
-    if call.message:
-        await call.message.answer(
-            "Введите ник в боте/username/ID/tg_username пользователя для поиска:"
-        )
+    await _handle_search_prompt(call, state)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_ADMIN_PICK_CALLBACK)
 async def prompt_admin_search(call: types.CallbackQuery, state: FSMContext):
-    if not await _require_admin_callback(call):
-        return
-
-    if not call.from_user or call.from_user.id != ROOT_ADMIN_ID:
-        await call.answer("Только root-админ может выбирать администраторов", show_alert=True)
-        return
-
-    await call.answer()
-    await state.set_state(AdminLogsState.waiting_for_admin)
-    if call.message:
-        await call.message.answer(
-            "Введите ник в боте/username/ID/tg_username администратора:"
-        )
+    await _handle_admin_pick_prompt(call, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_REFRESH_BUTTON)
 async def refresh_logs_message(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    await _send_logs_message(message, state)
+    await _handle_refresh(message, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_NEXT_BUTTON)
 async def next_page_message(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    data = await state.get_data()
-    current = int(data.get("page", 1))
-    await state.update_data(page=current + 1)
-    await _send_logs_message(message, state)
+    await _handle_page_change(message, state, delta=1)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_PREV_BUTTON)
 async def previous_page_message(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    data = await state.get_data()
-    current = max(1, int(data.get("page", 1)) - 1)
-    await state.update_data(page=current)
-    await _send_logs_message(message, state)
+    await _handle_page_change(message, state, delta=-1)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_SEARCH_BUTTON)
 async def prompt_search_message(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    await state.set_state(AdminLogsState.waiting_for_query)
-    await message.answer("Введите ник в боте/username/ID/tg_username пользователя для поиска:")
+    await _handle_search_prompt(message, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_ADMIN_PICK_BUTTON)
 async def prompt_admin_search_message(message: types.Message, state: FSMContext):
-    if not await _require_admin_message(message):
-        return
-
-    if not message.from_user or message.from_user.id != ROOT_ADMIN_ID:
-        await message.answer("Только root-админ может выбирать администраторов")
-        return
-
-    await state.set_state(AdminLogsState.waiting_for_admin)
-    await message.answer("Введите ник в боте/username/ID/tg_username администратора:")
+    await _handle_admin_pick_prompt(message, state)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == "logs:noop")
@@ -343,6 +280,104 @@ async def _handle_search_input(
     )
     await state.set_state(AdminLogsState.browsing)
     await _send_logs_message(message, state)
+
+
+async def _handle_refresh(
+    trigger: types.CallbackQuery | types.Message, state: FSMContext
+) -> None:
+    if isinstance(trigger, types.CallbackQuery):
+        if not await _require_admin_callback(trigger):
+            return
+
+        await trigger.answer()
+        await _send_logs_callback(trigger, state)
+    else:
+        if not await _require_admin_message(trigger):
+            return
+
+        await _send_logs_message(trigger, state)
+
+
+async def _handle_page_change(
+    trigger: types.CallbackQuery | types.Message, state: FSMContext, *, delta: int
+) -> None:
+    if isinstance(trigger, types.CallbackQuery):
+        if not await _require_admin_callback(trigger):
+            return
+
+        await _update_page(state, delta)
+        await trigger.answer()
+        await _send_logs_callback(trigger, state)
+    else:
+        if not await _require_admin_message(trigger):
+            return
+
+        await _update_page(state, delta)
+        await _send_logs_message(trigger, state)
+
+
+async def _update_page(state: FSMContext, delta: int) -> None:
+    data = await state.get_data()
+    current = int(data.get("page", 1))
+    await state.update_data(page=max(1, current + delta))
+
+
+async def _handle_search_prompt(
+    trigger: types.CallbackQuery | types.Message, state: FSMContext
+) -> None:
+    if isinstance(trigger, types.CallbackQuery):
+        if not await _require_admin_callback(trigger):
+            return
+
+        await trigger.answer()
+        target_message = trigger.message
+    else:
+        if not await _require_admin_message(trigger):
+            return
+
+        target_message = trigger
+
+    await state.set_state(AdminLogsState.waiting_for_query)
+    if target_message:
+        await target_message.answer(
+            "Введите ник в боте/username/ID/tg_username пользователя для поиска:"
+        )
+
+
+async def _handle_admin_pick_prompt(
+    trigger: types.CallbackQuery | types.Message, state: FSMContext
+) -> None:
+    if isinstance(trigger, types.CallbackQuery):
+        if not await _require_admin_callback(trigger):
+            return
+
+        if not _is_root_admin(trigger.from_user):
+            await trigger.answer(
+                "Только root-админ может выбирать администраторов", show_alert=True
+            )
+            return
+
+        await trigger.answer()
+        target_message = trigger.message
+    else:
+        if not await _require_admin_message(trigger):
+            return
+
+        if not _is_root_admin(trigger.from_user):
+            await trigger.answer("Только root-админ может выбирать администраторов")
+            return
+
+        target_message = trigger
+
+    await state.set_state(AdminLogsState.waiting_for_admin)
+    if target_message:
+        await target_message.answer(
+            "Введите ник в боте/username/ID/tg_username администратора:"
+        )
+
+
+def _is_root_admin(user: types.User | None) -> bool:
+    return bool(user and user.id == ROOT_ADMIN_ID)
 
 
 async def _require_admin_message(message: types.Message) -> bool:
