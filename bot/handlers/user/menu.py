@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
 from aiogram import F, Router, types
@@ -53,6 +54,9 @@ NICKNAME_MAX_LENGTH = 32
 NICKNAME_CHANGE_COOLDOWN = timedelta(days=7)
 ROBLOX_ID_CACHE_TTL = timedelta(hours=1)
 ROBLOX_ID_CACHE: dict[str, tuple[str, datetime]] = {}
+SEARCH_STATE_NAVIGATION_HANDLERS: dict[
+    str, Callable[[types.Message, FSMContext], Awaitable[None]]
+] = {}
 
 
 def _profile_edit_keyboard() -> InlineKeyboardMarkup:
@@ -412,6 +416,33 @@ async def profile_top(message: types.Message, state: FSMContext):
     await _prompt_top_menu(message)
 
 
+SEARCH_STATE_NAVIGATION_HANDLERS.update(
+    {
+        "👤 Профиль": open_profile_menu,
+        "🛒 Магазин": open_shop_menu,
+        "🎮 Играть": open_play_menu,
+        "🎁 Предметы": open_shop_items,
+        "🛡 Привилегии": open_shop_privileges,
+        "💰 Кеш": open_shop_currency,
+        "⬅️ Назад": back_to_main,
+        "🔗 Реферальная ссылка": profile_ref_link,
+        "🎟 Промокод": profile_promo,
+        "💳 Пополнить баланс": profile_topup,
+        "🏆 Топ игроков": profile_top,
+    }
+)
+
+
+@router.message(
+    StateFilter(UserSearchState.query), F.text.in_(tuple(SEARCH_STATE_NAVIGATION_HANDLERS))
+)
+async def clear_search_state_on_navigation(message: types.Message, state: FSMContext):
+    await state.clear()
+    handler = SEARCH_STATE_NAVIGATION_HANDLERS.get(message.text)
+    if handler:
+        await handler(message, state)
+
+
 @router.callback_query(F.data == f"{TOP_MENU_CALLBACK_PREFIX}:top15")
 async def profile_top_fifteen(call: types.CallbackQuery):
     if not call.message:
@@ -586,6 +617,9 @@ async def profile_edit(message: types.Message, state: FSMContext):
         return await message.answer("❗ Сначала нажмите /start")
 
     await _prompt_edit_menu(message, state, "✏️ Что хотите изменить?")
+
+
+SEARCH_STATE_NAVIGATION_HANDLERS["✏️ Редактировать профиль"] = profile_edit
 
 
 @router.callback_query(F.data == "profile_edit:about")

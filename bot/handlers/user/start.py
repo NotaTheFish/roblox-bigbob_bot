@@ -1,8 +1,9 @@
 import logging
 
 from aiogram import Router, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.filters.command import CommandStart as CommandStartFilter
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, text
 
 from bot.db import Admin, LogEntry, User, async_session
@@ -10,6 +11,7 @@ from bot.keyboards.verify_kb import verify_button
 from bot.keyboards.main_menu import main_menu
 from bot.middleware.user_sync import normalize_tg_username
 from bot.utils.referrals import attach_referral, ensure_referral_code, find_referrer_by_code
+from bot.states.user_states import UserSearchState
 from db.constants import BOT_USER_ID_PREFIX, BOT_USER_ID_SEQUENCE
 
 router = Router(name="user_start")
@@ -48,6 +50,14 @@ async def _generate_bot_user_id(session) -> str:
     )
     next_value = result.scalar_one()
     return f"{BOT_USER_ID_PREFIX}{next_value}"
+
+
+@router.message(CommandStartFilter(), StateFilter(UserSearchState.query))
+async def clear_search_state_and_restart(
+    message: types.Message, state: FSMContext, command: CommandStart | None = None
+):
+    await state.clear()
+    return await start_cmd(message, command)
 
 
 @router.message(CommandStartFilter())
