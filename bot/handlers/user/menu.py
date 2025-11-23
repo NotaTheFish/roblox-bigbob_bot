@@ -451,7 +451,13 @@ async def profile_top_back(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-@router.message(StateFilter(UserSearchState.waiting_for_query), F.text)
+@router.message(UserSearchState.waiting_for_query, F.text == "Отмена")
+async def cancel_top_player_search(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Поиск отменён", reply_markup=profile_menu())
+
+
+@router.message(UserSearchState.waiting_for_query, F.text)
 async def handle_top_player_search(message: types.Message, state: FSMContext):
     query = message.text.strip()
     if not query:
