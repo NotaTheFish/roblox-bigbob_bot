@@ -111,7 +111,7 @@ def admin_logs_controls_inline(
     has_next: bool,
     is_root: bool,
 ) -> InlineKeyboardMarkup:
-return admin_logs_filters_inline(selected)
+    return admin_logs_filters_inline(selected)
 
 
 def admin_demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
