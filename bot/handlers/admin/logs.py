@@ -399,13 +399,8 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
         return
 
     await state.set_state(AdminLogsState.browsing)
-    text, inline_markup, reply_markup, _ = await _prepare_logs_view(
+    text, inline_markup, _, _ = await _prepare_logs_view(
         state, message.from_user.id
-    )
-    await message.answer(text, parse_mode="HTML", reply_markup=inline_markup)
-    await message.answer(
-        "Используйте клавиатуру ниже для управления логами.",
-        reply_markup=reply_markup,
     )
 
 
