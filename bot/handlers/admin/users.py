@@ -1067,6 +1067,11 @@ async def admin_user_card_back_cb(call: types.CallbackQuery, state: FSMContext):
             "↩️ Назад",
             "↩️ В меню",
             USERS_BROADCAST_BUTTON,
+            "🏆 Достижения",
+            "📃 Список",
+            ⚙️ Управление",
+            "📚 История",
+            "🎁 Выдать награду",
         }
     ),
 )
