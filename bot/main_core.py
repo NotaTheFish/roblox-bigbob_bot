@@ -16,7 +16,7 @@ from bot.db import Admin, async_session, init_db
 from bot.handlers.admin import routers as admin_routers
 from bot.handlers.global_block_filter import router as global_block_filter_router
 from bot.handlers.user import routers as user_routers
-from bot.middleware import BannedMiddleware, BotStatusMiddleware, UserSyncMiddleware
+from bot.middleware import BannedMiddleware, BotStatusMiddleware, CallbackDedupMiddleware, UserSyncMiddleware
 
 # Firebase sync
 from bot.firebase.firebase_service import init_firebase, firebase_sync_loop
@@ -51,6 +51,7 @@ def build_dispatcher() -> Dispatcher:
 
     dispatcher.update.outer_middleware(BotStatusMiddleware())
     dispatcher.update.outer_middleware(UserSyncMiddleware())
+    dispatcher.update.outer_middleware(CallbackDedupMiddleware())
     dispatcher.update.outer_middleware(BannedMiddleware())
 
     dispatcher.include_router(global_block_filter_router)
