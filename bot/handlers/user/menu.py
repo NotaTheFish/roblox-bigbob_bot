@@ -19,6 +19,7 @@ from bot.db import (
     UserAchievement,
     async_session,
 )
+from bot.handlers.user.achievements import achievements_entry
 from bot.handlers.user.shop import user_shop
 from bot.handlers.user.balance import topup_start
 from bot.keyboards.main_menu import main_menu, profile_menu, shop_menu
@@ -113,6 +114,10 @@ async def _prompt_top_menu(message: types.Message) -> None:
     await message.answer(
         "🏆 Топ игроков — выберите действие:", reply_markup=top_players_keyboard()
     )
+
+
+async def profile_achievements(message: types.Message, state: FSMContext) -> None:
+    await achievements_entry(message, state)
 
 
 async def _fetch_roblox_id(username: str, user_id: int | None) -> str | None:
@@ -429,6 +434,7 @@ SEARCH_STATE_NAVIGATION_HANDLERS.update(
         "🎟 Промокод": profile_promo,
         "💳 Пополнить баланс": profile_topup,
         "🏆 Топ игроков": profile_top,
+        "🏆 Достижения игрока": profile_achievements,
     }
 )
 
@@ -604,10 +610,11 @@ async def profile_save_nickname(message: types.Message, state: FSMContext):
     )
 
 
-@router.message(StateFilter(None), F.text == "✏️ Редактировать профиль")
+@router.message(F.text == "✏️ Редактировать профиль")
 async def profile_edit(message: types.Message, state: FSMContext):
     if not message.from_user:
         return
+    await state.clear()
     await _set_profile_mode(state, True)
 
     async with async_session() as session:
