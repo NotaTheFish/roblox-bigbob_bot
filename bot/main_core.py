@@ -51,7 +51,7 @@ async def ensure_root_admin() -> None:
 def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher(storage=storage)
 
-    dispatcher.update.outer_middleware(BlockAttachmentsMiddleware())
+    dispatcher.message.middleware(BlockAttachmentsMiddleware())
     dispatcher.update.outer_middleware(BotStatusMiddleware())
     dispatcher.update.outer_middleware(UserSyncMiddleware())
     dispatcher.update.outer_middleware(CallbackDedupMiddleware())
