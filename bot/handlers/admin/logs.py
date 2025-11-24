@@ -10,7 +10,7 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from bot.config import ROOT_ADMIN_ID
+from bot.config import ADMIN_ROOT_IDS, ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
     LOGS_ACHIEVEMENTS_BUTTON,
@@ -50,6 +50,25 @@ LOGS_PAGE_TEXT_LIMIT = 3900
 async def is_admin(uid: int) -> bool:
     async with async_session() as session:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
+
+
+def _is_head_admin(user_id: int | None) -> bool:
+    return bool(user_id and user_id in {ROOT_ADMIN_ID, *ADMIN_ROOT_IDS})
+
+
+def _visible_categories_for(user_id: int | None) -> tuple[LogCategory, ...]:
+    common_categories = (
+        LogCategory.TOPUPS,
+        LogCategory.ACHIEVEMENTS,
+        LogCategory.PURCHASES,
+        LogCategory.PROMOCODES,
+        LogCategory.ADMIN_ACTIONS,
+    )
+
+    if _is_head_admin(user_id):
+        return (*common_categories, LogCategory.SECURITY)
+
+    return common_categories
 
 
 def _extract_offsets(data: dict) -> list[int]:
@@ -158,6 +177,9 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
         category = LogCategory(category_value)
     except ValueError:
         return await call.answer("Неизвестная категория", show_alert=True)
+
+    if category not in _visible_categories_for(call.from_user.id):
+        return await call.answer("Недостаточно прав", show_alert=True)
 
     await call.answer()
     await state.update_data(category=category.value, page=1, offsets=[0])
@@ -405,7 +427,8 @@ async def _prepare_logs_view(
     str, types.InlineKeyboardMarkup, LogPage
 ]:
     data = await state.get_data()
-    category = _category_from_state(data)
+    visible_categories = _visible_categories_for(viewer_id)
+    category = _category_from_state(data, visible_categories)
     requested_page = max(int(data.get("page", 1)), int(data.get("first_page", 1)))
     offsets = _extract_offsets(data)
     start_offset = offsets[min(requested_page - 1, len(offsets) - 1)]
@@ -423,6 +446,7 @@ async def _prepare_logs_view(
         page=page.page,
         total_pages=page.total_pages,
         first_page=page.first_page,
+        category=category.value,
     )
     text = _format_logs_text(page, category, data)
     inline_markup = admin_logs_controls_inline(
@@ -432,16 +456,25 @@ async def _prepare_logs_view(
         current_page=page.page,
         total_pages=page.total_pages,
         is_root=viewer_id == ROOT_ADMIN_ID,
+        visible_categories=visible_categories,
     )
     return text, inline_markup, page
 
 
-def _category_from_state(data: dict) -> LogCategory:
-    value = data.get("category") or LogCategory.TOPUPS.value
+def _category_from_state(
+    data: dict, visible_categories: tuple[LogCategory, ...]
+) -> LogCategory:
+    fallback = visible_categories[0] if visible_categories else LogCategory.TOPUPS
+    value = data.get("category") or fallback.value
     try:
-        return LogCategory(value)
+        category = LogCategory(value)
     except ValueError:
-        return LogCategory.TOPUPS
+        return fallback
+
+    if category not in visible_categories:
+        return fallback
+
+    return category
 
 
 async def _collect_logs_page(
@@ -759,4 +792,5 @@ _CATEGORY_TITLES = {
     LogCategory.PURCHASES: "Покупки",
     LogCategory.PROMOCODES: "Промокоды",
     LogCategory.ADMIN_ACTIONS: "Админ-действия",
+    LogCategory.SECURITY: "Безопасность",
 }

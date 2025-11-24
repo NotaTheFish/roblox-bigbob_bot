@@ -84,6 +84,7 @@ _LOG_CATEGORY_LABELS = {
     LogCategory.PURCHASES: "🛒 Покупки",
     LogCategory.PROMOCODES: "🎟 Промокоды",
     LogCategory.ADMIN_ACTIONS: "👮 Админ-действия",
+    LogCategory.SECURITY: "🛡 Безопасность",
 }
 
 _LOG_CATEGORY_ORDER = (
@@ -92,12 +93,16 @@ _LOG_CATEGORY_ORDER = (
     LogCategory.PURCHASES,
     LogCategory.PROMOCODES,
     LogCategory.ADMIN_ACTIONS,
+    LogCategory.SECURITY,
 )
 
 
-def admin_logs_filters_inline(selected: LogCategory) -> InlineKeyboardMarkup:
+def admin_logs_filters_inline(
+    selected: LogCategory, *, visible_categories: Sequence[LogCategory] | None = None
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for category in _LOG_CATEGORY_ORDER:
+    categories = tuple(visible_categories or _LOG_CATEGORY_ORDER)
+    for category in categories:
         label = _LOG_CATEGORY_LABELS[category]
         suffix = " ✅" if category == selected else ""
         builder.button(
@@ -117,6 +122,7 @@ def admin_logs_controls_inline(
     current_page: int,
     total_pages: int,
     is_root: bool,
+    visible_categories: Sequence[LogCategory] | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
@@ -139,8 +145,9 @@ def admin_logs_controls_inline(
         InlineKeyboardButton(text="🔍", callback_data=LOGS_SEARCH_CALLBACK),
     )
 
+    categories = tuple(visible_categories or _LOG_CATEGORY_ORDER)
     filter_buttons: list[InlineKeyboardButton] = []
-    for category in _LOG_CATEGORY_ORDER:
+    for category in categories:
         label = _LOG_CATEGORY_LABELS[category]
         suffix = " ✅" if category == selected else ""
         filter_buttons.append(
@@ -150,9 +157,12 @@ def admin_logs_controls_inline(
             )
         )
 
-    builder.row(*filter_buttons[:2])
-    builder.row(*filter_buttons[2:4])
-    builder.row(*filter_buttons[4:])
+    if filter_buttons:
+        builder.row(*filter_buttons[:2])
+        if len(filter_buttons) > 2:
+            builder.row(*filter_buttons[2:4])
+        if len(filter_buttons) > 4:
+            builder.row(*filter_buttons[4:])
 
     return builder.as_markup()
 

@@ -25,6 +25,7 @@ class LogCategory(str, Enum):
     PURCHASES = "purchases"
     PROMOCODES = "promocodes"
     ADMIN_ACTIONS = "admin"
+    SECURITY = "security"
 
 
 _CATEGORY_EVENT_TYPES: Mapping[LogCategory, Sequence[str]] = {
@@ -42,6 +43,13 @@ _CATEGORY_EVENT_TYPES: Mapping[LogCategory, Sequence[str]] = {
         "server_link_updated",
         "support_reply",
         "support_close",
+    ),
+    LogCategory.SECURITY: (
+        "soft_flood_message",
+        "hard_flood_message",
+        "soft_flood_callback",
+        "hard_flood_callback",
+        "duplicate_callback",
     ),
 }
 

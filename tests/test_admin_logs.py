@@ -193,6 +193,13 @@ def test_logs_filters_include_promocode_button():
     assert any(text.startswith("🎟 Промокоды") for text in button_texts)
 
 
+def test_security_category_visible_only_for_head_admin(monkeypatch):
+    monkeypatch.setattr(logs, "ADMIN_ROOT_IDS", [99])
+
+    assert LogCategory.SECURITY not in logs._visible_categories_for(5)
+    assert LogCategory.SECURITY in logs._visible_categories_for(99)
+
+
 @pytest.mark.anyio("asyncio")
 async def test_demote_confirm_removes_admin(monkeypatch, callback_query_factory, mock_state):
     admin = Admin(telegram_id=77, is_root=False)
