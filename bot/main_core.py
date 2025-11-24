@@ -17,7 +17,13 @@ from bot.handlers.admin import routers as admin_routers
 from bot.handlers.attachment_blocker import router as attachment_blocker_router
 from bot.handlers.global_block_filter import router as global_block_filter_router
 from bot.handlers.user import routers as user_routers
-from bot.middleware import BannedMiddleware, BotStatusMiddleware, CallbackDedupMiddleware, UserSyncMiddleware
+from bot.middleware import (
+    AntiSpamMiddleware,
+    BannedMiddleware,
+    BotStatusMiddleware,
+    CallbackDedupMiddleware,
+    UserSyncMiddleware,
+)
 from bot.middleware.block_attachments import BlockAttachmentsMiddleware
 
 # Firebase sync
@@ -54,6 +60,7 @@ def build_dispatcher() -> Dispatcher:
     dispatcher.message.middleware(BlockAttachmentsMiddleware())
     dispatcher.update.outer_middleware(BotStatusMiddleware())
     dispatcher.update.outer_middleware(UserSyncMiddleware())
+    dispatcher.update.outer_middleware(AntiSpamMiddleware())
     dispatcher.update.outer_middleware(CallbackDedupMiddleware())
     dispatcher.update.outer_middleware(BannedMiddleware())
 
