@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +44,8 @@ async def block_user(
     user: User,
     operator_admin: Admin | None,
     confirmed: bool = False,
+    duration: timedelta | None = None,
+    reason: str | None = None,
 ) -> None:
     """Block a user while enforcing admin-specific restrictions."""
 
@@ -52,6 +56,10 @@ async def block_user(
             raise AdminBlockConfirmationRequiredError
 
     user.is_blocked = True
+    user.blocked_until = (
+        datetime.now(timezone.utc) + duration if duration else None
+    )
+    user.block_reason = reason
     user.ban_appeal_at = None
     user.ban_appeal_submitted = False
     user.appeal_open = False
@@ -67,6 +75,8 @@ async def unblock_user(session: AsyncSession, *, user: User) -> None:
     """Unblock a user and reset ban-related fields."""
 
     user.is_blocked = False
+    user.blocked_until = None
+    user.block_reason = None
     user.ban_appeal_at = None
     user.ban_appeal_submitted = False
     user.appeal_open = False
@@ -182,9 +192,35 @@ async def _sync_firebase_block_state(user: User, *, blocked: bool) -> None:
         )
 
 
+def is_block_expired(user: User) -> bool:
+    """Return True if the user's block has an expiry in the past."""
+
+    if not user.blocked_until:
+        return False
+    return user.blocked_until <= datetime.now(timezone.utc)
+
+
+def is_user_block_active(user: User) -> bool:
+    """Return True when a user's block should still be enforced."""
+
+    return bool(user.is_blocked and not is_block_expired(user))
+
+
+async def lift_expired_block(session: AsyncSession, *, user: User) -> bool:
+    """Unblock users whose block expiration has elapsed."""
+
+    if not user.is_blocked or not is_block_expired(user):
+        return False
+
+    await unblock_user(session, user=user)
+    return True
+
+
 __all__ = [
     "AdminBlockConfirmationRequiredError",
     "AdminBlockPermissionError",
     "block_user",
+    "is_user_block_active",
+    "lift_expired_block",
     "unblock_user",
 ]

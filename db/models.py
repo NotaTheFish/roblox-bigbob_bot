@@ -76,6 +76,8 @@ class User(Base):
     verified = Column(Boolean, default=False, nullable=False)
     code = Column(String(64))
     is_blocked = Column(Boolean, default=False, nullable=False)
+    blocked_until = Column(DateTime(timezone=True))
+    block_reason = Column(Text)
     balance = Column(Integer, default=0, nullable=False)
     cash = Column(Integer, default=0, nullable=False)
     nuts_balance = Column(Integer, default=0, nullable=False, server_default="0")

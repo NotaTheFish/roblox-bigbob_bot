@@ -5,24 +5,26 @@ import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Deque, Dict
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject, Update
+from sqlalchemy import select
 
 from bot.config import ADMIN_ROOT_IDS, ADMINS, ROOT_ADMIN_ID
 from bot.db import LogEntry, User, async_session
+from bot.services.user_blocking import block_user
 
 TelegramHandler = Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]]
 
 logger = logging.getLogger(__name__)
 
-
 # === Rate limit configuration =============================================
 CALLBACK_DUPLICATE_WINDOW_SECONDS = 0.75
 WARNING_COOLDOWN_SECONDS = 30.0
 FLOOD_BAN_SECONDS = 120.0
+FLOOD_BAN_DURATION = timedelta(hours=1)
 NEW_USER_AGE_SECONDS = 60 * 60 * 24
 ADMIN_LIMIT_BOOST = 3.0
 
@@ -59,6 +61,7 @@ DEFAULT_LIMITS = UserLimits(
     message=RateLimit(*DEFAULT_MESSAGE_LIMIT),
     callback=RateLimit(*DEFAULT_CALLBACK_LIMIT),
 )
+
 NEW_USER_LIMITS = UserLimits(
     message=RateLimit(*NEW_USER_MESSAGE_LIMIT),
     callback=RateLimit(*NEW_USER_CALLBACK_LIMIT),
@@ -106,6 +109,7 @@ class AntiSpamMiddleware(BaseMiddleware):
         self._callback_fingerprints: Dict[int, Dict[str, float]] = defaultdict(dict)
         self._last_warning_at: Dict[int, float] = {}
         self._flood_banned_until: Dict[int, float] = {}
+        self._last_callback_data: Dict[int, tuple[str, float]] = {}
 
     async def _log_security_event(
         self,
@@ -148,12 +152,18 @@ class AntiSpamMiddleware(BaseMiddleware):
             limits = await get_user_limits(current_user, from_user_id=user_id)
             now = time.monotonic()
 
+            # Hard flood ban already in place
             if self._is_flood_banned(user_id, now):
                 await self._warn_user(event, user_id, callback_hint=True)
                 return None
 
+            # --- CALLBACKS --------------------------------------------------
             if isinstance(event, CallbackQuery):
-                if self._is_duplicate_callback(event, user_id, limits, now):
+                is_duplicate, last_seen = self._is_duplicate_callback(
+                    event, user_id, limits, now
+                )
+                if is_duplicate:
+                    await self._warn_duplicate_callback(event)
                     await self._log_security_event(
                         db_user=current_user,
                         telegram_id=user_id,
@@ -162,9 +172,11 @@ class AntiSpamMiddleware(BaseMiddleware):
                         data={
                             "data": event.data,
                             "window_seconds": limits.duplicate_window_seconds,
+                            "last_seen_at": last_seen,
                         },
                     )
                     return None
+
                 if not limits.disabled:
                     decision = self._check_and_record(
                         user_id, now, limits.callback, self._callback_events
@@ -181,9 +193,10 @@ class AntiSpamMiddleware(BaseMiddleware):
                                 "window_seconds": limits.callback.window_seconds,
                             },
                         )
-                        self._apply_hard_limit(user_id, current_user, now, event)
+                        await self._apply_hard_limit(user_id, current_user, now, event)
                         await self._warn_user(event, user_id, callback_hint=True)
                         return None
+
                     if decision == "soft":
                         await self._log_security_event(
                             db_user=current_user,
@@ -198,8 +211,10 @@ class AntiSpamMiddleware(BaseMiddleware):
                         )
                         await self._warn_user(event, user_id, callback_hint=True)
                         return None
+
                 return await handler(event, data)
 
+            # --- MESSAGES --------------------------------------------------
             if isinstance(event, Message):
                 if not limits.disabled:
                     decision = self._check_and_record(
@@ -217,9 +232,10 @@ class AntiSpamMiddleware(BaseMiddleware):
                                 "window_seconds": limits.message.window_seconds,
                             },
                         )
-                        self._apply_hard_limit(user_id, current_user, now, event)
+                        await self._apply_hard_limit(user_id, current_user, now, event)
                         await self._warn_user(event, user_id, callback_hint=False)
                         return None
+
                     if decision == "soft":
                         await self._log_security_event(
                             db_user=current_user,
@@ -234,8 +250,10 @@ class AntiSpamMiddleware(BaseMiddleware):
                         )
                         await self._warn_user(event, user_id, callback_hint=False)
                         return None
+
                 return await handler(event, data)
 
+            # --- UPDATE WRAPPER --------------------------------------------
             if isinstance(event, Update):
                 if event.callback_query:
                     return await self.__call__(handler, event.callback_query, data)
@@ -243,9 +261,14 @@ class AntiSpamMiddleware(BaseMiddleware):
                     return await self.__call__(handler, event.message, data)
 
             return await handler(event, data)
+
         except Exception:
             logger.exception("AntiSpamMiddleware failed; allowing event to continue")
             return await handler(event, data)
+
+    # ======================================================================
+    # Duplicate callback detection
+    # ======================================================================
 
     def _is_duplicate_callback(
         self,
@@ -253,20 +276,36 @@ class AntiSpamMiddleware(BaseMiddleware):
         user_id: int,
         limits: UserLimits,
         now: float,
-    ) -> bool:
+    ) -> tuple[bool, float | None]:
         data_key = callback.data or ""
         if not data_key:
-            return False
+            return False, None
 
         fingerprints = self._callback_fingerprints[user_id]
         self._prune_old_fingerprints(fingerprints, now, limits.duplicate_window_seconds)
 
         last_seen = fingerprints.get(data_key)
         fingerprints[data_key] = now
-        if last_seen is None:
-            return False
 
-        return (now - last_seen) <= limits.duplicate_window_seconds
+        self._last_callback_data[user_id] = (data_key, now)
+
+        if last_seen is None:
+            return False, None
+
+        return (now - last_seen) <= limits.duplicate_window_seconds, last_seen
+
+    async def _warn_duplicate_callback(self, callback: CallbackQuery) -> None:
+        try:
+            await callback.answer(
+                "Слишком частые нажатия, подождите немного.",
+                show_alert=True,
+            )
+        except Exception:
+            logger.debug("Failed to answer duplicate callback alert", exc_info=True)
+
+    # ======================================================================
+    # Flood detection / Limits
+    # ======================================================================
 
     def _check_and_record(
         self,
@@ -310,7 +349,7 @@ class AntiSpamMiddleware(BaseMiddleware):
             return False
         return True
 
-    def _apply_hard_limit(
+    async def _apply_hard_limit(
         self,
         user_id: int,
         user: User | None,
@@ -321,9 +360,41 @@ class AntiSpamMiddleware(BaseMiddleware):
             "Anti-spam hard limit triggered",
             extra={"user_id": user_id, "event": type(event).__name__},
         )
+
+        # Admins immune
         if user_id in {ROOT_ADMIN_ID, *ADMIN_ROOT_IDS, *ADMINS}:
             return
+
+        # runtime limit
         self._flood_banned_until[user_id] = now + FLOOD_BAN_SECONDS
+
+        # db-level limit
+        await self._block_user_for_flood(user_id, user)
+
+    async def _block_user_for_flood(self, user_id: int, user: User | None) -> None:
+        try:
+            async with async_session() as session:
+                target_user = (
+                    user
+                    or await session.scalar(select(User).where(User.tg_id == user_id))
+                )
+                if not target_user:
+                    return
+
+                await block_user(
+                    session,
+                    user=target_user,
+                    operator_admin=None,
+                    confirmed=True,
+                    duration=FLOOD_BAN_DURATION,
+                    reason="flood",
+                )
+        except Exception:
+            logger.exception("Failed to apply flood ban", extra={"user_id": user_id})
+
+    # ======================================================================
+    # Warnings to user
+    # ======================================================================
 
     async def _warn_user(
         self,
@@ -336,21 +407,30 @@ class AntiSpamMiddleware(BaseMiddleware):
         last_warn = self._last_warning_at.get(user_id)
         if last_warn is not None and (now - last_warn) < WARNING_COOLDOWN_SECONDS:
             return
-        self._last_warning_at[user_id] = now
 
+        self._last_warning_at[user_id] = now
         message_text = "Пожалуйста, не спамьте действиями — вы временно ограничены."
+
         if isinstance(event, CallbackQuery):
             try:
-                await event.answer(message_text if callback_hint else None, show_alert=False)
+                await event.answer(
+                    message_text if callback_hint else None,
+                    show_alert=False,
+                )
             except Exception:
                 logger.debug("Failed to answer callback for spam warning", exc_info=True)
             return
+
         if isinstance(event, Message):
             try:
                 await event.answer(message_text)
             except Exception:
                 logger.debug("Failed to send spam warning", exc_info=True)
             return
+
+    # ======================================================================
+    # Helpers
+    # ======================================================================
 
     def _extract_from_user(self, event: TelegramObject):
         if isinstance(event, Message):

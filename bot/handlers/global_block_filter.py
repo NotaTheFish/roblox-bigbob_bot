@@ -10,6 +10,7 @@ from aiogram.filters import Filter
 from aiogram.fsm.context import FSMContext
 
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK
+from bot.services.user_blocking import is_user_block_active
 from bot.states.user_states import BanAppealState
 from bot.utils.user import get_user
 
@@ -18,7 +19,7 @@ router = Router(name="global_block_filter")
 
 
 def _is_blocked(user: object) -> bool:
-    return bool(getattr(user, "is_blocked", False))
+    return bool(user and is_user_block_active(user))
 
 
 class BlockedUserFilter(Filter):

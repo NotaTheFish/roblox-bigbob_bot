@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import BannedRobloxAccount, User, async_session
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK, ban_appeal_keyboard
+from bot.services.user_blocking import lift_expired_block
 from bot.states.user_states import BanAppealState
 from bot.texts.block import BAN_NOTIFICATION_TEXT
 
@@ -43,6 +44,8 @@ class BannedMiddleware(BaseMiddleware):
         try:
             current_user = await self._resolve_user(data, session, user_id)
             if current_user and session:
+                if await lift_expired_block(session, user=current_user):
+                    return await handler(event, data)
                 await self._enforce_banned_account(session, current_user)
             if not current_user or not current_user.is_blocked:
                 return await handler(event, data)
