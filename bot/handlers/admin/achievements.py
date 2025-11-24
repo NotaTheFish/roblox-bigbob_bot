@@ -770,7 +770,13 @@ async def ach_users_callback(call: types.CallbackQuery):
 
     async with async_session() as session:
         stmt = (
-            select(UserAchievement, User.bot_nickname, User.username, User.tg_username)
+            select(
+                UserAchievement,
+                User.bot_nickname,
+                User.username,
+                User.tg_username,
+                User.bot_user_id,
+            )
             .join(User, User.id == UserAchievement.user_id)
             .where(UserAchievement.achievement_id == ach_id_int)
             .order_by(UserAchievement.earned_at.desc())
@@ -786,13 +792,14 @@ async def ach_users_callback(call: types.CallbackQuery):
         text = "Пока никто не получал это достижение"
     else:
         text_lines = ["👥 <b>Получатели</b>\n"]
-        for entry, bot_nickname, username, tg_username in rows:
+        for entry, bot_nickname, username, tg_username, bot_user_id in rows:
             label = bot_nickname or username
             if not label and tg_username:
                 label = f"@{tg_username}"
             label = label or f"tg:{entry.tg_id}"
+            id_label = f" [{html.escape(bot_user_id)}]" if bot_user_id else ""
             text_lines.append(
-                f"{to_msk(entry.earned_at):%d.%m %H:%M} — {html.escape(str(label))} ({entry.source})"
+                f"{to_msk(entry.earned_at):%d.%m %H:%M} — {html.escape(str(label))}{id_label} ({entry.source})"
             )
         text = "\n".join(text_lines)
 

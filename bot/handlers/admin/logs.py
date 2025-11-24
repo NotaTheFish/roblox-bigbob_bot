@@ -440,7 +440,7 @@ async def _prepare_logs_view(
         telegram_id=data.get("telegram_id"),
     )
     page = await _collect_logs_page(query, category, data)
-    updated_offsets = list(page.pages_offsets) or offsets
+    updated_offsets = page.pages_offsets
     await state.update_data(
         offsets=updated_offsets,
         page=page.page,
