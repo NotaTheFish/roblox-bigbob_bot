@@ -27,20 +27,26 @@ class CallbackMessageProxy:
         self._callback = callback
         self._message = callback.message
         self._hint = hint
+        self._text_cache = getattr(self._message, "text", None)
+        self._markup_cache = getattr(self._message, "reply_markup", None)
 
     def __getattr__(self, name: str):
+        if name == "text":
+            return self._text_cache
+        if name == "reply_markup":
+            return self._markup_cache
         return getattr(self._message, name)
 
     def _current_text(self) -> str | None:
-        return getattr(self._message, "text", None)
+        return self._text_cache
 
     def _target_markup(self, provided: InlineKeyboardMarkup | object) -> InlineKeyboardMarkup | None:
         if provided is _NOT_PROVIDED:
-            return getattr(self._message, "reply_markup", None)
+            return self._markup_cache
         return provided
 
     def _markups_equal(self, new_markup: InlineKeyboardMarkup | None) -> bool:
-        return _normalize_markup(getattr(self._message, "reply_markup", None)) == _normalize_markup(new_markup)
+        return _normalize_markup(self._markup_cache) == _normalize_markup(new_markup)
 
     async def _answer_only(self):
         if self._hint is None:
@@ -54,9 +60,9 @@ class CallbackMessageProxy:
         markup: InlineKeyboardMarkup | object = _NOT_PROVIDED,
     ) -> None:
         if text is not None:
-            setattr(self._message, "text", text)
+            self._text_cache = text
         if markup is not _NOT_PROVIDED:
-            setattr(self._message, "reply_markup", markup)
+            self._markup_cache = markup
 
     async def edit_text(self, text: str, **kwargs):
         markup_provided = kwargs.get("reply_markup", _NOT_PROVIDED)
@@ -100,10 +106,24 @@ class CallbackDedupMiddleware(BaseMiddleware):
         if not isinstance(event, CallbackQuery) or event.message is None:
             return await handler(event, data)
 
+        if self._should_skip(event):
+            return await handler(event, data)
+
         proxy = CallbackMessageProxy(event, hint=self._hint)
         object.__setattr__(event, "message", proxy)
         data["event_message"] = proxy
         return await handler(event, data)
+
+    def _should_skip(self, event: CallbackQuery) -> bool:
+        data = event.data or ""
+        message = event.message
+        if data.startswith("logs:"):
+            return True
+        if getattr(message, "is_topic_message", False):
+            return True
+        if getattr(message, "via_bot", None) is not None:
+            return True
+        return False
 
 
 __all__ = ["CallbackDedupMiddleware"]

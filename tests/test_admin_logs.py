@@ -8,6 +8,7 @@ import pytest
 from bot.handlers.admin import logs
 from bot.keyboards.admin_keyboards import (
     LOGS_ACHIEVEMENTS_BUTTON,
+    LOGS_BACK_BUTTON,
     LOGS_NEXT_BUTTON,
     admin_logs_filters_inline,
 )
@@ -185,6 +186,23 @@ async def test_achievement_button_switches_category(monkeypatch, message_factory
 
     assert captured and captured[-1].category == LogCategory.ACHIEVEMENTS
     assert captured[-1].page == 1
+
+
+@pytest.mark.anyio("asyncio")
+async def test_back_button_clears_state(monkeypatch, message_factory, mock_state):
+    async def fake_is_admin(*_args, **_kwargs) -> bool:
+        return True
+
+    monkeypatch.setattr(logs, "is_admin", fake_is_admin)
+
+    await mock_state.set_state(AdminLogsState.browsing)
+    await mock_state.update_data(category=LogCategory.TOPUPS.value, page=2)
+
+    message = message_factory(text=LOGS_BACK_BUTTON, user_id=77)
+    await logs.exit_logs_menu(message, mock_state)
+
+    assert await mock_state.get_state() is None
+    assert message.answers and any("главное меню" in text.lower() for text, _ in message.answers)
 
 
 def test_logs_filters_include_promocode_button():

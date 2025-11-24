@@ -74,6 +74,7 @@ class MockCallbackMessage:
     def __init__(self) -> None:
         self.edits: list[tuple[str, dict]] = []
         self.answers: list[tuple[str, dict]] = []
+        self.deleted = False
 
     async def edit_text(self, text: str, **kwargs):
         self.edits.append((text, kwargs))
@@ -82,6 +83,10 @@ class MockCallbackMessage:
     async def answer(self, text: str, **kwargs):
         self.answers.append((text, kwargs))
         return text
+
+    async def delete(self):
+        self.deleted = True
+        return True
 
 
 class MockCallbackQuery:

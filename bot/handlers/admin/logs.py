@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from bot.config import ADMIN_ROOT_IDS, ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
     LOGS_ACHIEVEMENTS_BUTTON,
+    LOGS_BACK_BUTTON,
     LOGS_NEXT_BUTTON,
     LOGS_NEXT_CALLBACK,
     LOGS_PREV_BUTTON,
@@ -124,21 +126,28 @@ async def send_chunked_html(
     *,
     parse_mode: str | None = None,
     reply_markup: types.InlineKeyboardMarkup | None = None,
+    delete_original: bool = False,
+    attach_markup_to_first: bool = False,
 ) -> None:
     chunks = _split_html_text(text)
     if not chunks:
         return
 
-    if len(chunks) == 1:
-        await message.edit_text(chunks[0], parse_mode=parse_mode, reply_markup=reply_markup)
-        return
+    if delete_original:
+        try:
+            await message.delete()
+        except TelegramBadRequest:  # pragma: no cover - Telegram API errors
+            pass
 
-    await message.edit_text(chunks[0], parse_mode=parse_mode)
+    first_markup = reply_markup if len(chunks) == 1 or attach_markup_to_first else None
+    await message.answer(chunks[0], parse_mode=parse_mode, reply_markup=first_markup)
 
     for chunk in chunks[1:-1]:
         await message.answer(chunk, parse_mode=parse_mode)
 
-    await message.answer(chunks[-1], parse_mode=parse_mode, reply_markup=reply_markup)
+    if len(chunks) > 1:
+        tail_markup = None if attach_markup_to_first else reply_markup
+        await message.answer(chunks[-1], parse_mode=parse_mode, reply_markup=tail_markup)
 
 
 @router.message(F.text == "📜 Логи")
@@ -260,6 +269,15 @@ async def previous_page_message(message: types.Message, state: FSMContext):
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_SEARCH_BUTTON)
 async def prompt_search_message(message: types.Message, state: FSMContext):
     await _handle_search_prompt(message, state)
+
+
+@router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_BACK_BUTTON)
+async def exit_logs_menu(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    await state.clear()
+    await message.answer("Возвращаюсь в главное меню", reply_markup=admin_main_menu_kb())
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == "logs:noop")
@@ -397,15 +415,13 @@ async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
         state, message.from_user.id
     )
 
-    chunks = _split_html_text(text)
-    if not chunks:
-        return
-
-    await message.answer(
-        chunks[0], parse_mode="HTML", reply_markup=inline_markup
+    await send_chunked_html(
+        message,
+        text,
+        parse_mode="HTML",
+        reply_markup=inline_markup,
+        attach_markup_to_first=True,
     )
-    for chunk in chunks[1:]:
-        await message.answer(chunk, parse_mode="HTML")
 
 
 async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> None:
@@ -418,6 +434,7 @@ async def _send_logs_callback(call: types.CallbackQuery, state: FSMContext) -> N
         text,
         parse_mode="HTML",
         reply_markup=markup,
+        delete_original=True,
     )
 
 

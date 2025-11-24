@@ -19,6 +19,7 @@ LOGS_SEARCH_BUTTON = "🔍 Поиск по пользователю"
 LOGS_PREV_BUTTON = "⬅️ Предыдущая"
 LOGS_NEXT_BUTTON = "➡️ Следующая"
 LOGS_ACHIEVEMENTS_BUTTON = "🏆 Достижения"
+LOGS_BACK_BUTTON = "↩️ Назад"
 
 LOGS_REFRESH_CALLBACK = "logs:refresh"
 LOGS_SEARCH_CALLBACK = "logs:search"
@@ -74,7 +75,7 @@ def admin_logs_menu_kb(
 
     if navigation_row:
         buttons.append(navigation_row)
-    buttons.append([KeyboardButton(text="↩️ Назад")])
+    buttons.append([KeyboardButton(text=LOGS_BACK_BUTTON)])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 

@@ -93,3 +93,20 @@ async def test_edits_allowed_when_content_changes():
 
     assert message.edit_text_calls == [("Page 2", {"reply_markup": updated_markup})]
     assert repeat_callback.answers == [(None, False)]
+
+
+@pytest.mark.anyio
+async def test_logs_callbacks_are_not_wrapped():
+    message = RecordingMessage("Logs", reply_markup=None)
+    callback = await build_callback(message, data="logs:next")
+    middleware = CallbackDedupMiddleware(hint="Already updated")
+
+    async def handler(event, data):
+        await event.message.edit_text("Updated via logs")
+        return event.message is message
+
+    result = await middleware(handler, callback, {})
+
+    assert result is True
+    assert message.edit_text_calls == [("Updated via logs", {})]
+    assert callback.answers == []
