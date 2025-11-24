@@ -9,6 +9,8 @@ from bot.db import Admin, async_session
 
 router = Router(name="attachment_blocker")
 
+
+# --- Системные типы сообщений, которые не считаются пользовательскими вложениями ---
 SERVICE_CONTENT_TYPES: tuple[ContentType, ...] = (
     ContentType.NEW_CHAT_MEMBERS,
     ContentType.LEFT_CHAT_MEMBER,
@@ -52,40 +54,56 @@ SERVICE_CONTENT_TYPES: tuple[ContentType, ...] = (
 )
 
 
+# --- Проверка является ли пользователь админом ---
 async def _is_admin(tg_id: int, data: dict | None = None) -> bool:
     session = data.get("session") if data else None
+
+    # Если в middleware уже есть открытая DB-сессия — используем её
     if session:
         return bool(await session.scalar(select(Admin).where(Admin.telegram_id == tg_id)))
 
+    # Иначе открываем собственную
     async with async_session() as new_session:
         return bool(await new_session.scalar(select(Admin).where(Admin.telegram_id == tg_id)))
 
 
+# --- Основной фильтр блокировки вложений ---
 class AttachmentBlockerFilter(Filter):
-    """Filter that catches non-text messages from non-admin users."""
+    """Блокирует любые НЕ-текстовые сообщения от НЕ-админов."""
 
     async def __call__(self, event: types.TelegramObject, **data) -> bool:
+        # Нас интересуют только обычные сообщения
         if not isinstance(event, types.Message):
             return False
 
+        # Если у сообщения есть текст — пропускаем
         if event.text:
             return False
 
+        # Если нет отправителя — пропускаем (на всякий случай)
         if not event.from_user:
             return False
 
+        # Пропускаем системные события
         if event.content_type in SERVICE_CONTENT_TYPES:
             return False
 
+        # Пропускаем админов
         if await _is_admin(event.from_user.id, data):
             return False
 
+        # Всё остальное — блокируем
         return True
 
 
+# --- Хэндлер блокировки вложений ---
 @router.message(AttachmentBlockerFilter())
 async def block_attachments(message: types.Message) -> None:
-    await message.answer("❌ Файлы и вложения не принимаются. Введите текстовое сообщение.")
+    await message.answer(
+        "❌ *Файлы и вложения запрещены.*\n"
+        "Пожалуйста, введите *только текстовое сообщение.*",
+        parse_mode="Markdown"
+    )
 
 
 __all__ = ["router", "AttachmentBlockerFilter"]
