@@ -18,6 +18,7 @@ from bot.handlers.attachment_blocker import router as attachment_blocker_router
 from bot.handlers.global_block_filter import router as global_block_filter_router
 from bot.handlers.user import routers as user_routers
 from bot.middleware import BannedMiddleware, BotStatusMiddleware, CallbackDedupMiddleware, UserSyncMiddleware
+from bot.middleware.block_attachments import BlockAttachmentsMiddleware
 
 # Firebase sync
 from bot.firebase.firebase_service import init_firebase, firebase_sync_loop
@@ -50,6 +51,7 @@ async def ensure_root_admin() -> None:
 def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher(storage=storage)
 
+    dispatcher.update.outer_middleware(BlockAttachmentsMiddleware())
     dispatcher.update.outer_middleware(BotStatusMiddleware())
     dispatcher.update.outer_middleware(UserSyncMiddleware())
     dispatcher.update.outer_middleware(CallbackDedupMiddleware())
