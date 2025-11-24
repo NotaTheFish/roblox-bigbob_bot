@@ -160,8 +160,7 @@ async def start_cmd(message: types.Message, command: CommandStart | None = None)
                 )
 
                 return await message.answer(
-                    "👋 Добро пожаловать!\n",
-                    "Перед началом нужно подтвердить Roblox-аккаунт.",
+                    "👋 Добро пожаловать!\nПеред началом нужно подтвердить Roblox-аккаунт.",
                     reply_markup=verify_button(),
                 )
 
