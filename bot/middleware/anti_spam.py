@@ -157,114 +157,166 @@ class AntiSpamMiddleware(BaseMiddleware):
                 await self._warn_user(event, user_id, callback_hint=True)
                 return None
 
-            # --- CALLBACKS --------------------------------------------------
-            if isinstance(event, CallbackQuery):
-                is_duplicate, last_seen = self._is_duplicate_callback(
-                    event, user_id, limits, now
-                )
-                if is_duplicate:
-                    await self._warn_duplicate_callback(event)
-                    await self._log_security_event(
-                        db_user=current_user,
-                        telegram_id=user_id,
-                        event_type="duplicate_callback",
-                        message="Duplicate callback suppressed",
-                        data={
-                            "data": event.data,
-                            "window_seconds": limits.duplicate_window_seconds,
-                            "last_seen_at": last_seen,
-                        },
-                    )
-                    return None
-
-                if not limits.disabled:
-                    decision = self._check_and_record(
-                        user_id, now, limits.callback, self._callback_events
-                    )
-                    if decision == "hard":
-                        await self._log_security_event(
-                            db_user=current_user,
-                            telegram_id=user_id,
-                            event_type="hard_flood_callback",
-                            message="Callback hard flood limit reached",
-                            data={
-                                "count": len(self._callback_events[user_id]),
-                                "hard_limit": limits.callback.hard_limit,
-                                "window_seconds": limits.callback.window_seconds,
-                            },
-                        )
-                        await self._apply_hard_limit(user_id, current_user, now, event)
-                        await self._warn_user(event, user_id, callback_hint=True)
-                        return None
-
-                    if decision == "soft":
-                        await self._log_security_event(
-                            db_user=current_user,
-                            telegram_id=user_id,
-                            event_type="soft_flood_callback",
-                            message="Callback soft flood limit reached",
-                            data={
-                                "count": len(self._callback_events[user_id]),
-                                "soft_limit": limits.callback.soft_limit,
-                                "window_seconds": limits.callback.window_seconds,
-                            },
-                        )
-                        await self._warn_user(event, user_id, callback_hint=True)
-                        return None
-
-                return await handler(event, data)
-
             # --- MESSAGES --------------------------------------------------
             if isinstance(event, Message):
-                if not limits.disabled:
-                    decision = self._check_and_record(
-                        user_id, now, limits.message, self._message_events
-                    )
-                    if decision == "hard":
-                        await self._log_security_event(
-                            db_user=current_user,
-                            telegram_id=user_id,
-                            event_type="hard_flood_message",
-                            message="Message hard flood limit reached",
-                            data={
-                                "count": len(self._message_events[user_id]),
-                                "hard_limit": limits.message.hard_limit,
-                                "window_seconds": limits.message.window_seconds,
-                            },
-                        )
-                        await self._apply_hard_limit(user_id, current_user, now, event)
-                        await self._warn_user(event, user_id, callback_hint=False)
-                        return None
+                return await self._handle_message_event(
+                    handler=handler,
+                    event=event,
+                    data=data,
+                    user_id=user_id,
+                    current_user=current_user,
+                    limits=limits,
+                    now=now,
+                )
 
-                    if decision == "soft":
-                        await self._log_security_event(
-                            db_user=current_user,
-                            telegram_id=user_id,
-                            event_type="soft_flood_message",
-                            message="Message soft flood limit reached",
-                            data={
-                                "count": len(self._message_events[user_id]),
-                                "soft_limit": limits.message.soft_limit,
-                                "window_seconds": limits.message.window_seconds,
-                            },
-                        )
-                        await self._warn_user(event, user_id, callback_hint=False)
-                        return None
+            # --- CALLBACKS --------------------------------------------------
+            if isinstance(event, CallbackQuery):
+                return await self._handle_callback_event(
+                    handler=handler,
+                    event=event,
+                    data=data,
+                    user_id=user_id,
+                    current_user=current_user,
+                    limits=limits,
+                    now=now,
+                )
 
-                return await handler(event, data)
-
-            # --- UPDATE WRAPPER --------------------------------------------
+            # --- OTHER EVENTS --------------------------------------------
             if isinstance(event, Update):
-                if event.callback_query:
-                    return await self.__call__(handler, event.callback_query, data)
                 if event.message:
-                    return await self.__call__(handler, event.message, data)
+                    return await self._handle_message_event(
+                        handler=handler,
+                        event=event.message,
+                        data=data,
+                        user_id=user_id,
+                        current_user=current_user,
+                        limits=limits,
+                        now=now,
+                    )
+                if event.callback_query:
+                    return await self._handle_callback_event(
+                        handler=handler,
+                        event=event.callback_query,
+                        data=data,
+                        user_id=user_id,
+                        current_user=current_user,
+                        limits=limits,
+                        now=now,
+                    )
 
             return await handler(event, data)
 
         except Exception:
             logger.exception("AntiSpamMiddleware failed; allowing event to continue")
             return await handler(event, data)
+
+    async def _handle_message_event(
+        self,
+        *,
+        handler: TelegramHandler,
+        event: Message,
+        data: Dict[str, Any],
+        user_id: int,
+        current_user: User | None,
+        limits: UserLimits,
+        now: float,
+    ) -> Any:
+        if not limits.disabled:
+            decision = self._check_and_record(user_id, now, limits.message, self._message_events)
+            if decision == "hard":
+                await self._log_security_event(
+                    db_user=current_user,
+                    telegram_id=user_id,
+                    event_type="hard_flood_message",
+                    message="Message hard flood limit reached",
+                    data={
+                        "count": len(self._message_events[user_id]),
+                        "hard_limit": limits.message.hard_limit,
+                        "window_seconds": limits.message.window_seconds,
+                    },
+                )
+                await self._apply_hard_limit(user_id, current_user, now, event)
+                await self._warn_user(event, user_id, callback_hint=False)
+                return None
+
+            if decision == "soft":
+                await self._log_security_event(
+                    db_user=current_user,
+                    telegram_id=user_id,
+                    event_type="soft_flood_message",
+                    message="Message soft flood limit reached",
+                    data={
+                        "count": len(self._message_events[user_id]),
+                        "soft_limit": limits.message.soft_limit,
+                        "window_seconds": limits.message.window_seconds,
+                    },
+                )
+                await self._warn_user(event, user_id, callback_hint=False)
+                return None
+
+        return await handler(event, data)
+
+    async def _handle_callback_event(
+        self,
+        *,
+        handler: TelegramHandler,
+        event: CallbackQuery,
+        data: Dict[str, Any],
+        user_id: int,
+        current_user: User | None,
+        limits: UserLimits,
+        now: float,
+    ) -> Any:
+        is_duplicate, last_seen = self._is_duplicate_callback(event, user_id, limits, now)
+        if is_duplicate:
+            await self._warn_duplicate_callback(event)
+            await self._log_security_event(
+                db_user=current_user,
+                telegram_id=user_id,
+                event_type="duplicate_callback",
+                message="Duplicate callback suppressed",
+                data={
+                    "data": event.data,
+                    "window_seconds": limits.duplicate_window_seconds,
+                    "last_seen_at": last_seen,
+                },
+            )
+            return None
+
+        if not limits.disabled:
+            decision = self._check_and_record(user_id, now, limits.callback, self._callback_events)
+            if decision == "hard":
+                await self._log_security_event(
+                    db_user=current_user,
+                    telegram_id=user_id,
+                    event_type="hard_flood_callback",
+                    message="Callback hard flood limit reached",
+                    data={
+                        "count": len(self._callback_events[user_id]),
+                        "hard_limit": limits.callback.hard_limit,
+                        "window_seconds": limits.callback.window_seconds,
+                    },
+                )
+                await self._apply_hard_limit(user_id, current_user, now, event)
+                await self._warn_user(event, user_id, callback_hint=True)
+                return None
+
+            if decision == "soft":
+                await self._log_security_event(
+                    db_user=current_user,
+                    telegram_id=user_id,
+                    event_type="soft_flood_callback",
+                    message="Callback soft flood limit reached",
+                    data={
+                        "count": len(self._callback_events[user_id]),
+                        "soft_limit": limits.callback.soft_limit,
+                        "window_seconds": limits.callback.window_seconds,
+                    },
+                )
+                await self._warn_user(event, user_id, callback_hint=True)
+                return None
+
+        return await handler(event, data)
 
     # ======================================================================
     # Duplicate callback detection
