@@ -38,6 +38,7 @@ from bot.services.admin_logs import (
 )
 from bot.services.user_search import find_user_by_query
 from bot.states.admin_states import AdminLogsState
+from bot.handlers.admin.achievements import admin_achievements_menu
 from bot.utils.time import to_msk
 
 
@@ -265,17 +266,15 @@ async def prompt_search(call: types.CallbackQuery, state: FSMContext):
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_ACHIEVEMENTS_BUTTON)
-async def show_achievement_logs(message: types.Message, state: FSMContext):
+async def open_admin_achievements(message: types.Message, state: FSMContext):
     if not await _is_browsing_state(state):
         return
 
     if not await _require_admin_message(message):
         return
 
-    await state.update_data(
-        category=LogCategory.ACHIEVEMENTS.value, page=1, offsets=[0]
-    )
-    await _send_logs_message(message, state)
+    await state.clear()
+    await admin_achievements_menu(message)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_REFRESH_BUTTON)
