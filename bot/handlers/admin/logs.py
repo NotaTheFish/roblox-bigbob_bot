@@ -158,6 +158,13 @@ async def enter_logs_menu(message: types.Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return await message.answer("⛔ У вас нет доступа", reply_markup=admin_main_menu_kb())
 
+    current_state = await state.get_state()
+    if current_state and current_state not in {
+        AdminLogsState.browsing.state,
+        AdminLogsState.waiting_for_query.state,
+    }:
+        return
+
     await state.set_state(AdminLogsState.browsing)
     await state.update_data(
         category=LogCategory.TOPUPS.value,
@@ -196,8 +203,13 @@ async def category_callback(call: types.CallbackQuery, state: FSMContext):
     await _send_logs_callback(call, state)
 
 
-@router.callback_query(F.data.startswith("demote_admin_confirm:"))
+@router.callback_query(
+    StateFilter(AdminLogsState.browsing), F.data.startswith("demote_admin_confirm:")
+)
 async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return await call.answer()
+
     if not call.from_user:
         return await call.answer()
     if call.from_user.id != ROOT_ADMIN_ID:
@@ -222,26 +234,41 @@ async def demote_confirm(call: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_REFRESH_CALLBACK)
 async def refresh_logs(call: types.CallbackQuery, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return await call.answer()
+
     await _handle_refresh(call, state)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_NEXT_CALLBACK)
 async def next_page(call: types.CallbackQuery, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return await call.answer()
+
     await _handle_page_change(call, state, delta=1)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_PREV_CALLBACK)
 async def previous_page(call: types.CallbackQuery, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return await call.answer()
+
     await _handle_page_change(call, state, delta=-1)
 
 
 @router.callback_query(StateFilter(AdminLogsState.browsing), F.data == LOGS_SEARCH_CALLBACK)
 async def prompt_search(call: types.CallbackQuery, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return await call.answer()
+
     await _handle_search_prompt(call, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_ACHIEVEMENTS_BUTTON)
 async def show_achievement_logs(message: types.Message, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return
+
     if not await _require_admin_message(message):
         return
 
@@ -253,26 +280,47 @@ async def show_achievement_logs(message: types.Message, state: FSMContext):
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_REFRESH_BUTTON)
 async def refresh_logs_message(message: types.Message, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return
+
     await _handle_refresh(message, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_NEXT_BUTTON)
 async def next_page_message(message: types.Message, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return
+
     await _handle_page_change(message, state, delta=1)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_PREV_BUTTON)
 async def previous_page_message(message: types.Message, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return
+
     await _handle_page_change(message, state, delta=-1)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_SEARCH_BUTTON)
 async def prompt_search_message(message: types.Message, state: FSMContext):
+    if not await _is_browsing_state(state):
+        return
+
     await _handle_search_prompt(message, state)
 
 
 @router.message(StateFilter(AdminLogsState.browsing), F.text == LOGS_BACK_BUTTON)
 async def exit_logs_menu(message: types.Message, state: FSMContext):
+    if not await _require_admin_message(message):
+        return
+
+    await state.clear()
+    await message.answer("Возвращаюсь в главное меню", reply_markup=admin_main_menu_kb())
+
+
+@router.message(AdminLogsState.waiting_for_query, F.text == LOGS_BACK_BUTTON)
+async def cancel_logs_search(message: types.Message, state: FSMContext):
     if not await _require_admin_message(message):
         return
 
@@ -369,6 +417,11 @@ async def _update_page(state: FSMContext, delta: int) -> None:
 async def _handle_search_prompt(
     trigger: types.CallbackQuery | types.Message, state: FSMContext
 ) -> None:
+    if not await _is_browsing_state(state):
+        if isinstance(trigger, types.CallbackQuery):
+            await trigger.answer()
+        return
+
     if isinstance(trigger, types.CallbackQuery):
         if not await _require_admin_callback(trigger):
             return
@@ -404,6 +457,10 @@ async def _require_admin_callback(call: types.CallbackQuery) -> bool:
         await call.answer("Нет доступа", show_alert=True)
         return False
     return True
+
+
+async def _is_browsing_state(state: FSMContext) -> bool:
+    return (await state.get_state()) == AdminLogsState.browsing.state
 
 
 async def _send_logs_message(message: types.Message, state: FSMContext) -> None:
