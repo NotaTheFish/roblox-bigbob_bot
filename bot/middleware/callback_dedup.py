@@ -23,30 +23,29 @@ def _normalize_markup(markup: InlineKeyboardMarkup | None) -> Any:
 class CallbackMessageProxy:
     """Proxy that deduplicates identical edits on a callback message."""
 
-    def __init__(self, callback: CallbackQuery, *, hint: str | None) -> None:
+    def __init__(self, callback: CallbackQuery, *, state: Dict[str, Any], hint: str | None) -> None:
         self._callback = callback
         self._message = callback.message
         self._hint = hint
-        self._text_cache = getattr(self._message, "text", None)
-        self._markup_cache = getattr(self._message, "reply_markup", None)
+        self._state = state
 
     def __getattr__(self, name: str):
         if name == "text":
-            return self._text_cache
+            return self._state.get("text")
         if name == "reply_markup":
-            return self._markup_cache
+            return self._state.get("markup")
         return getattr(self._message, name)
 
     def _current_text(self) -> str | None:
-        return self._text_cache
+        return self._state.get("text")
 
     def _target_markup(self, provided: InlineKeyboardMarkup | object) -> InlineKeyboardMarkup | None:
         if provided is _NOT_PROVIDED:
-            return self._markup_cache
+            return self._state.get("markup")
         return provided
 
     def _markups_equal(self, new_markup: InlineKeyboardMarkup | None) -> bool:
-        return _normalize_markup(self._markup_cache) == _normalize_markup(new_markup)
+        return _normalize_markup(self._state.get("markup")) == _normalize_markup(new_markup)
 
     async def _answer_only(self):
         if self._hint is None:
@@ -60,9 +59,9 @@ class CallbackMessageProxy:
         markup: InlineKeyboardMarkup | object = _NOT_PROVIDED,
     ) -> None:
         if text is not None:
-            self._text_cache = text
+            self._state["text"] = text
         if markup is not _NOT_PROVIDED:
-            self._markup_cache = markup
+            self._state["markup"] = markup
 
     async def edit_text(self, text: str, **kwargs):
         markup_provided = kwargs.get("reply_markup", _NOT_PROVIDED)
@@ -96,6 +95,7 @@ class CallbackDedupMiddleware(BaseMiddleware):
     def __init__(self, *, hint: str | None = "Сообщение уже актуально") -> None:
         super().__init__()
         self._hint = hint
+        self._last_messages: Dict[tuple[int, int], Dict[str, Any]] = {}
 
     async def __call__(
         self,
@@ -109,7 +109,16 @@ class CallbackDedupMiddleware(BaseMiddleware):
         if self._should_skip(event):
             return await handler(event, data)
 
-        proxy = CallbackMessageProxy(event, hint=self._hint)
+        key = (event.message.chat.id, event.message.message_id)
+        state = self._last_messages.get(key)
+        if state is None:
+            state = {
+                "text": getattr(event.message, "text", None),
+                "markup": getattr(event.message, "reply_markup", None),
+            }
+            self._last_messages[key] = state
+
+        proxy = CallbackMessageProxy(event, state=state, hint=self._hint)
         object.__setattr__(event, "message", proxy)
         data["event_message"] = proxy
         return await handler(event, data)
