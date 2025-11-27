@@ -145,6 +145,18 @@ class AntiSpamMiddleware(BaseMiddleware):
             from_user = self._extract_from_user(event)
             user_id = from_user.id if from_user else None
             current_user: User | None = data.get("current_user")
+            event_type = data.get("event_type")
+
+            if event_type is None:
+                if isinstance(event, Message):
+                    event_type = "message"
+                elif isinstance(event, CallbackQuery):
+                    event_type = "callback_query"
+                elif isinstance(event, Update):
+                    if event.message or event.edited_message:
+                        event_type = "message"
+                    elif event.callback_query:
+                        event_type = "callback_query"
 
             if user_id is None:
                 return await handler(event, data)
@@ -158,45 +170,28 @@ class AntiSpamMiddleware(BaseMiddleware):
                 return None
 
             # --- MESSAGES --------------------------------------------------
-            if isinstance(event, Message):
-                return await self._handle_message_event(
-                    handler=handler,
-                    event=event,
-                    data=data,
-                    user_id=user_id,
-                    current_user=current_user,
-                    limits=limits,
-                    now=now,
-                )
-
-            # --- CALLBACKS --------------------------------------------------
-            if isinstance(event, CallbackQuery):
-                return await self._handle_callback_event(
-                    handler=handler,
-                    event=event,
-                    data=data,
-                    user_id=user_id,
-                    current_user=current_user,
-                    limits=limits,
-                    now=now,
-                )
-
-            # --- OTHER EVENTS --------------------------------------------
-            if isinstance(event, Update):
-                if event.message:
+            if event_type == "message":
+                message_event = self._extract_message_event(event)
+                if message_event:
                     return await self._handle_message_event(
                         handler=handler,
-                        event=event.message,
+                        handler_event=event,
+                        message_event=message_event,
                         data=data,
                         user_id=user_id,
                         current_user=current_user,
                         limits=limits,
                         now=now,
                     )
-                if event.callback_query:
+
+            # --- CALLBACKS --------------------------------------------------
+            if event_type == "callback_query":
+                callback_event = self._extract_callback_event(event)
+                if callback_event:
                     return await self._handle_callback_event(
                         handler=handler,
-                        event=event.callback_query,
+                        handler_event=event,
+                        callback_event=callback_event,
                         data=data,
                         user_id=user_id,
                         current_user=current_user,
@@ -214,7 +209,8 @@ class AntiSpamMiddleware(BaseMiddleware):
         self,
         *,
         handler: TelegramHandler,
-        event: Message,
+        handler_event: TelegramObject,
+        message_event: Message,
         data: Dict[str, Any],
         user_id: int,
         current_user: User | None,
@@ -235,8 +231,8 @@ class AntiSpamMiddleware(BaseMiddleware):
                         "window_seconds": limits.message.window_seconds,
                     },
                 )
-                await self._apply_hard_limit(user_id, current_user, now, event)
-                await self._warn_user(event, user_id, callback_hint=False)
+                await self._apply_hard_limit(user_id, current_user, now, message_event)
+                await self._warn_user(message_event, user_id, callback_hint=False)
                 return None
 
             if decision == "soft":
@@ -251,32 +247,35 @@ class AntiSpamMiddleware(BaseMiddleware):
                         "window_seconds": limits.message.window_seconds,
                     },
                 )
-                await self._warn_user(event, user_id, callback_hint=False)
+                await self._warn_user(message_event, user_id, callback_hint=False)
                 return None
 
-        return await handler(event, data)
+        return await handler(handler_event, data)
 
     async def _handle_callback_event(
         self,
         *,
         handler: TelegramHandler,
-        event: CallbackQuery,
+        handler_event: TelegramObject,
+        callback_event: CallbackQuery,
         data: Dict[str, Any],
         user_id: int,
         current_user: User | None,
         limits: UserLimits,
         now: float,
     ) -> Any:
-        is_duplicate, last_seen = self._is_duplicate_callback(event, user_id, limits, now)
+        is_duplicate, last_seen = self._is_duplicate_callback(
+            callback_event, user_id, limits, now
+        )
         if is_duplicate:
-            await self._warn_duplicate_callback(event)
+            await self._warn_duplicate_callback(callback_event)
             await self._log_security_event(
                 db_user=current_user,
                 telegram_id=user_id,
                 event_type="duplicate_callback",
                 message="Duplicate callback suppressed",
                 data={
-                    "data": event.data,
+                    "data": callback_event.data,
                     "window_seconds": limits.duplicate_window_seconds,
                     "last_seen_at": last_seen,
                 },
@@ -297,8 +296,8 @@ class AntiSpamMiddleware(BaseMiddleware):
                         "window_seconds": limits.callback.window_seconds,
                     },
                 )
-                await self._apply_hard_limit(user_id, current_user, now, event)
-                await self._warn_user(event, user_id, callback_hint=True)
+                await self._apply_hard_limit(user_id, current_user, now, callback_event)
+                await self._warn_user(callback_event, user_id, callback_hint=True)
                 return None
 
             if decision == "soft":
@@ -313,10 +312,10 @@ class AntiSpamMiddleware(BaseMiddleware):
                         "window_seconds": limits.callback.window_seconds,
                     },
                 )
-                await self._warn_user(event, user_id, callback_hint=True)
+                await self._warn_user(callback_event, user_id, callback_hint=True)
                 return None
 
-        return await handler(event, data)
+        return await handler(handler_event, data)
 
     # ======================================================================
     # Duplicate callback detection
@@ -497,6 +496,20 @@ class AntiSpamMiddleware(BaseMiddleware):
             if event.edited_message:
                 return event.edited_message.from_user
         return getattr(event, "from_user", None)
+
+    def _extract_message_event(self, event: TelegramObject) -> Message | None:
+        if isinstance(event, Message):
+            return event
+        if isinstance(event, Update):
+            return event.message or event.edited_message
+        return None
+
+    def _extract_callback_event(self, event: TelegramObject) -> CallbackQuery | None:
+        if isinstance(event, CallbackQuery):
+            return event
+        if isinstance(event, Update):
+            return event.callback_query
+        return None
 
 
 __all__ = ["AntiSpamMiddleware", "get_user_limits"]
