@@ -117,3 +117,59 @@ async def test_callback_homograph_blocked_without_http(monkeypatch):
     assert log_entry.event_type == "security.link_blocked"
     assert "xn--" in (log_entry.data or {}).get("text_sample", "")
     assert session.committed is True
+
+
+@pytest.mark.anyio
+async def test_admin_login_allows_mixed_script_code(monkeypatch):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+
+    middleware = LinkGuardMiddleware()
+    message = _build_message("/admin_login AbС12345")
+
+    handler_called = False
+
+    async def handler(event, data):
+        nonlocal handler_called
+        handler_called = True
+        return "handled"
+
+    result = await middleware(handler, message, {})
+
+    assert result == "handled"
+    assert handler_called is True
+    assert message.answers == []
+    assert session.added == []
+    assert session.committed is False
+
+
+@pytest.mark.anyio
+async def test_admin_login_with_url_still_blocked(monkeypatch):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+
+    middleware = LinkGuardMiddleware()
+    message = _build_message("/admin_login https://example.com")
+
+    handler_called = False
+
+    async def handler(event, data):
+        nonlocal handler_called
+        handler_called = True
+        return "handled"
+
+    result = await middleware(handler, message, {})
+
+    assert result is None
+    assert handler_called is False
+    assert message.answers == [
+        (
+            "🚫 Ссылки в сообщениях запрещены.",
+            {"disable_web_page_preview": True, "parse_mode": None},
+        )
+    ]
+
+    log_entry = next(obj for obj in session.added if isinstance(obj, LogEntry))
+    assert log_entry.event_type == "security.link_blocked"
+    assert "example.com" in (log_entry.data or {}).get("text_sample", "")
+    assert session.committed is True

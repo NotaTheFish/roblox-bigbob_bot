@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
+from bot.config import ADMIN_ROOT_IDS, ADMINS, ROOT_ADMIN_ID
 from bot.db import LogEntry, async_session
 
 TelegramHandler = Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]]
@@ -20,6 +21,14 @@ URL_PATTERN = re.compile(
 CYRILLIC = re.compile("[\u0400-\u04FF]")
 LATIN = re.compile("[A-Za-z]")
 
+ADMIN_ALLOWLIST_COMMANDS = ("/admin_login", "/admin")
+ADMIN_ALLOWLIST_CALLBACK_PREFIXES = (
+    "admin",
+    "confirm_block_admin",
+    "cancel_block_admin",
+    "demote_admin",
+)
+
 
 class LinkGuardMiddleware(BaseMiddleware):
     """Block clickable URLs/homographs and log the attempt."""
@@ -31,8 +40,13 @@ class LinkGuardMiddleware(BaseMiddleware):
         self, handler: TelegramHandler, event: TelegramObject, data: Dict[str, Any]
     ) -> Any:
         text = self._extract_text(event)
+        user_id = self._get_user_id(event)
+        allowlisted = self._is_allowlisted_payload(text)
 
-        if text and self._contains_link(text):
+        if allowlisted and self._is_trusted_admin(user_id, data):
+            return await handler(event, data)
+
+        if text and self._contains_link(text, allow_mixed_script=not allowlisted):
             await self._neutralize(event)
             await self._log_security_event(event, text)
             return None
@@ -52,11 +66,11 @@ class LinkGuardMiddleware(BaseMiddleware):
         return ""
 
     @staticmethod
-    def _contains_link(text: str) -> bool:
+    def _contains_link(text: str, *, allow_mixed_script: bool = True) -> bool:
         return bool(
             URL_PATTERN.search(text)
             or ("xn--" in text.lower())
-            or (CYRILLIC.search(text) and LATIN.search(text))
+            or (allow_mixed_script and CYRILLIC.search(text) and LATIN.search(text))
         )
 
     @staticmethod
@@ -66,6 +80,45 @@ class LinkGuardMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery) and event.from_user:
             return event.from_user.id
         return None
+
+    @staticmethod
+    def _is_allowlisted_payload(text: str) -> bool:
+        if not text:
+            return False
+
+        lowered = text.lower()
+
+        if any(lowered.startswith(cmd) for cmd in ADMIN_ALLOWLIST_COMMANDS):
+            return True
+
+        return any(lowered.startswith(prefix) for prefix in ADMIN_ALLOWLIST_CALLBACK_PREFIXES)
+
+    @staticmethod
+    def _is_trusted_admin(user_id: int | None, data: Dict[str, Any]) -> bool:
+        if user_id is None:
+            return False
+
+        trusted_ids = {ROOT_ADMIN_ID, *(ADMINS or []), *(ADMIN_ROOT_IDS or [])}
+
+        if user_id in trusted_ids:
+            return True
+
+        if isinstance(data.get("is_admin"), bool) and data["is_admin"]:
+            return True
+
+        current_user = data.get("current_user")
+        if current_user:
+            if getattr(current_user, "telegram_id", None) == user_id and getattr(
+                current_user, "is_root", False
+            ):
+                return True
+
+            if getattr(current_user, "tg_id", None) == user_id and getattr(
+                current_user, "is_root", False
+            ):
+                return True
+
+        return False
 
     async def _neutralize(self, event: TelegramObject) -> None:
         try:
