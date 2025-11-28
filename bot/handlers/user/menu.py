@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
@@ -61,6 +63,70 @@ SEARCH_PROMPT = (
     "🔍 Отправьте ник в боте, Roblox ник, Telegram @username "
     f"или ID бота (например, {BOT_USER_ID_PREFIX}12345)."
 )
+FORBIDDEN_DOMAIN_SUFFIXES = {
+    "com",
+    "ru",
+    "net",
+    "org",
+    "io",
+    "me",
+    "gg",
+    "app",
+    "dev",
+    "xyz",
+    "info",
+    "site",
+    "link",
+    "click",
+    "ai",
+    "shop",
+    "live",
+    "cloud",
+    "tech",
+    "store",
+    "top",
+    "fun",
+    "online",
+    "pro",
+    "lol",
+    "su",
+    "co",
+    "biz",
+    "by",
+    "kz",
+    "ua",
+    "tv",
+    "fm",
+}
+HOMOGLYPH_TRANSLATION = str.maketrans(
+    {
+        "。": ".",
+        "．": ".",
+        "｡": ".",
+        "․": ".",
+        "／": "/",
+        "∕": "/",
+        "⁄": "/",
+        "꞉": ":",
+        "：": ":",
+        "﹕": ":",
+        "＠": "@",
+        "﹫": "@",
+    }
+)
+FORBIDDEN_LINK_PATTERN = re.compile(
+    "|".join(
+        [
+            r"https?://",
+            r"\b(?:t\.me|telegram\.me)/",
+            r"\B@[\w_]{3,}",
+            r"\b[\w-]+\.(?:"
+            + "|".join(sorted(FORBIDDEN_DOMAIN_SUFFIXES))
+            + r")(?:\b|/)",
+        ]
+    ),
+    re.IGNORECASE,
+)
 
 
 def _profile_edit_keyboard() -> InlineKeyboardMarkup:
@@ -91,6 +157,15 @@ def _shorten_button_text(text: str, limit: int = 32) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1] + "…"
+
+
+def _normalize_user_text(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).strip()
+
+
+def _contains_links(text: str) -> bool:
+    translated = text.translate(HOMOGLYPH_TRANSLATION).casefold()
+    return bool(FORBIDDEN_LINK_PATTERN.search(translated))
 
 
 def _get_cached_roblox_id(username: str | None) -> str | None:
@@ -524,16 +599,25 @@ async def profile_save_nickname(message: types.Message, state: FSMContext):
         return
 
     raw_text = (message.text or "").strip()
-    lower_text = raw_text.lower()
+    normalized_text = _normalize_user_text(raw_text)
+    lower_text = normalized_text.lower()
 
     if lower_text in {"отмена", "cancel"}:
         return await _prompt_edit_menu(message, state, "✏️ Смена ника отменена")
 
-    if not raw_text:
+    if not normalized_text:
         return await _prompt_edit_menu(message, state, "❌ Ник не должен быть пустым")
-    if "\n" in raw_text:
+    if "\n" in normalized_text:
         return await _prompt_edit_menu(message, state, "❌ Ник должен быть в одну строку")
-    if not (NICKNAME_MIN_LENGTH <= len(raw_text) <= NICKNAME_MAX_LENGTH):
+    if _contains_links(normalized_text):
+        return await _prompt_edit_menu(
+            message,
+            state,
+            "Ссылки запрещены. Пожалуйста, укажи корректный текст.",
+        )
+    if not (
+        NICKNAME_MIN_LENGTH <= len(normalized_text) <= NICKNAME_MAX_LENGTH
+    ):
         return await _prompt_edit_menu(
             message,
             state,
@@ -557,7 +641,7 @@ async def profile_save_nickname(message: types.Message, state: FSMContext):
                 message, state, _nickname_cooldown_message(next_change, now)
             )
 
-        user.bot_nickname = raw_text
+        user.bot_nickname = normalized_text
         user.nickname_changed_at = now
         await session.commit()
 
@@ -623,22 +707,27 @@ async def profile_save_about(message: types.Message, state: FSMContext):
         return
 
     raw_text = (message.text or "").strip()
-    lower_text = raw_text.lower()
+    normalized_text = _normalize_user_text(raw_text)
+    lower_text = normalized_text.lower()
 
     if lower_text in {"отмена", "cancel"}:
         await _prompt_edit_menu(message, state, "✏️ Редактирование отменено")
         return
 
-    if raw_text == "-":
+    if normalized_text == "-":
         about_value = None
     else:
-        if not raw_text:
+        if not normalized_text:
             return await message.answer("❌ Текст не должен быть пустым")
-        if len(raw_text) > MAX_ABOUT_LENGTH:
+        if _contains_links(normalized_text):
+            return await message.answer(
+                "Ссылки запрещены. Пожалуйста, укажи корректный текст."
+            )
+        if len(normalized_text) > MAX_ABOUT_LENGTH:
             return await message.answer(
                 f"❌ Описание не должно превышать {MAX_ABOUT_LENGTH} символов"
             )
-        about_value = raw_text
+        about_value = normalized_text
 
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
