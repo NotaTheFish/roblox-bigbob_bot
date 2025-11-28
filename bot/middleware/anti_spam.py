@@ -175,7 +175,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 if message_event:
                     return await self._handle_message_event(
                         handler=handler,
-                        handler_event=message_event,
+                        event=event,
                         message_event=message_event,
                         data=data,
                         user_id=user_id,
@@ -190,7 +190,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 if callback_event:
                     return await self._handle_callback_event(
                         handler=handler,
-                        handler_event=callback_event,
+                        event=event,
                         callback_event=callback_event,
                         data=data,
                         user_id=user_id,
@@ -209,7 +209,7 @@ class AntiSpamMiddleware(BaseMiddleware):
         self,
         *,
         handler: TelegramHandler,
-        handler_event: TelegramObject,
+        event: TelegramObject,
         message_event: Message,
         data: Dict[str, Any],
         user_id: int,
@@ -250,13 +250,13 @@ class AntiSpamMiddleware(BaseMiddleware):
                 await self._warn_user(message_event, user_id, callback_hint=False)
                 return None
 
-        return await handler(handler_event, data)
+        return await handler(event, data)
 
     async def _handle_callback_event(
         self,
         *,
         handler: TelegramHandler,
-        handler_event: TelegramObject,
+        event: TelegramObject,
         callback_event: CallbackQuery,
         data: Dict[str, Any],
         user_id: int,
@@ -315,7 +315,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 await self._warn_user(callback_event, user_id, callback_hint=True)
                 return None
 
-        return await handler(handler_event, data)
+        return await handler(event, data)
 
     # ======================================================================
     # Duplicate callback detection
