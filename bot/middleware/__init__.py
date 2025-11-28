@@ -5,6 +5,7 @@ from .banned import BannedMiddleware
 from .bot_status import BotStatusMiddleware
 from .callback_dedup import CallbackDedupMiddleware
 from .event_type_injector import EventTypeInjectorMiddleware
+from .link_guard import LinkGuardMiddleware
 from .user_sync import UserSyncMiddleware
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "BotStatusMiddleware",
     "CallbackDedupMiddleware",
     "EventTypeInjectorMiddleware",
+    "LinkGuardMiddleware",
     "UserSyncMiddleware",
 ]

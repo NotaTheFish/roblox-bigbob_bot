@@ -23,6 +23,7 @@ from bot.middleware import (
     BotStatusMiddleware,
     CallbackDedupMiddleware,
     EventTypeInjectorMiddleware,
+    LinkGuardMiddleware,
     UserSyncMiddleware,
 )
 from bot.middleware.block_attachments import BlockAttachmentsMiddleware
@@ -59,6 +60,7 @@ def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher(storage=storage)
 
     dispatcher.message.middleware(BlockAttachmentsMiddleware())
+    dispatcher.update.outer_middleware(LinkGuardMiddleware())
     dispatcher.update.outer_middleware(EventTypeInjectorMiddleware())
     dispatcher.update.outer_middleware(BotStatusMiddleware())
     dispatcher.update.outer_middleware(UserSyncMiddleware())
