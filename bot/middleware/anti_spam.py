@@ -175,7 +175,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 if message_event:
                     return await self._handle_message_event(
                         handler=handler,
-                        handler_event=event,
+                        handler_event=message_event,
                         message_event=message_event,
                         data=data,
                         user_id=user_id,
@@ -190,7 +190,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 if callback_event:
                     return await self._handle_callback_event(
                         handler=handler,
-                        handler_event=event,
+                        handler_event=callback_event,
                         callback_event=callback_event,
                         data=data,
                         user_id=user_id,
