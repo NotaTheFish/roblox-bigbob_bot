@@ -46,10 +46,6 @@ async def _matches_secret_word(message: types.Message) -> bool:
     if message.text.startswith("/"):
         return False
 
-    if _should_throttle_secret_word(message.from_user.id):
-        logging.info("Secret word throttle: user %s attempted too fast", message.from_user.id)
-        return False
-
     normalized_text = _normalize_text(message.text)
     if not normalized_text:
         return False
@@ -59,6 +55,10 @@ async def _matches_secret_word(message: types.Message) -> bool:
             select(Admin.telegram_id).where(Admin.telegram_id == message.from_user.id)
         )
         if is_admin:
+            return False
+
+        if _should_throttle_secret_word(message.from_user.id):
+            logging.info("Secret word throttle: user %s attempted too fast", message.from_user.id)
             return False
 
         secret_words = (
