@@ -5,9 +5,18 @@ from bot.middleware.callback_dedup import CallbackDedupMiddleware
 
 
 class RecordingMessage:
-    def __init__(self, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
+    def __init__(
+        self,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+        *,
+        chat_id: int = 1,
+        message_id: int = 1,
+    ) -> None:
         self.text = text
         self.reply_markup = reply_markup
+        self.chat = type("Chat", (), {"id": chat_id})()
+        self.message_id = message_id
         self.edit_text_calls: list[tuple[str, dict]] = []
         self.edit_markup_calls: list[tuple[InlineKeyboardMarkup | None, dict]] = []
 
@@ -51,7 +60,8 @@ async def test_duplicate_callback_skip_edit():
     middleware = CallbackDedupMiddleware(hint="Already updated")
 
     async def handler(event, data):
-        await event.message.edit_text("Page 1", reply_markup=InlineKeyboardMarkup(
+        assert event.message is message
+        await data["event_message"].edit_text("Page 1", reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="1", callback_data="page:1")]]
         ))
         return "handled"
@@ -72,8 +82,9 @@ async def test_edits_allowed_when_content_changes():
     middleware = CallbackDedupMiddleware(hint=None)
 
     async def handler(event, data):
-        await event.message.edit_text("Page 2", reply_markup=updated_markup)
-        await event.message.edit_reply_markup(reply_markup=updated_markup)
+        assert event.message is message
+        await data["event_message"].edit_text("Page 2", reply_markup=updated_markup)
+        await data["event_message"].edit_reply_markup(reply_markup=updated_markup)
         return "handled"
 
     result = await middleware(handler, callback, {})
@@ -87,7 +98,8 @@ async def test_edits_allowed_when_content_changes():
     repeat_callback = await build_callback(message, data="cb:2")
 
     async def repeat_handler(event, data):
-        await event.message.edit_text("Page 2", reply_markup=updated_markup)
+        assert event.message is message
+        await data["event_message"].edit_text("Page 2", reply_markup=updated_markup)
 
     await middleware(repeat_handler, repeat_callback, {})
 
@@ -103,7 +115,7 @@ async def test_logs_callbacks_are_not_wrapped():
 
     async def handler(event, data):
         await event.message.edit_text("Updated via logs")
-        return event.message is message
+        return "event_message" not in data and event.message is message
 
     result = await middleware(handler, callback, {})
 

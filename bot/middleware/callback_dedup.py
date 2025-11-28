@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, TelegramObject
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, TelegramObject, Update
 
 TelegramHandler = Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]]
 
@@ -103,25 +103,35 @@ class CallbackDedupMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
-        if not isinstance(event, CallbackQuery) or event.message is None:
+        callback = self._extract_callback(event)
+        if callback is None or callback.message is None:
             return await handler(event, data)
 
-        if self._should_skip(event):
+        if self._should_skip(callback):
             return await handler(event, data)
 
-        key = (event.message.chat.id, event.message.message_id)
+        key = (callback.message.chat.id, callback.message.message_id)
         state = self._last_messages.get(key)
         if state is None:
             state = {
-                "text": getattr(event.message, "text", None),
-                "markup": getattr(event.message, "reply_markup", None),
+                "text": getattr(callback.message, "text", None),
+                "markup": getattr(callback.message, "reply_markup", None),
             }
             self._last_messages[key] = state
 
-        proxy = CallbackMessageProxy(event, state=state, hint=self._hint)
-        object.__setattr__(event, "message", proxy)
+        proxy = CallbackMessageProxy(callback, state=state, hint=self._hint)
         data["event_message"] = proxy
         return await handler(event, data)
+
+    @staticmethod
+    def _extract_callback(event: TelegramObject | Update) -> CallbackQuery | None:
+        if isinstance(event, CallbackQuery):
+            return event
+
+        if isinstance(event, Update):
+            return event.callback_query
+
+        return None
 
     def _should_skip(self, event: CallbackQuery) -> bool:
         data = event.data or ""
