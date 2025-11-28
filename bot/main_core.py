@@ -49,14 +49,18 @@ username_block_stop_event: Optional[asyncio.Event] = None
 
 
 async def ensure_root_admin() -> None:
+    if ROOT_ADMIN_ID <= 0:
+        logger.critical("ROOT_ADMIN_ID must be set to a non-zero value for startup")
+        raise RuntimeError("ROOT_ADMIN_ID must be set to a non-zero integer")
+
     async with async_session() as session:
         result = await session.execute(select(Admin).where(Admin.telegram_id == ROOT_ADMIN_ID))
         root = result.scalar_one_or_none()
 
-        if not root and ROOT_ADMIN_ID != 0:
+        if not root:
             session.add(Admin(telegram_id=ROOT_ADMIN_ID, is_root=True))
             await session.commit()
-            logger.info("✅ Root admin создан")
+            logger.info("✅ Root admin создан и привязан к ROOT_ADMIN_ID=%s", ROOT_ADMIN_ID)
 
 
 def build_dispatcher() -> Dispatcher:

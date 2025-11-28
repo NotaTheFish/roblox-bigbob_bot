@@ -16,9 +16,9 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-os.environ.setdefault("TELEGRAM_TOKEN", "test:token")
+os.environ.setdefault("TELEGRAM_TOKEN", "123456:TESTTOKEN")
 os.environ.setdefault("ADMIN_LOGIN_PASSWORD", "DEFAULT")
-os.environ.setdefault("ROOT_ADMIN_ID", "0")
+os.environ.setdefault("ROOT_ADMIN_ID", "1")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
 

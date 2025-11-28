@@ -55,7 +55,28 @@ settings = Settings()
 # === БОТ ==============================================================
 TOKEN = get_env("TELEGRAM_TOKEN", required=True)
 
-ROOT_ADMIN_ID = int(get_env("ROOT_ADMIN_ID", "0"))
+def _get_root_admin_id() -> int:
+    raw_value = get_env("ROOT_ADMIN_ID")
+    if raw_value == "":
+        raise RuntimeError(
+            "Environment variable ROOT_ADMIN_ID must be set to a non-zero integer"
+        )
+    try:
+        root_admin_id = int(raw_value)
+    except ValueError as exc:  # pragma: no cover - configuration error
+        raise RuntimeError(
+            "Environment variable ROOT_ADMIN_ID must be set to a non-zero integer"
+        ) from exc
+
+    if root_admin_id == 0:
+        raise RuntimeError(
+            "Environment variable ROOT_ADMIN_ID must be set to a non-zero integer"
+        )
+
+    return root_admin_id
+
+
+ROOT_ADMIN_ID = _get_root_admin_id()
 
 DATABASE_URL = settings.DATABASE_URL
 
