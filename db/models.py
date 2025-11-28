@@ -71,7 +71,7 @@ class User(Base):
     tg_username = Column(String(255))
     bot_nickname = Column(String(255))
     username = Column(String(255))
-    roblox_id = Column(String(255))
+    roblox_id = Column(String(255), unique=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     verified = Column(Boolean, default=False, nullable=False)
     code = Column(String(64))
