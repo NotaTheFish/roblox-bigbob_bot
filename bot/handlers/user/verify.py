@@ -204,79 +204,79 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                     return
 
                 try:
-                    async with session.begin():
-                        db_user.verified = True
-                        if roblox_id:
-                            db_user.roblox_id = roblox_id
-                        referral = await session.scalar(
-                            select(Referral)
-                            .options(selectinload(Referral.referrer))
-                            .where(Referral.referred_id == db_user.id)
-                        )
-                        referrer_user: User | None = None
-                        if referral and not referral.confirmed:
-                            referral = await confirm_referral(session, referral)
-                            referrer_user = referral.referrer
-                            if referrer_user:
-                                granted_achievements = await evaluate_and_grant_achievements(
-                                    session,
-                                    user=referrer_user,
-                                    trigger="referral_confirmed",
-                                    payload={
-                                        "referral_id": referral.id,
-                                        "referred_user_id": db_user.id,
+                    db_user.verified = True
+                    if roblox_id:
+                        db_user.roblox_id = roblox_id
+                    referral = await session.scalar(
+                        select(Referral)
+                        .options(selectinload(Referral.referrer))
+                        .where(Referral.referred_id == db_user.id)
+                    )
+                    referrer_user: User | None = None
+                    if referral and not referral.confirmed:
+                        referral = await confirm_referral(session, referral)
+                        referrer_user = referral.referrer
+                        if referrer_user:
+                            granted_achievements = await evaluate_and_grant_achievements(
+                                session,
+                                user=referrer_user,
+                                trigger="referral_confirmed",
+                                payload={
+                                    "referral_id": referral.id,
+                                    "referred_user_id": db_user.id,
+                                },
+                            )
+                            referrer_notify = {
+                                "tg_id": referrer_user.tg_id,
+                                "referred_username": normalize_tg_username(
+                                    call.from_user.username
+                                ),
+                            }
+                            achievement_ids = [
+                                achievement.achievement_id
+                                for achievement in granted_achievements
+                            ]
+                            session.add(
+                                LogEntry(
+                                    user_id=referrer_user.id,
+                                    telegram_id=referrer_user.tg_id,
+                                    event_type="referral_confirmed",
+                                    message="🎉 Новый подтверждённый реферал!",
+                                    data={
+                                        "referred_id": db_user.id,
+                                        "topup_share_percent": DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
+                                        "granted_achievements": achievement_ids,
                                     },
                                 )
-                                referrer_notify = {
-                                    "tg_id": referrer_user.tg_id,
-                                    "referred_username": normalize_tg_username(
-                                        call.from_user.username
-                                    ),
-                                }
-                                achievement_ids = [
-                                    achievement.achievement_id
-                                    for achievement in granted_achievements
-                                ]
-                                session.add(
-                                    LogEntry(
-                                        user_id=referrer_user.id,
-                                        telegram_id=referrer_user.tg_id,
-                                        event_type="referral_confirmed",
-                                        message="🎉 Новый подтверждённый реферал!",
-                                        data={
-                                            "referred_id": db_user.id,
-                                            "topup_share_percent": DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
-                                            "granted_achievements": achievement_ids,
-                                        },
-                                    )
-                                )
-                                session.add(
-                                    LogEntry(
-                                        user_id=referrer_user.id,
-                                        telegram_id=referrer_user.tg_id,
-                                        event_type="referral_achievements_evaluated",
-                                        message="Автоматическая проверка достижений после подтверждения реферала.",
-                                        data={
-                                            "referral_id": referral.id,
-                                            "referred_user_id": db_user.id,
-                                            "granted_achievement_ids": achievement_ids,
-                                        },
-                                    )
-                                )
-                                logger.info(
-                                    "Evaluated achievements after referral confirmation",
-                                    extra={
+                            )
+                            session.add(
+                                LogEntry(
+                                    user_id=referrer_user.id,
+                                    telegram_id=referrer_user.tg_id,
+                                    event_type="referral_achievements_evaluated",
+                                    message="Автоматическая проверка достижений после подтверждения реферала.",
+                                    data={
                                         "referral_id": referral.id,
-                                        "referrer_id": referrer_user.id,
                                         "referred_user_id": db_user.id,
                                         "granted_achievement_ids": achievement_ids,
                                     },
                                 )
-                        is_admin = bool(
-                            await session.scalar(
-                                select(Admin).where(Admin.telegram_id == call.from_user.id)
                             )
+                            logger.info(
+                                "Evaluated achievements after referral confirmation",
+                                extra={
+                                    "referral_id": referral.id,
+                                    "referrer_id": referrer_user.id,
+                                    "referred_user_id": db_user.id,
+                                    "granted_achievement_ids": achievement_ids,
+                                },
+                            )
+                    is_admin = bool(
+                        await session.scalar(
+                            select(Admin).where(Admin.telegram_id == call.from_user.id)
                         )
+                    )
+                    await session.commit()
                 except IntegrityError:
                     await session.rollback()
                     await state.clear()
@@ -285,6 +285,9 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
                         "Отвяжите прежнюю связь и попробуйте снова."
                     )
                     return
+                except Exception:
+                    await session.rollback()
+                    raise
 
                 if normalized_roblox_id:
                     whitelist_payload = {
