@@ -7,6 +7,7 @@ from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from bot.db import Admin, BannedRobloxAccount, LogEntry, Referral, User, async_session
@@ -50,6 +51,14 @@ async def set_username(message: types.Message, state: FSMContext):
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.tg_id == message.from_user.id))
         if not user:
+            return
+
+        if user.roblox_id:
+            await message.answer(
+                "❌ Этот Telegram уже привязан к Roblox аккаунту. "
+                "Сначала отвяжите текущий аккаунт через поддержку, затем повторите попытку."
+            )
+            await state.clear()
             return
 
         previous_roblox_id = user.roblox_id
@@ -168,76 +177,114 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
         async with async_session() as session:
             db_user = await session.scalar(select(User).where(User.tg_id == call.from_user.id))
             if db_user:
-                db_user.verified = True
+                if roblox_id is not None:
+                    roblox_id = str(roblox_id)
+
                 if roblox_id:
-                    db_user.roblox_id = roblox_id
-                referral = await session.scalar(
-                    select(Referral)
-                    .options(selectinload(Referral.referrer))
-                    .where(Referral.referred_id == db_user.id)
-                )
-                referrer_user: User | None = None
-                if referral and not referral.confirmed:
-                    referral = await confirm_referral(session, referral)
-                    referrer_user = referral.referrer
-                    if referrer_user:
-                        granted_achievements = await evaluate_and_grant_achievements(
-                            session,
-                            user=referrer_user,
-                            trigger="referral_confirmed",
-                            payload={
-                                "referral_id": referral.id,
-                                "referred_user_id": db_user.id,
-                            },
+                    existing_user = await session.scalar(
+                        select(User).where(
+                            User.roblox_id == roblox_id,
+                            User.id != db_user.id,
                         )
-                        referrer_notify = {
-                            "tg_id": referrer_user.tg_id,
-                            "referred_username": normalize_tg_username(
-                                call.from_user.username
-                            ),
-                        }
-                        achievement_ids = [
-                            achievement.achievement_id for achievement in granted_achievements
-                        ]
-                        session.add(
-                            LogEntry(
-                                user_id=referrer_user.id,
-                                telegram_id=referrer_user.tg_id,
-                                event_type="referral_confirmed",
-                                message="🎉 Новый подтверждённый реферал!",
-                                data={
-                                    "referred_id": db_user.id,
-                                    "topup_share_percent": DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
-                                    "granted_achievements": achievement_ids,
-                                },
+                    )
+                    if existing_user:
+                        await state.clear()
+                        await call.message.answer(
+                            "❌ Этот Roblox аккаунт уже привязан к другому Telegram. "
+                            "Отвяжите его в текущем профиле или обратитесь в поддержку."
+                        )
+                        return
+
+                if db_user.roblox_id and roblox_id and db_user.roblox_id != roblox_id:
+                    await state.clear()
+                    await call.message.answer(
+                        "❌ Ваш Telegram уже привязан к другому Roblox аккаунту. "
+                        "Сначала отвяжите текущий Roblox, затем попробуйте снова."
+                    )
+                    return
+
+                try:
+                    async with session.begin():
+                        db_user.verified = True
+                        if roblox_id:
+                            db_user.roblox_id = roblox_id
+                        referral = await session.scalar(
+                            select(Referral)
+                            .options(selectinload(Referral.referrer))
+                            .where(Referral.referred_id == db_user.id)
+                        )
+                        referrer_user: User | None = None
+                        if referral and not referral.confirmed:
+                            referral = await confirm_referral(session, referral)
+                            referrer_user = referral.referrer
+                            if referrer_user:
+                                granted_achievements = await evaluate_and_grant_achievements(
+                                    session,
+                                    user=referrer_user,
+                                    trigger="referral_confirmed",
+                                    payload={
+                                        "referral_id": referral.id,
+                                        "referred_user_id": db_user.id,
+                                    },
+                                )
+                                referrer_notify = {
+                                    "tg_id": referrer_user.tg_id,
+                                    "referred_username": normalize_tg_username(
+                                        call.from_user.username
+                                    ),
+                                }
+                                achievement_ids = [
+                                    achievement.achievement_id
+                                    for achievement in granted_achievements
+                                ]
+                                session.add(
+                                    LogEntry(
+                                        user_id=referrer_user.id,
+                                        telegram_id=referrer_user.tg_id,
+                                        event_type="referral_confirmed",
+                                        message="🎉 Новый подтверждённый реферал!",
+                                        data={
+                                            "referred_id": db_user.id,
+                                            "topup_share_percent": DEFAULT_REFERRAL_TOPUP_SHARE_PERCENT,
+                                            "granted_achievements": achievement_ids,
+                                        },
+                                    )
+                                )
+                                session.add(
+                                    LogEntry(
+                                        user_id=referrer_user.id,
+                                        telegram_id=referrer_user.tg_id,
+                                        event_type="referral_achievements_evaluated",
+                                        message="Автоматическая проверка достижений после подтверждения реферала.",
+                                        data={
+                                            "referral_id": referral.id,
+                                            "referred_user_id": db_user.id,
+                                            "granted_achievement_ids": achievement_ids,
+                                        },
+                                    )
+                                )
+                                logger.info(
+                                    "Evaluated achievements after referral confirmation",
+                                    extra={
+                                        "referral_id": referral.id,
+                                        "referrer_id": referrer_user.id,
+                                        "referred_user_id": db_user.id,
+                                        "granted_achievement_ids": achievement_ids,
+                                    },
+                                )
+                        is_admin = bool(
+                            await session.scalar(
+                                select(Admin).where(Admin.telegram_id == call.from_user.id)
                             )
                         )
-                        session.add(
-                            LogEntry(
-                                user_id=referrer_user.id,
-                                telegram_id=referrer_user.tg_id,
-                                event_type="referral_achievements_evaluated",
-                                message="Автоматическая проверка достижений после подтверждения реферала.",
-                                data={
-                                    "referral_id": referral.id,
-                                    "referred_user_id": db_user.id,
-                                    "granted_achievement_ids": achievement_ids,
-                                },
-                            )
-                        )
-                        logger.info(
-                            "Evaluated achievements after referral confirmation",
-                            extra={
-                                "referral_id": referral.id,
-                                "referrer_id": referrer_user.id,
-                                "referred_user_id": db_user.id,
-                                "granted_achievement_ids": achievement_ids,
-                            },
-                        )
-                is_admin = bool(
-                    await session.scalar(select(Admin).where(Admin.telegram_id == call.from_user.id))
-                )
-                await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+                    await state.clear()
+                    await call.message.answer(
+                        "❌ Не удалось привязать аккаунт: Roblox или Telegram уже связаны с другим профилем. "
+                        "Отвяжите прежнюю связь и попробуйте снова."
+                    )
+                    return
 
                 if normalized_roblox_id:
                     whitelist_payload = {
