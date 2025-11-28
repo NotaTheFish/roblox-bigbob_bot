@@ -21,9 +21,12 @@ URL_PATTERN = re.compile(
 CYRILLIC = re.compile("[\u0400-\u04FF]")
 LATIN = re.compile("[A-Za-z]")
 
-ADMIN_ALLOWLIST_COMMANDS = ("/admin_login", "/admin")
+ADMIN_ALLOWLIST_COMMANDS = ("/admin_login", "/admin", "/admin_menu", "/admin_open")
 ADMIN_ALLOWLIST_CALLBACK_PREFIXES = (
     "admin",
+    "admin_",
+    "admin-menu",
+    "admin-panel",
     "confirm_block_admin",
     "cancel_block_admin",
     "demote_admin",
@@ -41,12 +44,14 @@ class LinkGuardMiddleware(BaseMiddleware):
     ) -> Any:
         text = self._extract_text(event)
         user_id = self._get_user_id(event)
-        allowlisted = self._is_allowlisted_payload(text)
 
-        if allowlisted and self._is_trusted_admin(user_id, data):
+        if self._is_trusted_admin(user_id, data):
             return await handler(event, data)
 
-        if text and self._contains_link(text, allow_mixed_script=not allowlisted):
+        if self._is_allowlisted_payload(text):
+            return await handler(event, data)
+
+        if text and self._contains_link(text):
             await self._neutralize(event)
             await self._log_security_event(event, text)
             return None

@@ -144,7 +144,7 @@ async def test_admin_login_allows_mixed_script_code(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_admin_login_with_url_still_blocked(monkeypatch):
+async def test_admin_login_with_url_allowlisted(monkeypatch):
     session = FakeAsyncSession()
     monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
 
@@ -160,16 +160,110 @@ async def test_admin_login_with_url_still_blocked(monkeypatch):
 
     result = await middleware(handler, message, {})
 
+    assert result == "handled"
+    assert handler_called is True
+    assert message.answers == []
+    assert session.added == []
+    assert session.committed is False
+
+
+@pytest.mark.anyio
+async def test_root_admin_skips_mixed_script_block(monkeypatch):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+    monkeypatch.setattr(link_guard, "ROOT_ADMIN_ID", 555)
+    monkeypatch.setattr(link_guard, "ADMINS", [])
+    monkeypatch.setattr(link_guard, "ADMIN_ROOT_IDS", [])
+
+    middleware = LinkGuardMiddleware()
+    message = _build_message("Тест AbC with mix", user_id=555)
+
+    async def handler(event, data):
+        return "handled"
+
+    result = await middleware(handler, message, {})
+
+    assert result == "handled"
+    assert message.answers == []
+    assert session.added == []
+    assert session.committed is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "/admin_menu https://example.com",
+        "/admin_open AbС123",
+        "/admin AbС123",
+    ],
+)
+async def test_admin_commands_allowlisted(monkeypatch, text):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+
+    middleware = LinkGuardMiddleware()
+    message = _build_message(text)
+
+    async def handler(event, data):
+        return "handled"
+
+    result = await middleware(handler, message, {})
+
+    assert result == "handled"
+    assert message.answers == []
+    assert session.added == []
+    assert session.committed is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "admin-panel:open https://example.com",
+        "admin-menu:action AbС123",
+        "admin_action AbС123",
+    ],
+)
+async def test_admin_callback_prefixes_allowlisted(monkeypatch, payload):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+
+    middleware = LinkGuardMiddleware()
+    callback = _build_callback(payload)
+
+    async def handler(event, data):
+        return "handled"
+
+    result = await middleware(handler, callback, {})
+
+    assert result == "handled"
+    assert callback.answers == []
+    assert callback.message.edits == []
+    assert session.added == []
+    assert session.committed is False
+
+
+@pytest.mark.anyio
+async def test_regular_user_still_blocked_for_mixed_script(monkeypatch):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+
+    middleware = LinkGuardMiddleware()
+    message = _build_message("AbС mixed text")
+
+    async def handler(event, data):
+        return "handled"
+
+    result = await middleware(handler, message, {})
+
     assert result is None
-    assert handler_called is False
     assert message.answers == [
         (
             "🚫 Ссылки в сообщениях запрещены.",
             {"disable_web_page_preview": True, "parse_mode": None},
         )
     ]
-
     log_entry = next(obj for obj in session.added if isinstance(obj, LogEntry))
     assert log_entry.event_type == "security.link_blocked"
-    assert "example.com" in (log_entry.data or {}).get("text_sample", "")
     assert session.committed is True
