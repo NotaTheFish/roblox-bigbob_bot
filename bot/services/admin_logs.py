@@ -51,6 +51,8 @@ _CATEGORY_EVENT_TYPES: Mapping[LogCategory, Sequence[str]] = {
         "hard_flood_callback",
         "duplicate_callback",
         "security.missing_username_block",
+        "security.user_blocked",
+        "security.user_unblocked",
     ),
 }
 

@@ -439,6 +439,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                     confirmed=True,
                     duration=FLOOD_BAN_DURATION,
                     reason="flood",
+                    interface="middleware",
                 )
         except Exception:
             logger.exception("Failed to apply flood ban", extra={"user_id": user_id})

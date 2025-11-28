@@ -43,7 +43,17 @@ async def test_blocks_only_after_timeout(monkeypatch):
     session = FakeAsyncSession(scalars_results=[[eligible, too_new, verified, other_username]])
     blocked: list[tuple[int, str | None]] = []
 
-    async def fake_block_user(session_obj, *, user, operator_admin, confirmed=False, duration=None, reason=None):
+    async def fake_block_user(
+        session_obj,
+        *,
+        user,
+        operator_admin,
+        confirmed=False,
+        duration=None,
+        reason=None,
+        interface=None,
+        operator_username=None,
+    ):
         blocked.append((user.id, reason))
         user.is_blocked = True
 
@@ -76,7 +86,17 @@ async def test_repeated_blocks(monkeypatch):
     session = FakeAsyncSession(scalars_results=[[user], [user]])
     blocked_reasons: list[str | None] = []
 
-    async def fake_block_user(session_obj, *, user, operator_admin, confirmed=False, duration=None, reason=None):
+    async def fake_block_user(
+        session_obj,
+        *,
+        user,
+        operator_admin,
+        confirmed=False,
+        duration=None,
+        reason=None,
+        interface=None,
+        operator_username=None,
+    ):
         blocked_reasons.append(reason)
         user.is_blocked = True
 

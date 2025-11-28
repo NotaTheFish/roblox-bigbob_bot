@@ -273,7 +273,7 @@ async def sync_bans() -> None:
         result = await session.execute(
             select(BannedRobloxAccount).options(
                 selectinload(BannedRobloxAccount.source_user)
-            )
+            ).where(BannedRobloxAccount.unblocked_at.is_(None))
         )
         db_bans = result.scalars().all()
         db_ids = set()
@@ -332,7 +332,8 @@ async def sync_whitelist() -> None:
     async with async_session() as session:
         db_banned_result = await session.execute(
             select(BannedRobloxAccount.roblox_id).where(
-                BannedRobloxAccount.roblox_id.isnot(None)
+                BannedRobloxAccount.roblox_id.isnot(None),
+                BannedRobloxAccount.unblocked_at.is_(None),
             )
         )
         banned_ids.update(

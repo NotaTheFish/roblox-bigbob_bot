@@ -380,6 +380,8 @@ async def _process_block_user(
                 user=user,
                 operator_admin=operator_admin,
                 confirmed=confirmed,
+                interface="callback",
+                operator_username=getattr(call.from_user, "username", None),
             )
         except AdminBlockPermissionError:
             return await call.answer(
@@ -463,9 +465,23 @@ async def _process_unblock_user(
             await call.answer("Пользователь не найден", show_alert=True)
             return False
 
+        operator_admin = await session.scalar(
+            select(Admin).where(Admin.telegram_id == call.from_user.id)
+        )
+
         roblox_id_value = user.roblox_id or ""
         roblox_id = str(roblox_id_value).strip() if roblox_id_value else ""
-        await unblock_user_record(session, user=user)
+        success = await unblock_user_record(
+            session,
+            user=user,
+            operator_admin=operator_admin,
+            interface="callback",
+            operator_username=getattr(call.from_user, "username", None),
+        )
+
+        if not success:
+            await call.answer("Пользователь уже разблокирован", show_alert=True)
+            return False
 
         if roblox_id:
             try:

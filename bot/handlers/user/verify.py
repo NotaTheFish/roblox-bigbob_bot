@@ -140,7 +140,8 @@ async def check_verify(call: types.CallbackQuery, state: FSMContext):
 
                     existing_ban = await session.scalar(
                         select(BannedRobloxAccount).where(
-                            BannedRobloxAccount.roblox_id == normalized_roblox_id
+                            BannedRobloxAccount.roblox_id == normalized_roblox_id,
+                            BannedRobloxAccount.unblocked_at.is_(None),
                         )
                     )
 

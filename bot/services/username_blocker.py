@@ -78,6 +78,7 @@ async def enforce_missing_username_block(session: AsyncSession, *, now: datetime
             user=user,
             operator_admin=None,
             reason=MISSING_USERNAME_REASON,
+            interface="scheduler",
         )
         await _log_block(session, user)
         blocked += 1

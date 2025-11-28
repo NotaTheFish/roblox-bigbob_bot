@@ -144,6 +144,8 @@ class BannedRobloxAccount(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     roblox_id = Column(String(255), index=True)
     username = Column(String(255), index=True)
+    revoked_by = Column(Integer, ForeignKey("admins.id"))
+    unblocked_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     source_user = relationship("User", back_populates="banned_accounts")

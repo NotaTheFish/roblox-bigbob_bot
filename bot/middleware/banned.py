@@ -253,7 +253,9 @@ class BannedMiddleware(BaseMiddleware):
         if not filters:
             return False
 
-        stmt = select(BannedRobloxAccount).where(or_(*filters))
+        stmt = select(BannedRobloxAccount).where(
+            BannedRobloxAccount.unblocked_at.is_(None), or_(*filters)
+        )
         banned_account = await session.scalar(stmt)
         if not banned_account:
             return False
@@ -270,6 +272,8 @@ class BannedMiddleware(BaseMiddleware):
 
     def _build_banned_filters(self, user: User) -> list:
         filters = []
+        if getattr(user, "id", None):
+            filters.append(BannedRobloxAccount.user_id == user.id)
         if getattr(user, "roblox_id", None):
             filters.append(BannedRobloxAccount.roblox_id == user.roblox_id)
         if getattr(user, "username", None):

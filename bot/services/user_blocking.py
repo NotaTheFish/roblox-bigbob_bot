@@ -6,10 +6,10 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db import Admin, BannedRobloxAccount, User
+from bot.db import Admin, BannedRobloxAccount, LogEntry, User
 from bot.firebase.firebase_service import (
     add_ban_to_firebase,
     add_whitelist,
@@ -46,6 +46,8 @@ async def block_user(
     confirmed: bool = False,
     duration: timedelta | None = None,
     reason: str | None = None,
+    interface: str | None = None,
+    operator_username: str | None = None,
 ) -> None:
     """Block a user while enforcing admin-specific restrictions."""
 
@@ -66,14 +68,47 @@ async def block_user(
     user.appeal_submitted_at = None
     user.ban_notified_at = None
     await _add_banned_account(session, user)
+
+    session.add(
+        LogEntry(
+            event_type="security.user_blocked",
+            message="Пользователь заблокирован",
+            telegram_id=user.tg_id,
+            user_id=user.id,
+            data={
+                "reason": reason,
+                "operator_admin_id": operator_admin.id if operator_admin else None,
+                "operator_username": operator_username,
+                "interface": interface,
+                "blocked_until": (
+                    user.blocked_until.isoformat() if user.blocked_until else None
+                ),
+            },
+        )
+    )
     await session.commit()
 
     await _sync_firebase_block_state(user, blocked=True)
 
 
-async def unblock_user(session: AsyncSession, *, user: User) -> None:
+async def unblock_user(
+    session: AsyncSession,
+    *,
+    user: User,
+    operator_admin: Admin | None = None,
+    reason: str | None = None,
+    interface: str | None = None,
+    operator_username: str | None = None,
+) -> bool:
     """Unblock a user and reset ban-related fields."""
 
+    removed_from_history = await _remove_banned_account(
+        session, user, operator_admin=operator_admin
+    )
+    if not user.is_blocked and not removed_from_history:
+        return False
+
+    log_reason = reason or user.block_reason
     user.is_blocked = False
     user.blocked_until = None
     user.block_reason = None
@@ -82,20 +117,35 @@ async def unblock_user(session: AsyncSession, *, user: User) -> None:
     user.appeal_open = False
     user.appeal_submitted_at = None
     user.ban_notified_at = None
-    await _remove_banned_account(session, user)
+
+    session.add(
+        LogEntry(
+            event_type="security.user_unblocked",
+            message="Пользователь разблокирован",
+            telegram_id=user.tg_id,
+            user_id=user.id,
+            data={
+                "reason": log_reason,
+                "operator_admin_id": operator_admin.id if operator_admin else None,
+                "operator_username": operator_username,
+                "interface": interface,
+            },
+        )
+    )
     await session.commit()
 
     await _sync_firebase_block_state(user, blocked=False)
+    return True
 
 
 def _build_banned_filters(user: User):
     filters = []
+    if user.id:
+        filters.append(BannedRobloxAccount.user_id == user.id)
     if user.roblox_id:
         filters.append(BannedRobloxAccount.roblox_id == user.roblox_id)
     if user.username:
         filters.append(BannedRobloxAccount.username == user.username)
-    if user.id:
-        filters.append(BannedRobloxAccount.user_id == user.id)
     return filters
 
 
@@ -104,7 +154,9 @@ async def _add_banned_account(session: AsyncSession, user: User) -> None:
     if not filters:
         return
 
-    stmt = select(BannedRobloxAccount).where(or_(*filters))
+    stmt = select(BannedRobloxAccount).where(
+        BannedRobloxAccount.unblocked_at.is_(None), or_(*filters)
+    )
     banned_account = await session.scalar(stmt)
     if banned_account:
         updated = False
@@ -130,13 +182,34 @@ async def _add_banned_account(session: AsyncSession, user: User) -> None:
     )
 
 
-async def _remove_banned_account(session: AsyncSession, user: User) -> None:
+async def _remove_banned_account(
+    session: AsyncSession, user: User, *, operator_admin: Admin | None = None
+) -> bool:
     filters = _build_banned_filters(user)
     if not filters:
-        return
+        return False
 
-    stmt = delete(BannedRobloxAccount).where(or_(*filters))
-    await session.execute(stmt)
+    stmt = select(BannedRobloxAccount).where(
+        BannedRobloxAccount.unblocked_at.is_(None), or_(*filters)
+    )
+    result = await session.scalars(stmt)
+    active_bans = list(result.all())
+    if not active_bans:
+        return False
+
+    revoked_by = operator_admin.id if operator_admin else None
+    now = datetime.now(timezone.utc)
+    for ban in active_bans:
+        if user.roblox_id and ban.roblox_id != user.roblox_id:
+            ban.roblox_id = user.roblox_id
+        if user.username and ban.username != user.username:
+            ban.username = user.username
+        if ban.user_id != user.id:
+            ban.user_id = user.id
+        ban.unblocked_at = now
+        ban.revoked_by = revoked_by
+    await session.flush()
+    return True
 
 
 def _normalize_roblox_id(roblox_id: str | int | None) -> str | None:
@@ -212,8 +285,13 @@ async def lift_expired_block(session: AsyncSession, *, user: User) -> bool:
     if not user.is_blocked or not is_block_expired(user):
         return False
 
-    await unblock_user(session, user=user)
-    return True
+    return await unblock_user(
+        session,
+        user=user,
+        operator_admin=None,
+        reason="expired",
+        interface="automatic",
+    )
 
 
 __all__ = [
