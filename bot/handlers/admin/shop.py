@@ -9,18 +9,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import func, select
 
-from bot.db import Admin, LogEntry, Product, Server, async_session
+from bot.db import LogEntry, Product, Server, async_session
 from bot.keyboards.admin_keyboards import admin_shop_menu_kb, shop_type_kb
 from bot.states.shop_states import ShopCreateState
+from bot.services.admin_access import is_admin
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 
 router = Router(name="admin_shop")
-
-
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 async def _get_or_create_default_server(session) -> Server:

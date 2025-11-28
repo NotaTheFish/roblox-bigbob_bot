@@ -6,16 +6,11 @@ from aiogram import Router, types
 from aiogram.filters import Command
 
 from bot.db import async_session
+from bot.services.admin_access import is_admin
 from bot.services.settings import get_ton_rate, set_ton_rate
-from bot.utils.helpers import get_admin_telegram_ids
 
 
 router = Router(name="admin_settings")
-
-
-async def is_admin(uid: int) -> bool:
-    admin_ids = await get_admin_telegram_ids(include_root=True)
-    return uid in admin_ids
 
 
 @router.message(Command(commands=["tonrate", "set_ton_rate"]))

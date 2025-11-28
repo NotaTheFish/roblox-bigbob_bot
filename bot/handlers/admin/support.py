@@ -10,16 +10,12 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from bot.db import Admin, LogEntry, User, async_session
+from bot.db import LogEntry, User, async_session
 from bot.states.admin_states import SupportReplyState
+from bot.services.admin_access import is_admin
 
 
 router = Router(name="admin_support")
-
-
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 def _extract_thread_id(message: types.Message | None) -> int | None:

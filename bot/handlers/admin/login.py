@@ -15,6 +15,7 @@ from bot.db import Admin, AdminRequest, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.middleware.user_sync import normalize_tg_username
 from bot.states.admin_states import AdminLoginState
+from bot.services.admin_access import is_admin
 
 
 # ---------------- Router ----------------
@@ -22,12 +23,6 @@ router = Router(name="admin_login")
 
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------- Проверка админа ----------------
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 # ---------------- Команда /admin_login ----------------

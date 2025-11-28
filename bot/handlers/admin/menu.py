@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router, types
 from aiogram.filters import Command, Filter, StateFilter
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
-
-from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.keyboards.main_menu import main_menu
 from bot.states.server_states import ServerManageState
+from bot.services.admin_access import is_admin
 
 
 router = Router(name="admin_menu")
+logger = logging.getLogger(__name__)
 
 
 class OutsideServerManageState(Filter):
@@ -22,18 +23,21 @@ class OutsideServerManageState(Filter):
         return not current_state.startswith(f"{ServerManageState.__name__}:")
 
 
-# Проверка администратора
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
-
-
 # Команда для входа в админ панель
 async def _send_admin_panel(message: types.Message):
     if not message.from_user:
         return
 
-    if not await is_admin(message.from_user.id):
+    user_id = message.from_user.id
+    has_access = await is_admin(user_id)
+    logger.info(
+        "%s access to admin panel for user_id=%s",
+        "Granting" if has_access else "Denying",
+        user_id,
+        extra={"user_id": user_id, "access": has_access},
+    )
+
+    if not has_access:
         return await message.answer("⛔ У вас нет доступа")
 
     await message.answer(

@@ -17,7 +17,6 @@ from backend.services.nuts import add_nuts
 from bot.db import (
     Achievement,
     AchievementConditionType,
-    Admin,
     User,
     UserAchievement,
     async_session,
@@ -38,6 +37,7 @@ from bot.keyboards.admin_keyboards import (
     admin_achievements_kb,
 )
 from bot.states.admin_states import AchievementsState
+from bot.services.admin_access import is_admin
 from bot.utils.time import to_msk
 
 router = Router(name="admin_achievements")
@@ -447,11 +447,6 @@ async def _send_achievement_management(
         await target.edit_text(text, reply_markup=markup)
     else:
         await target.answer(text, reply_markup=markup)
-
-
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 @router.message(F.text == "🏆 Достижения")

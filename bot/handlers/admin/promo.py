@@ -7,13 +7,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
-from bot.db import Admin, PromoCode, async_session
+from bot.db import PromoCode, async_session
 from bot.keyboards.admin_keyboards import (
     promo_management_menu_kb,
     promo_reward_type_kb,
     promo_step_navigation_kb,
 )
 from bot.states.promo_states import PromoCreateState
+from bot.services.admin_access import is_admin
 
 
 router = Router(name="admin_promo")
@@ -29,12 +30,6 @@ REQUIRED_FIELD_TITLES = {
 
 def _format_missing_fields(missing: list[str]) -> str:
     return ", ".join(REQUIRED_FIELD_TITLES.get(field, field) for field in missing)
-
-
-# ✅ Проверка администратора
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 async def _is_valid_admin_message(message: types.Message) -> bool:

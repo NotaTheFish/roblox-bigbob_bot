@@ -27,6 +27,7 @@ from bot.keyboards.admin_keyboards import (
     admin_servers_menu_kb,
 )
 from bot.states.server_states import ServerManageState
+from bot.services.admin_access import is_admin
 from db.models import SERVER_DEFAULT_CLOSED_MESSAGE
 
 router = Router(name="admin_servers")
@@ -42,11 +43,6 @@ SERVERS_CREATE_CALLBACK = "servers_create"
 SERVERS_DELETE_CALLBACK = "servers_delete"
 SERVERS_SET_LINK_CALLBACK = "servers_set_link"
 SERVERS_CLEAR_LINK_CALLBACK = "servers_clear_link"
-
-
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 async def _is_valid_admin_message(message: types.Message) -> bool:

@@ -49,6 +49,7 @@ from bot.services.user_search import (
     find_user_by_query,
     render_search_profile,
 )
+from bot.services.admin_access import is_admin
 from bot.services.user_titles import normalize_titles
 from bot.services.settings import (
     BOT_STATUS_RUNNING,
@@ -84,12 +85,6 @@ ACHIEVEMENTS_MENU_BUTTONS: set[str] = {
     "📚 История",
     "🎁 Выдать награду",
 }
-
-
-# -------- Проверка админа --------
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 def _is_root_admin(user: types.User | None) -> bool:

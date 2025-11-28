@@ -36,6 +36,7 @@ from bot.services.admin_logs import (
     LogRecord,
     fetch_logs_page,
 )
+from bot.services.admin_access import is_admin
 from bot.services.user_search import find_user_by_query
 from bot.states.admin_states import AdminLogsState
 from bot.handlers.admin.achievements import admin_achievements_menu
@@ -48,11 +49,6 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 4096
 LOGS_PAGE_TEXT_LIMIT = 3900
-
-
-async def is_admin(uid: int) -> bool:
-    async with async_session() as session:
-        return bool(await session.scalar(select(Admin).where(Admin.telegram_id == uid)))
 
 
 def _is_head_admin(user_id: int | None) -> bool:
