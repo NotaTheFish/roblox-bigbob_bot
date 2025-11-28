@@ -34,6 +34,10 @@ from bot.handlers.admin.achievements import admin_achievements_menu
 from bot.handlers.user.menu import _fetch_roblox_id, _get_cached_roblox_id
 from bot.keyboards.main_menu import main_menu
 from bot.keyboards.ban_appeal import ban_appeal_keyboard
+from bot.services.reply_keyboard import (
+    clear_reply_keyboard_flag,
+    mark_reply_keyboard_removed,
+)
 from bot.services.user_blocking import (
     AdminBlockConfirmationRequiredError,
     AdminBlockPermissionError,
@@ -134,6 +138,7 @@ def user_card_kb(user_id, is_blocked, *, show_demote: bool = False):
 
 
 async def _remove_reply_keyboard(bot: Bot, chat_id: int) -> None:
+    mark_reply_keyboard_removed(chat_id)
     with suppress(Exception):
         cleanup_message = await bot.send_message(
             chat_id,
@@ -476,9 +481,15 @@ async def _process_unblock_user(
                 )
 
         try:
+            is_admin_now = await is_admin(user_id)
             await call.bot.send_message(
                 user_id,
                 UNBLOCK_NOTIFICATION_TEXT,
+                reply_markup=main_menu(is_admin=is_admin_now),
+            )
+            clear_reply_keyboard_flag(user_id)
+            logger.info(
+                "Restored main menu keyboard for user %s after unblock", user_id
             )
         except Exception:  # pragma: no cover - ignore delivery errors
             logger.debug("Failed to notify user %s about unblock", user_id)

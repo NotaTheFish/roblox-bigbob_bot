@@ -4,15 +4,20 @@ import logging
 import time
 import unicodedata
 
-from aiogram import Router, types
+from aiogram import F, Router, types
 from aiogram.filters import StateFilter
 from sqlalchemy import select
 
 from bot import config
 from bot.db import Achievement, Admin, User, async_session
 from backend.services.achievements import evaluate_and_grant_achievements
+from bot.services.reply_keyboard import (
+    send_main_menu_keyboard,
+    was_reply_keyboard_removed,
+)
 
 router = Router(name="user_messages")
+logger = logging.getLogger(__name__)
 
 last_secret_word_use: dict[int, float] = {}
 
@@ -119,3 +124,29 @@ async def handle_secret_word_message(message: types.Message) -> None:
         )
 
         await session.commit()
+
+
+@router.message(StateFilter(None), F.text)
+async def restore_reply_keyboard_on_plain_text(message: types.Message) -> None:
+    """Restore the main menu keyboard when it was previously removed."""
+
+    if not message.from_user:
+        return
+
+    user_id = message.from_user.id
+    if not was_reply_keyboard_removed(user_id):
+        return
+
+    async with async_session() as session:
+        restored = await send_main_menu_keyboard(
+            message.bot,
+            user_id,
+            session=session,
+            reason="plain_text_without_state",
+        )
+
+        if not restored:
+            logger.info(
+                "Keyboard restore skipped for user %s because user record is missing",
+                user_id,
+            )

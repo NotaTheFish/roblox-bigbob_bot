@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import BannedRobloxAccount, User, async_session
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK, ban_appeal_keyboard
+from bot.services.reply_keyboard import mark_reply_keyboard_removed
 from bot.services.user_blocking import lift_expired_block
 from bot.states.user_states import BanAppealState
 from bot.texts.block import BAN_NOTIFICATION_TEXT
@@ -203,6 +204,7 @@ class BannedMiddleware(BaseMiddleware):
         return False
 
     async def _remove_reply_keyboard(self, bot, chat_id: int) -> None:
+        mark_reply_keyboard_removed(chat_id)
         with suppress(Exception):
             cleanup_message = await bot.send_message(
                 chat_id,
