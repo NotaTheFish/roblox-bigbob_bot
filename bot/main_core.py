@@ -30,6 +30,7 @@ from bot.middleware.block_attachments import BlockAttachmentsMiddleware
 
 # Firebase sync
 from bot.firebase.firebase_service import init_firebase, firebase_sync_loop
+from bot.services.username_blocker import username_blocking_loop
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,8 @@ else:
     storage = MemoryStorage()
 
 firebase_sync_task: Optional[asyncio.Task] = None
+username_block_task: Optional[asyncio.Task] = None
+username_block_stop_event: Optional[asyncio.Event] = None
 
 
 async def ensure_root_admin() -> None:
@@ -89,8 +92,16 @@ async def on_startup(dispatcher: Dispatcher) -> None:
 
     # Запуск фонового синка
     global firebase_sync_task
+    global username_block_task
+    global username_block_stop_event
     firebase_sync_task = asyncio.create_task(firebase_sync_loop())
     logger.info("🔄 Firebase sync task запущен")
+
+    username_block_stop_event = asyncio.Event()
+    username_block_task = asyncio.create_task(
+        username_blocking_loop(username_block_stop_event)
+    )
+    logger.info("🚫 Username blocking task запущен")
 
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("🤖 Бот запущен (polling)")
@@ -98,12 +109,22 @@ async def on_startup(dispatcher: Dispatcher) -> None:
 
 async def on_shutdown(dispatcher: Dispatcher) -> None:
     global firebase_sync_task
+    global username_block_task
+    global username_block_stop_event
 
     if firebase_sync_task:
         firebase_sync_task.cancel()
         with suppress(asyncio.CancelledError):
             await firebase_sync_task
         logger.info("🔻 Firebase sync task остановлен")
+
+    if username_block_stop_event:
+        username_block_stop_event.set()
+    if username_block_task:
+        username_block_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await username_block_task
+        logger.info("🚫 Username blocking task остановлен")
 
     await bot.session.close()
     logger.info("🛑 Бот остановлен")
