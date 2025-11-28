@@ -142,6 +142,7 @@ class AntiSpamMiddleware(BaseMiddleware):
         data: Dict[str, Any],
     ) -> Any:
         try:
+            root_event = event
             from_user = self._extract_from_user(event)
             user_id = from_user.id if from_user else None
             current_user: User | None = data.get("current_user")
@@ -159,7 +160,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                         event_type = "callback_query"
 
             if user_id is None:
-                return await handler(event, data)
+                return await handler(root_event, data)
 
             limits = await get_user_limits(current_user, from_user_id=user_id)
             now = time.monotonic()
@@ -175,7 +176,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 if message_event:
                     return await self._handle_message_event(
                         handler=handler,
-                        event=event,
+                        root_event=root_event,
                         message_event=message_event,
                         data=data,
                         user_id=user_id,
@@ -190,7 +191,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 if callback_event:
                     return await self._handle_callback_event(
                         handler=handler,
-                        event=event,
+                        root_event=root_event,
                         callback_event=callback_event,
                         data=data,
                         user_id=user_id,
@@ -199,17 +200,17 @@ class AntiSpamMiddleware(BaseMiddleware):
                         now=now,
                     )
 
-            return await handler(event, data)
+            return await handler(root_event, data)
 
         except Exception:
             logger.exception("AntiSpamMiddleware failed; allowing event to continue")
-            return await handler(event, data)
+            return await handler(root_event, data)
 
     async def _handle_message_event(
         self,
         *,
         handler: TelegramHandler,
-        event: TelegramObject,
+        root_event: TelegramObject,
         message_event: Message,
         data: Dict[str, Any],
         user_id: int,
@@ -250,13 +251,13 @@ class AntiSpamMiddleware(BaseMiddleware):
                 await self._warn_user(message_event, user_id, callback_hint=False)
                 return None
 
-        return await handler(event, data)
+        return await handler(root_event, data)
 
     async def _handle_callback_event(
         self,
         *,
         handler: TelegramHandler,
-        event: TelegramObject,
+        root_event: TelegramObject,
         callback_event: CallbackQuery,
         data: Dict[str, Any],
         user_id: int,
@@ -315,7 +316,7 @@ class AntiSpamMiddleware(BaseMiddleware):
                 await self._warn_user(callback_event, user_id, callback_hint=True)
                 return None
 
-        return await handler(event, data)
+        return await handler(root_event, data)
 
     # ======================================================================
     # Duplicate callback detection
