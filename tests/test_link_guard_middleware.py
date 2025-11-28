@@ -245,7 +245,7 @@ async def test_admin_callback_prefixes_allowlisted(monkeypatch, payload):
 
 
 @pytest.mark.anyio
-async def test_regular_user_still_blocked_for_mixed_script(monkeypatch):
+async def test_regular_user_not_blocked_for_mixed_script(monkeypatch):
     session = FakeAsyncSession()
     monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
 
@@ -257,13 +257,32 @@ async def test_regular_user_still_blocked_for_mixed_script(monkeypatch):
 
     result = await middleware(handler, message, {})
 
-    assert result is None
-    assert message.answers == [
-        (
-            "🚫 Ссылки в сообщениях запрещены.",
-            {"disable_web_page_preview": True, "parse_mode": None},
-        )
-    ]
-    log_entry = next(obj for obj in session.added if isinstance(obj, LogEntry))
-    assert log_entry.event_type == "security.link_blocked"
-    assert session.committed is True
+    assert result == "handled"
+    assert message.answers == []
+    assert session.added == []
+    assert session.committed is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("button_text", ["🛠 Режим админа", "🛠Режим админа"])
+async def test_admin_button_texts_allowlisted(monkeypatch, button_text):
+    session = FakeAsyncSession()
+    monkeypatch.setattr(link_guard, "async_session", make_async_session_stub(session))
+
+    middleware = LinkGuardMiddleware()
+    message = _build_message(button_text)
+
+    handler_called = False
+
+    async def handler(event, data):
+        nonlocal handler_called
+        handler_called = True
+        return "handled"
+
+    result = await middleware(handler, message, {})
+
+    assert result == "handled"
+    assert handler_called is True
+    assert message.answers == []
+    assert session.added == []
+    assert session.committed is False

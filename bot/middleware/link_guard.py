@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 URL_PATTERN = re.compile(
     r"(?i)\b((?:https?://|www\.)\S+|(?:[a-z0-9-]+\.)+(?:[a-z]{2,}|xn--)\S*)"
 )
-CYRILLIC = re.compile("[\u0400-\u04FF]")
-LATIN = re.compile("[A-Za-z]")
 
 ADMIN_ALLOWLIST_COMMANDS = ("/admin_login", "/admin", "/admin_menu", "/admin_open")
 ADMIN_ALLOWLIST_CALLBACK_PREFIXES = (
@@ -31,6 +29,7 @@ ADMIN_ALLOWLIST_CALLBACK_PREFIXES = (
     "cancel_block_admin",
     "demote_admin",
 )
+ADMIN_ALLOWLIST_BUTTON_TEXTS = {"🛠 Режим админа", "🛠Режим админа"}
 
 
 class LinkGuardMiddleware(BaseMiddleware):
@@ -49,6 +48,9 @@ class LinkGuardMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if self._is_allowlisted_payload(text):
+            return await handler(event, data)
+
+        if text in ADMIN_ALLOWLIST_BUTTON_TEXTS:
             return await handler(event, data)
 
         if text and self._contains_link(text):
@@ -71,12 +73,9 @@ class LinkGuardMiddleware(BaseMiddleware):
         return ""
 
     @staticmethod
-    def _contains_link(text: str, *, allow_mixed_script: bool = True) -> bool:
-        return bool(
-            URL_PATTERN.search(text)
-            or ("xn--" in text.lower())
-            or (allow_mixed_script and CYRILLIC.search(text) and LATIN.search(text))
-        )
+    def _contains_link(text: str) -> bool:
+        lowered = text.lower()
+        return bool(URL_PATTERN.search(text) or ("xn--" in lowered))
 
     @staticmethod
     def _get_user_id(event: TelegramObject) -> int | None:
