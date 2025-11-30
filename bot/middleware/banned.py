@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from datetime import datetime, timezone
+import logging
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
 from aiogram import BaseMiddleware
@@ -20,10 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db import BannedRobloxAccount, User, async_session
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK, ban_appeal_keyboard
+from bot.services.admin_access import is_admin
 from bot.services.reply_keyboard import mark_reply_keyboard_removed
 from bot.services.user_blocking import lift_expired_block
 from bot.states.user_states import BanAppealState
 from bot.texts.block import BAN_NOTIFICATION_TEXT
+
+
+logger = logging.getLogger(__name__)
 
 
 class BannedMiddleware(BaseMiddleware):
@@ -39,6 +44,13 @@ class BannedMiddleware(BaseMiddleware):
         user_id = self._extract_user_id(message, callback)
 
         if user_id is None:
+            return await handler(event, data)
+
+        if await self._is_admin_user(user_id, data):
+            logger.info(
+                "Skipping banned middleware for admin user.",
+                extra={"user_id": user_id},
+            )
             return await handler(event, data)
 
         session, owns_session = await self._resolve_session(data)
@@ -247,6 +259,14 @@ class BannedMiddleware(BaseMiddleware):
         if message and message.from_user:
             return message.from_user.id
         return None
+
+    @staticmethod
+    async def _is_admin_user(user_id: int, data: Dict[str, Any]) -> bool:
+        cached_value = data.get("is_admin")
+        if isinstance(cached_value, bool):
+            return cached_value
+
+        return await is_admin(user_id)
 
     async def _enforce_banned_account(self, session: AsyncSession, user: User) -> bool:
         filters = self._build_banned_filters(user)

@@ -10,6 +10,7 @@ from aiogram.filters import Filter
 from aiogram.fsm.context import FSMContext
 
 from bot.keyboards.ban_appeal import BAN_APPEAL_CALLBACK
+from bot.services.admin_access import is_admin
 from bot.services.user_blocking import is_user_block_active
 from bot.states.user_states import BanAppealState
 from bot.utils.user import get_user
@@ -34,6 +35,13 @@ class BlockedUserFilter(Filter):
         if not from_user:
             return False
 
+        if await self._is_admin_user(from_user.id, data):
+            logger.info(
+                "Skipping block filter for admin user.",
+                extra={"user_id": from_user.id},
+            )
+            return False
+
         user = await get_user(from_user.id, data=data)
         if not user or not _is_blocked(user):
             return False
@@ -52,6 +60,14 @@ class BlockedUserFilter(Filter):
             data["current_user"] = user
 
         return {"blocked_user": user}
+
+    @staticmethod
+    async def _is_admin_user(user_id: int, data: dict) -> bool:
+        cached_value = data.get("is_admin")
+        if isinstance(cached_value, bool):
+            return cached_value
+
+        return await is_admin(user_id)
 
 
 @router.callback_query(BlockedUserFilter())

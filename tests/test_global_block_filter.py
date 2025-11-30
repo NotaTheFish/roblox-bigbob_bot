@@ -12,6 +12,14 @@ from bot.states.user_states import BanAppealState
 from db.models import User
 
 
+@pytest.fixture(autouse=True)
+def _stub_admin_lookup(monkeypatch):
+    async def fake_is_admin(uid: int) -> bool:  # noqa: ARG001
+        return False
+
+    monkeypatch.setattr(global_block_filter, "is_admin", fake_is_admin)
+
+
 @pytest.mark.anyio
 async def test_blocked_message_is_intercepted(monkeypatch, message_factory):
     user = User(id=10, tg_id=12345, is_blocked=True)
@@ -80,3 +88,23 @@ async def test_ban_appeal_state_is_not_blocked(monkeypatch, message_factory, moc
     result = await global_block_filter.BlockedUserFilter()(message, state=mock_state)
 
     assert result is False  # Allows the appeal message handler to run
+
+
+@pytest.mark.anyio
+async def test_admin_bypass(monkeypatch, message_factory, caplog):
+    message = message_factory(user_id=424242)
+
+    async def fake_is_admin(tg_id: int) -> bool:  # noqa: ARG001
+        return True
+
+    async def fake_get_user(*_args, **_kwargs):  # pragma: no cover
+        raise AssertionError("get_user should not be called for admins")
+
+    monkeypatch.setattr(global_block_filter, "is_admin", fake_is_admin)
+    monkeypatch.setattr(global_block_filter, "get_user", fake_get_user)
+
+    with caplog.at_level("INFO"):
+        result = await global_block_filter.BlockedUserFilter()(message)
+
+    assert result is False
+    assert "Skipping block filter for admin user." in caplog.text

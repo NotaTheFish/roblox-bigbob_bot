@@ -75,3 +75,38 @@ async def test_banned_history_survives_profile_changes():
 
     assert enforced is True
     assert user.is_blocked is True
+
+
+@pytest.mark.anyio
+async def test_admin_bypass(monkeypatch, caplog):
+    middleware = BannedMiddleware()
+    handler_called = False
+
+    async def fake_is_admin(uid: int) -> bool:  # noqa: ARG001
+        return True
+
+    async def handler(event, data):  # noqa: ANN001, ARG001
+        nonlocal handler_called
+        handler_called = True
+        return "ok"
+
+    monkeypatch.setattr("bot.middleware.banned.is_admin", fake_is_admin)
+    monkeypatch.setattr(
+        middleware, "_extract_event_entities", lambda _event: (object(), None)
+    )
+    monkeypatch.setattr(
+        middleware,
+        "_extract_user_id",
+        lambda _message, _callback: 424242,
+    )
+    async def fail_resolve_session(_data):  # noqa: ANN001
+        raise AssertionError("session should not be used")
+
+    monkeypatch.setattr(middleware, "_resolve_session", fail_resolve_session)
+
+    with caplog.at_level("INFO", logger="bot.middleware.banned"):
+        result = await middleware(handler, object(), {"is_admin": True})
+
+    assert handler_called is True
+    assert result == "ok"
+    assert "Skipping banned middleware for admin user." in caplog.text
