@@ -43,19 +43,37 @@ class LinkGuardMiddleware(BaseMiddleware):
     ) -> Any:
         text = self._extract_text(event)
         user_id = self._get_user_id(event)
+        event_type = self._get_event_type(event)
+        text_preview = self._truncate_text(text)
 
         if self._is_trusted_admin(user_id, data):
+            logger.debug(
+                "Link guard skipped for trusted admin",
+                extra={"user_id": user_id, "event_type": event_type, "text": text_preview},
+            )
             return await handler(event, data)
 
         if self._is_allowlisted_payload(text):
+            logger.debug(
+                "Link guard allowlisted payload",
+                extra={"user_id": user_id, "event_type": event_type, "text": text_preview},
+            )
             return await handler(event, data)
 
         if text in ADMIN_ALLOWLIST_BUTTON_TEXTS:
+            logger.debug(
+                "Link guard allowlisted admin button",
+                extra={"user_id": user_id, "event_type": event_type, "text": text_preview},
+            )
             return await handler(event, data)
 
         if text and self._contains_link(text):
             await self._neutralize(event)
             await self._log_security_event(event, text)
+            logger.warning(
+                "Link guard blocked update",
+                extra={"user_id": user_id, "event_type": event_type, "text": text_preview},
+            )
             return None
 
         return await handler(event, data)
@@ -142,6 +160,18 @@ class LinkGuardMiddleware(BaseMiddleware):
                     )
         except Exception:
             logger.debug("Failed to send link guard notification", exc_info=True)
+
+    @staticmethod
+    def _get_event_type(event: TelegramObject) -> str:
+        if isinstance(event, Message):
+            return "message"
+        if isinstance(event, CallbackQuery):
+            return "callback"
+        return "unknown"
+
+    @staticmethod
+    def _truncate_text(text: str, limit: int = 128) -> str:
+        return text[:limit]
 
     async def _log_security_event(self, event: TelegramObject, text: str) -> None:
         user_id = self._get_user_id(event)
