@@ -24,36 +24,56 @@ class OutsideServerManageState(Filter):
 
 
 # Команда для входа в админ панель
-async def _send_admin_panel(message: types.Message):
+async def _send_admin_panel(message: types.Message, state: FSMContext | None = None):
+    fsm_state = await state.get_state() if state else None
+    user_id = message.from_user.id if message.from_user else None
+    logger.info(
+        "_send_admin_panel called",
+        extra={"user_id": user_id, "fsm_state": fsm_state},
+    )
+
     if not message.from_user:
+        logger.info(
+            "Message has no from_user, aborting admin panel send",
+            extra={"fsm_state": fsm_state},
+        )
         return
 
-    user_id = message.from_user.id
+    logger.info(
+        "Checking admin access",
+        extra={"user_id": user_id, "fsm_state": fsm_state},
+    )
     has_access = await is_admin(user_id)
     logger.info(
-        "%s access to admin panel for user_id=%s",
-        "Granting" if has_access else "Denying",
-        user_id,
-        extra={"user_id": user_id, "access": has_access},
+        "Admin access check completed",
+        extra={"user_id": user_id, "access": has_access, "fsm_state": fsm_state},
     )
 
     if not has_access:
+        logger.info(
+            "Access denied to admin panel",
+            extra={"user_id": user_id, "fsm_state": fsm_state},
+        )
         return await message.answer("⛔ У вас нет доступа")
 
     await message.answer(
         "👑 <b>Админ-панель</b>\nВыберите раздел:",
         reply_markup=admin_main_menu_kb()
     )
+    logger.info(
+        "Admin menu sent",
+        extra={"user_id": user_id, "fsm_state": fsm_state},
+    )
 
 
 @router.message(Command("admin"))
-async def admin_panel(message: types.Message):
-    await _send_admin_panel(message)
+async def admin_panel(message: types.Message, state: FSMContext):
+    await _send_admin_panel(message, state)
 
 
 @router.message(F.text == "🛠 Режим админа")
-async def admin_panel_button(message: types.Message):
-    await _send_admin_panel(message)
+async def admin_panel_button(message: types.Message, state: FSMContext):
+    await _send_admin_panel(message, state)
 
 
 # Обработка кнопок админ-панели
