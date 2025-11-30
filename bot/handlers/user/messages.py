@@ -9,6 +9,7 @@ from aiogram.filters import StateFilter
 from sqlalchemy import select
 
 from bot import config
+from bot.constants.admin_menu import ADMIN_MENU_BUTTONS
 from bot.db import Achievement, Admin, User, async_session
 from backend.services.achievements import evaluate_and_grant_achievements
 from bot.services.reply_keyboard import (
@@ -124,7 +125,7 @@ def _is_admin_panel_text(text: str | None) -> bool:
         return False
 
     normalized = text.strip()
-    return normalized in ADMIN_PANEL_TEXTS or any(
+    return normalized in ADMIN_PANEL_TEXTS or normalized in ADMIN_MENU_BUTTONS or any(
         normalized.startswith(prefix) for prefix in ADMIN_COMMAND_PREFIXES
     )
 
@@ -158,9 +159,15 @@ async def restore_reply_keyboard_on_plain_text(message: types.Message) -> None:
     if not message.from_user:
         return
 
+    if message.text in ADMIN_MENU_BUTTONS:
+        logger.info("PASSED TO ADMIN: %s", message.text)
+        return
+
     user_id = message.from_user.id
     if not was_reply_keyboard_removed(user_id):
         return
+
+    logger.info("BLOCKED BY USER HANDLER: %s", message.text)
 
     async with async_session() as session:
         restored = await send_main_menu_keyboard(

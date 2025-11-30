@@ -78,7 +78,7 @@ def build_dispatcher() -> Dispatcher:
 
     dispatcher.include_router(global_block_filter_router)
     dispatcher.include_router(attachment_blocker_router)
-    for router in (*user_routers, *admin_routers):
+    for router in (*admin_routers, *user_routers):
         dispatcher.include_router(router)
 
     return dispatcher
