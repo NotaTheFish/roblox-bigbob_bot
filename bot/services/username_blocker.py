@@ -40,6 +40,7 @@ async def _load_candidates(session: AsyncSession, *, now: datetime) -> list[User
     stmt = select(User).where(
         User.tg_username == DEFAULT_TG_USERNAME,
         User.verified.is_(False),
+        User.is_blocked.is_(False),
         User.created_at <= cutoff,
     )
     result = await session.scalars(stmt)
@@ -51,6 +52,18 @@ async def _is_admin_user(session: AsyncSession, user: User) -> bool:
 
 
 async def _log_block(session: AsyncSession, user: User) -> None:
+    existing_log = await session.scalar(
+        select(LogEntry)
+        .where(
+            LogEntry.event_type == MISSING_USERNAME_EVENT,
+            LogEntry.user_id == user.id,
+        )
+        .order_by(LogEntry.created_at.desc())
+        .limit(1)
+    )
+    if existing_log:
+        return
+
     session.add(
         LogEntry(
             event_type=MISSING_USERNAME_EVENT,
@@ -80,7 +93,7 @@ async def enforce_missing_username_block(session: AsyncSession, *, now: datetime
             )
             continue
 
-        if not _should_block_user(user, now=current_time):
+        if user.is_blocked or not _should_block_user(user, now=current_time):
             continue
 
         await block_user(
