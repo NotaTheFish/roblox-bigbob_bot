@@ -5,10 +5,15 @@ import logging
 from aiogram import F, Router, types
 from aiogram.filters import Command, Filter, StateFilter
 from aiogram.fsm.context import FSMContext
+from sqlalchemy import select
+
+from bot.config import ROOT_ADMIN_ID
+from bot.db import Admin, async_session
 from bot.keyboards.admin_keyboards import admin_main_menu_kb
 from bot.keyboards.main_menu import main_menu
 from bot.states.server_states import ServerManageState
 from bot.services.admin_access import is_admin
+from bot.services.user_blocking import unblock_blocked_admins
 
 
 router = Router(name="admin_menu")
@@ -74,6 +79,37 @@ async def admin_panel(message: types.Message, state: FSMContext):
 @router.message(F.text == "🛠 Режим админа")
 async def admin_panel_button(message: types.Message, state: FSMContext):
     await _send_admin_panel(message, state)
+
+
+@router.message(Command("unblock_admins"))
+async def unblock_admins_command(message: types.Message) -> None:
+    if not message.from_user:
+        return
+
+    if message.from_user.id != ROOT_ADMIN_ID:
+        return await message.answer("⛔ У вас нет доступа")
+
+    async with async_session() as session:
+        operator_admin = await session.scalar(
+            select(Admin).where(Admin.telegram_id == message.from_user.id)
+        )
+        restored_admins = await unblock_blocked_admins(
+            session,
+            operator_admin=operator_admin,
+            reason="Ручная разблокировка админов",
+            interface="command.unblock_admins",
+            operator_username=message.from_user.username,
+        )
+
+    if not restored_admins:
+        await message.answer("🚫 Заблокированные администраторы не найдены.")
+        return
+
+    await message.answer(
+        "✅ Доступ восстановлен для админов: {}".format(
+            ", ".join(str(user.tg_id) for user in restored_admins)
+        )
+    )
 
 
 # Обработка кнопок админ-панели

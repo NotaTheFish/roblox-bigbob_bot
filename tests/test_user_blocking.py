@@ -1,7 +1,11 @@
 import pytest
 
 from bot.middleware.banned import BannedMiddleware
-from bot.services.user_blocking import block_user, unblock_user
+from bot.services.user_blocking import (
+    block_user,
+    unblock_blocked_admins,
+    unblock_user,
+)
 from db.models import Admin, BannedRobloxAccount, LogEntry, User
 from tests.conftest import FakeAsyncSession
 
@@ -34,6 +38,31 @@ async def test_block_user_logs_security_entry():
     assert log_entry.data["operator_admin_id"] == admin.id
     assert log_entry.data["interface"] == "callback"
     assert log_entry.data["reason"] == "violation"
+
+
+@pytest.mark.anyio
+async def test_unblock_blocked_admins_restores_access():
+    admin = Admin(id=99, telegram_id=111, is_root=True)
+    user = User(id=7, tg_id=111, is_blocked=True, block_reason="mistake")
+    session = FakeAsyncSession(scalars_results=[[user], []])
+
+    restored_admins = await unblock_blocked_admins(
+        session,
+        operator_admin=admin,
+        reason="startup fix",
+        interface="startup",
+        operator_username="root",
+    )
+
+    assert restored_admins == [user]
+    assert user.is_blocked is False
+
+    log_entry = next(obj for obj in session.added if isinstance(obj, LogEntry))
+    assert log_entry.event_type == "security.user_unblocked"
+    assert log_entry.data["reason"] == "startup fix"
+    assert log_entry.data["interface"] == "startup"
+    assert log_entry.data["operator_admin_id"] == admin.id
+    assert session.committed is True
 
 
 @pytest.mark.anyio

@@ -38,6 +38,44 @@ async def _is_user_admin(session: AsyncSession, user: User) -> bool:
     return bool(await session.scalar(stmt))
 
 
+async def unblock_blocked_admins(
+    session: AsyncSession,
+    *,
+    operator_admin: Admin | None = None,
+    reason: str = "Администратор автоматически разблокирован",
+    interface: str = "maintenance",
+    operator_username: str | None = None,
+) -> list[User]:
+    """Unblock all admins that were erroneously marked as blocked."""
+
+    stmt = (
+        select(User)
+        .join(Admin, Admin.telegram_id == User.tg_id)
+        .where(User.is_blocked.is_(True))
+    )
+    result = await session.scalars(stmt)
+    blocked_admins = list(result.all())
+
+    for admin_user in blocked_admins:
+        await unblock_user(
+            session,
+            user=admin_user,
+            operator_admin=operator_admin,
+            reason=reason,
+            interface=interface,
+            operator_username=operator_username,
+        )
+
+    if blocked_admins:
+        logger.info(
+            "Unblocked %s admin accounts during maintenance",
+            len(blocked_admins),
+            extra={"telegram_ids": [user.tg_id for user in blocked_admins]},
+        )
+
+    return blocked_admins
+
+
 async def block_user(
     session: AsyncSession,
     *,

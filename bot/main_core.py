@@ -30,6 +30,7 @@ from bot.middleware.block_attachments import BlockAttachmentsMiddleware
 
 # Firebase sync
 from bot.firebase.firebase_service import init_firebase, firebase_sync_loop
+from bot.services.user_blocking import unblock_blocked_admins
 from bot.services.username_blocker import username_blocking_loop
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,21 @@ def build_dispatcher() -> Dispatcher:
 async def on_startup(dispatcher: Dispatcher) -> None:
     await init_db()
     await ensure_root_admin()
+
+    async with async_session() as session:
+        restored_admins = await unblock_blocked_admins(
+            session,
+            reason="Авторазблокировка админов при старте бота",
+            interface="startup",
+        )
+        if restored_admins:
+            logger.info(
+                "Restored admin access during startup",
+                extra={
+                    "restored_admin_ids": [user.id for user in restored_admins],
+                    "telegram_ids": [user.tg_id for user in restored_admins],
+                },
+            )
 
     # Инициализация Firebase
     try:
