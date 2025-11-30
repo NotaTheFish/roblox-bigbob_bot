@@ -33,6 +33,11 @@ async def _skip_admin_routing(
 
     text = getattr(event, "text", None) or getattr(event, "data", None)
 
+    global_commands = ("/start",)
+    if text and any(str(text).startswith(cmd) for cmd in global_commands):
+        logger.info("GLOBAL COMMAND PASSED TO USER ROUTER: %s", text)
+        return True
+
     current_state = None
     if state:
         current_state = await state.get_state()
