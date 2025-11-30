@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 last_secret_word_use: dict[int, float] = {}
 
 
+ADMIN_PANEL_TEXTS = {"🛠 Режим админа", "🛠Режим админа"}
+ADMIN_COMMAND_PREFIXES = (
+    "/admin",
+    "/unblock_admins",
+    "/tonrate",
+    "/set_ton_rate",
+    "/admin_login",
+)
+
+
 def _normalize_text(text: str) -> str:
     """Normalize text for comparison using Unicode NFC and casefolding."""
 
@@ -107,6 +117,18 @@ def _should_throttle_secret_word(user_id: int, *, now: float | None = None) -> b
     return False
 
 
+def _is_admin_panel_text(text: str | None) -> bool:
+    """Return True when text should be handled by admin panel routers."""
+
+    if not text:
+        return False
+
+    normalized = text.strip()
+    return normalized in ADMIN_PANEL_TEXTS or any(
+        normalized.startswith(prefix) for prefix in ADMIN_COMMAND_PREFIXES
+    )
+
+
 @router.message(StateFilter(None), _matches_secret_word)
 async def handle_secret_word_message(message: types.Message) -> None:
     """Grant achievements when the message matches a configured secret word."""
@@ -126,7 +148,10 @@ async def handle_secret_word_message(message: types.Message) -> None:
         await session.commit()
 
 
-@router.message(StateFilter(None), F.text)
+@router.message(
+    StateFilter(None),
+    F.text.func(lambda text: not _is_admin_panel_text(text)),
+)
 async def restore_reply_keyboard_on_plain_text(message: types.Message) -> None:
     """Restore the main menu keyboard when it was previously removed."""
 

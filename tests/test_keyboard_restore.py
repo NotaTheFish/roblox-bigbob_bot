@@ -48,8 +48,9 @@ async def test_unblock_notification_restores_keyboard(
         make_async_session_stub(session),
     )
 
-    async def fake_unblock_user(session, *, user):
+    async def fake_unblock_user(session, *, user, **_kwargs):
         user.is_blocked = False
+        return True
 
     monkeypatch.setattr(admin_users_handlers, "unblock_user_record", fake_unblock_user)
     async def fake_is_admin(_uid):
