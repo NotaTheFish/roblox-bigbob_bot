@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Iterable
 
 from aiogram import types
@@ -24,6 +25,11 @@ from .verify import router as verify_router
 
 
 logger = logging.getLogger(__name__)
+ROUTING_DEBUG_ENABLED = os.getenv("ROUTING_DEBUG", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 
 async def _skip_admin_routing(
@@ -35,20 +41,36 @@ async def _skip_admin_routing(
 
     global_commands = ("/start",)
     if text and any(str(text).startswith(cmd) for cmd in global_commands):
-        logger.info("GLOBAL COMMAND PASSED TO USER ROUTER: %s", text)
+        logger.log(
+            logging.INFO if ROUTING_DEBUG_ENABLED else logging.DEBUG,
+            "GLOBAL COMMAND PASSED TO USER ROUTER: %s",
+            text,
+        )
         return True
 
     current_state = None
     if state:
         current_state = await state.get_state()
-        logger.info("FSM STATE = %s", current_state)
+        logger.log(
+            logging.INFO if ROUTING_DEBUG_ENABLED else logging.DEBUG,
+            "FSM STATE = %s",
+            current_state,
+        )
 
     if current_state and current_state.startswith("Admin"):
-        logger.info("PASSED TO ADMIN: %s", text)
+        logger.log(
+            logging.INFO if ROUTING_DEBUG_ENABLED else logging.DEBUG,
+            "PASSED TO ADMIN: %s",
+            text,
+        )
         return False
 
     if text in ADMIN_MENU_BUTTONS:
-        logger.info("PASSED TO ADMIN: %s", text)
+        logger.log(
+            logging.INFO if ROUTING_DEBUG_ENABLED else logging.DEBUG,
+            "PASSED TO ADMIN: %s",
+            text,
+        )
         return False
 
     return True

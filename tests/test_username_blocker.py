@@ -83,7 +83,16 @@ async def test_repeated_blocks(monkeypatch):
         created_at=now - timedelta(hours=4),
     )
 
-    session = FakeAsyncSession(scalars_results=[[user], [user]])
+    existing_log = LogEntry(
+        event_type=username_blocker.MISSING_USERNAME_EVENT,
+        user_id=user.id,
+        created_at=now,
+    )
+
+    session = FakeAsyncSession(
+        scalars_results=[[user], [user]],
+        scalar_results=[None, None, None, existing_log],
+    )
     blocked_reasons: list[str | None] = []
 
     async def fake_block_user(
@@ -114,4 +123,72 @@ async def test_repeated_blocks(monkeypatch):
         username_blocker.MISSING_USERNAME_REASON,
         username_blocker.MISSING_USERNAME_REASON,
     ]
-    assert len(session.added) == 2
+    assert len(session.added) == 1
+
+
+@pytest.mark.anyio
+async def test_skips_already_blocked_users(monkeypatch):
+    now = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    blocked_user = User(
+        id=6,
+        tg_id=666,
+        tg_username=DEFAULT_TG_USERNAME,
+        verified=False,
+        created_at=now - timedelta(hours=3),
+        is_blocked=True,
+    )
+
+    session = FakeAsyncSession(scalars_results=[[blocked_user]])
+    blocked_reasons: list[str | None] = []
+
+    async def fake_block_user(*_args, **kwargs):
+        blocked_reasons.append(kwargs.get("reason"))
+
+    monkeypatch.setattr(username_blocker, "block_user", fake_block_user)
+
+    blocked_count = await username_blocker.enforce_missing_username_block(
+        session, now=now
+    )
+
+    assert blocked_count == 0
+    assert blocked_reasons == []
+    assert session.added == []
+
+
+@pytest.mark.anyio
+async def test_deduplicates_existing_missing_username_logs(monkeypatch):
+    now = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    user = User(
+        id=7,
+        tg_id=777,
+        tg_username=DEFAULT_TG_USERNAME,
+        verified=False,
+        created_at=now - timedelta(hours=3),
+    )
+
+    recent_log = LogEntry(
+        event_type=username_blocker.MISSING_USERNAME_EVENT,
+        user_id=user.id,
+        created_at=now - timedelta(minutes=10),
+    )
+
+    session = FakeAsyncSession(
+        scalars_results=[[user]],
+        scalar_results=[None, recent_log],
+    )
+
+    blocked_reasons: list[str | None] = []
+
+    async def fake_block_user(*_args, **kwargs):
+        blocked_reasons.append(kwargs.get("reason"))
+        user.is_blocked = True
+
+    monkeypatch.setattr(username_blocker, "block_user", fake_block_user)
+
+    blocked_count = await username_blocker.enforce_missing_username_block(
+        session, now=now
+    )
+
+    assert blocked_count == 1
+    assert blocked_reasons == [username_blocker.MISSING_USERNAME_REASON]
+    assert session.added == []

@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.constants.users import DEFAULT_TG_USERNAME
@@ -18,6 +18,7 @@ ACCOUNT_AGE_THRESHOLD = timedelta(hours=2)
 DEFAULT_POLL_INTERVAL_SECONDS = 300
 MISSING_USERNAME_REASON = "без username"
 MISSING_USERNAME_EVENT = "security.missing_username_block"
+LOG_DEDUP_WINDOW = timedelta(hours=6)
 
 
 def _now(value: datetime | None = None) -> datetime:
@@ -37,11 +38,18 @@ def _should_block_user(user: User, *, now: datetime) -> bool:
 
 async def _load_candidates(session: AsyncSession, *, now: datetime) -> list[User]:
     cutoff = now - ACCOUNT_AGE_THRESHOLD
+    log_cutoff = now - LOG_DEDUP_WINDOW
+    recent_missing_username_log = select(LogEntry.id).where(
+        LogEntry.event_type == MISSING_USERNAME_EVENT,
+        LogEntry.user_id == User.id,
+        LogEntry.created_at >= log_cutoff,
+    )
     stmt = select(User).where(
         User.tg_username == DEFAULT_TG_USERNAME,
         User.verified.is_(False),
         User.is_blocked.is_(False),
         User.created_at <= cutoff,
+        ~exists(recent_missing_username_log),
     )
     result = await session.scalars(stmt)
     return list(result.all())
@@ -51,17 +59,18 @@ async def _is_admin_user(session: AsyncSession, user: User) -> bool:
     return bool(await session.scalar(select(Admin).where(Admin.telegram_id == user.tg_id)))
 
 
-async def _log_block(session: AsyncSession, user: User) -> None:
-    existing_log = await session.scalar(
+async def _log_block(session: AsyncSession, user: User, *, now: datetime) -> None:
+    recent_duplicate = await session.scalar(
         select(LogEntry)
         .where(
             LogEntry.event_type == MISSING_USERNAME_EVENT,
             LogEntry.user_id == user.id,
+            LogEntry.created_at >= now - LOG_DEDUP_WINDOW,
         )
         .order_by(LogEntry.created_at.desc())
         .limit(1)
     )
-    if existing_log:
+    if recent_duplicate:
         return
 
     session.add(
@@ -93,7 +102,14 @@ async def enforce_missing_username_block(session: AsyncSession, *, now: datetime
             )
             continue
 
-        if user.is_blocked or not _should_block_user(user, now=current_time):
+        if user.is_blocked:
+            logger.debug(
+                "Skipping username-less user because they are already blocked",
+                extra={"user_id": user.tg_id},
+            )
+            continue
+
+        if not _should_block_user(user, now=current_time):
             continue
 
         await block_user(
@@ -103,7 +119,7 @@ async def enforce_missing_username_block(session: AsyncSession, *, now: datetime
             reason=MISSING_USERNAME_REASON,
             interface="scheduler",
         )
-        await _log_block(session, user)
+        await _log_block(session, user, now=current_time)
         blocked += 1
 
     return blocked
