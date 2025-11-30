@@ -157,6 +157,41 @@ async def test_category_callback_switches_filter(monkeypatch, callback_query_fac
 
 
 @pytest.mark.anyio("asyncio")
+async def test_security_category_callback_allowed_for_admin(
+    monkeypatch, callback_query_factory, mock_state
+):
+    captured: list[LogQuery] = []
+
+    async def fake_collect(query: LogQuery, *_args, **_kwargs) -> LogPage:
+        captured.append(query)
+        return LogPage(
+            entries=[],
+            page=query.page,
+            total_pages=query.page,
+            first_page=1,
+            offset=query.offset,
+            pages_offsets=(query.offset,),
+            next_offset=None,
+            has_prev=False,
+        )
+
+    async def fake_is_admin(*_args, **_kwargs) -> bool:
+        return True
+
+    monkeypatch.setattr(logs, "_collect_logs_page", fake_collect)
+    monkeypatch.setattr(logs, "is_admin", fake_is_admin)
+
+    await mock_state.set_state(AdminLogsState.browsing)
+    await mock_state.update_data(category=LogCategory.TOPUPS.value, page=2)
+
+    call = callback_query_factory("logs:category:security", from_user_id=5)
+    await logs.category_callback(call, mock_state)
+
+    assert captured and captured[-1].category == LogCategory.SECURITY
+    assert captured[-1].page == 1
+
+
+@pytest.mark.anyio("asyncio")
 async def test_achievement_button_opens_achievements(monkeypatch, message_factory, mock_state):
     async def fake_is_admin(*_args, **_kwargs) -> bool:
         return True
@@ -202,10 +237,8 @@ def test_logs_filters_include_promocode_button():
     assert any(text.startswith("🎟 Промокоды") for text in button_texts)
 
 
-def test_security_category_visible_only_for_head_admin(monkeypatch):
-    monkeypatch.setattr(logs, "ADMIN_ROOT_IDS", [99])
-
-    assert LogCategory.SECURITY not in logs._visible_categories_for(5)
+def test_security_category_visible_for_admins():
+    assert LogCategory.SECURITY in logs._visible_categories_for(5)
     assert LogCategory.SECURITY in logs._visible_categories_for(99)
 
 

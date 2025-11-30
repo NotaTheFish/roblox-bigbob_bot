@@ -11,7 +11,7 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from bot.config import ADMIN_ROOT_IDS, ROOT_ADMIN_ID
+from bot.config import ROOT_ADMIN_ID
 from bot.db import Admin, LogEntry, async_session
 from bot.keyboards.admin_keyboards import (
     LOGS_ACHIEVEMENTS_BUTTON,
@@ -51,10 +51,6 @@ MAX_MESSAGE_LENGTH = 4096
 LOGS_PAGE_TEXT_LIMIT = 3900
 
 
-def _is_head_admin(user_id: int | None) -> bool:
-    return bool(user_id and user_id in {ROOT_ADMIN_ID, *ADMIN_ROOT_IDS})
-
-
 def _visible_categories_for(user_id: int | None) -> tuple[LogCategory, ...]:
     common_categories = (
         LogCategory.TOPUPS,
@@ -62,10 +58,8 @@ def _visible_categories_for(user_id: int | None) -> tuple[LogCategory, ...]:
         LogCategory.PURCHASES,
         LogCategory.PROMOCODES,
         LogCategory.ADMIN_ACTIONS,
+        LogCategory.SECURITY,
     )
-
-    if _is_head_admin(user_id):
-        return (*common_categories, LogCategory.SECURITY)
 
     return common_categories
 
