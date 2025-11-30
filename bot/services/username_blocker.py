@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.constants.users import DEFAULT_TG_USERNAME
-from bot.db import LogEntry, User, async_session
+from bot.db import Admin, LogEntry, User, async_session
 from bot.services.user_blocking import block_user
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,10 @@ async def _load_candidates(session: AsyncSession, *, now: datetime) -> list[User
     return list(result.all())
 
 
+async def _is_admin_user(session: AsyncSession, user: User) -> bool:
+    return bool(await session.scalar(select(Admin).where(Admin.telegram_id == user.tg_id)))
+
+
 async def _log_block(session: AsyncSession, user: User) -> None:
     session.add(
         LogEntry(
@@ -70,6 +74,12 @@ async def enforce_missing_username_block(session: AsyncSession, *, now: datetime
 
     blocked = 0
     for user in candidates:
+        if await _is_admin_user(session, user):
+            logger.info(
+                "Skipping admin from username block", extra={"user_id": user.tg_id}
+            )
+            continue
+
         if not _should_block_user(user, now=current_time):
             continue
 
