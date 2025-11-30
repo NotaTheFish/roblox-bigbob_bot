@@ -30,6 +30,7 @@ from bot.keyboards.admin_keyboards import (
 from bot.keyboards.main_menu import main_menu
 from bot.services.admin_logs import (
     DEFAULT_LOGS_RANGE_HOURS,
+    SECURITY_LOG_MAX_PAGES,
     LogCategory,
     LogPage,
     LogQuery,
@@ -545,6 +546,8 @@ async def _collect_logs_page(
 ) -> LogPage:
     offsets, pages = await _paginate_logs(query, category, data)
     total_pages = len(offsets) or 1
+    if category is LogCategory.SECURITY:
+        total_pages = min(max(total_pages, 1), SECURITY_LOG_MAX_PAGES)
     first_page = 1 if total_pages <= 10 else total_pages - 9
     target_page = min(max(query.page, first_page), total_pages)
 
@@ -576,14 +579,19 @@ async def _paginate_logs(
     pages: dict[int, LogPage] = {}
     current_offset = 0
     page_number = 1
+    max_pages = SECURITY_LOG_MAX_PAGES if category is LogCategory.SECURITY else None
 
     while True:
         page_query = replace(query, page=page_number, offset=current_offset)
         page = await _build_log_page(page_query, category, data)
+
+        if max_pages is not None and page_number == max_pages and page.next_offset:
+            page = replace(page, next_offset=None)
+
         pages[page_number] = page
         offsets.append(current_offset)
 
-        if page.next_offset is None:
+        if page.next_offset is None or (max_pages is not None and page_number >= max_pages):
             break
 
         current_offset = page.next_offset

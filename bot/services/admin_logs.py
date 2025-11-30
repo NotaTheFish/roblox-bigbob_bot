@@ -15,6 +15,8 @@ from bot.db import LogEntry, async_session
 
 DEFAULT_LOGS_RANGE_HOURS = 24
 LOGS_BATCH_SIZE = 20
+SECURITY_LOG_MAX_PAGES = 10
+SECURITY_LOG_WINDOW = LOGS_BATCH_SIZE * SECURITY_LOG_MAX_PAGES
 
 
 class LogCategory(str, Enum):
@@ -117,22 +119,38 @@ class LogsRepository:
         end_at = query.end_at or datetime.now(tz=timezone.utc)
         start_at = query.start_at or end_at - timedelta(hours=DEFAULT_LOGS_RANGE_HOURS)
 
-        stmt = (
-            select(LogEntry)
-            .where(LogEntry.created_at >= start_at)
-            .where(LogEntry.created_at <= end_at)
-        )
+        filters = [
+            LogEntry.created_at >= start_at,
+            LogEntry.created_at <= end_at,
+        ]
 
         event_types = tuple(_CATEGORY_EVENT_TYPES.get(query.category, ()))
         if event_types:
-            stmt = stmt.where(LogEntry.event_type.in_(event_types))
+            filters.append(LogEntry.event_type.in_(event_types))
 
         if query.user_id is not None:
-            stmt = stmt.where(LogEntry.user_id == query.user_id)
+            filters.append(LogEntry.user_id == query.user_id)
         if query.telegram_id is not None:
-            stmt = stmt.where(LogEntry.telegram_id == query.telegram_id)
+            filters.append(LogEntry.telegram_id == query.telegram_id)
 
-        stmt = stmt.order_by(LogEntry.created_at.desc())
+        base_stmt = select(LogEntry).where(*filters)
+
+        if query.category is LogCategory.SECURITY:
+            capped_ids_stmt = (
+                select(LogEntry.id)
+                .where(*filters)
+                .order_by(LogEntry.created_at.desc())
+                .limit(SECURITY_LOG_WINDOW)
+            )
+
+            stmt = (
+                select(LogEntry)
+                .where(LogEntry.id.in_(capped_ids_stmt))
+                .order_by(LogEntry.created_at.desc())
+            )
+        else:
+            stmt = base_stmt.order_by(LogEntry.created_at.desc())
+
         stmt = stmt.offset(normalized_offset).limit(LOGS_BATCH_SIZE + 1)
 
         result = await self._session.scalars(stmt)
@@ -170,6 +188,8 @@ async def fetch_logs_page(query: LogQuery) -> LogBatch:
 
 __all__ = [
     "DEFAULT_LOGS_RANGE_HOURS",
+    "SECURITY_LOG_MAX_PAGES",
+    "SECURITY_LOG_WINDOW",
     "LOGS_BATCH_SIZE",
     "LogBatch",
     "LogCategory",
